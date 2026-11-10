@@ -92,7 +92,7 @@ table.t{width:100%;border-collapse:collapse}
 .t th{font-size:13px;color:var(--muted);font-weight:700;background:#fafafa}
 .t tr:hover td{background:#fcfaff}
 .t td.actions{white-space:nowrap;text-align:left}
-.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700}
+.badge{display:inline-block;white-space:nowrap;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:700}
 .badge.ok{background:var(--ok-soft);color:var(--ok)}
 .badge.warn{background:var(--warn-soft);color:var(--warn)}
 .badge.bad{background:var(--bad-soft);color:var(--bad)}

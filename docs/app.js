@@ -7,6 +7,7 @@ import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
 import { INVOICE_ROUTES } from './invoices.js';
+import { OBLIGATION_ROUTES, obligationsSummary } from './obligations.js';
 
 const $app = document.getElementById('app');
 // ---------------------------------------------------------------------
@@ -96,7 +97,8 @@ function renderPending() {
 //  الهيكل الرئيسي
 // ---------------------------------------------------------------------
 const NAV = () => [
-  { title: 'الرئيسية', items: [{ r: 'home', i: '🏠', l: 'لوحة التحكم' }] },
+  { title: 'الرئيسية', items: [{ r: 'home', i: '🏠', l: 'لوحة التحكم' },
+    { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) }] },
   { title: 'ملف', items: [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
@@ -134,7 +136,7 @@ const NAV = () => [
   ]},
   { title: 'قريباً', items: [
     { soon: true, i: '📦', l: 'المخزون والجرد' }, { soon: true, i: '💳', l: 'محفظة الشيكات' },
-    { soon: true, i: '🔔', l: 'متابعة إقرارات العملاء' }, { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
+ { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
   ]},
 ];
 
@@ -203,7 +205,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -240,6 +242,7 @@ async function viewHome(v) {
         <span class="muted">${c.subject_to_sales_tax ? (c.sales_tax_period === 'monthly' ? 'إقرار شهري' : 'إقرار كل شهرين') : ''}</span></div>
       <div class="card stat"><span class="k">عدد الشركات المتاحة</span><span class="v">${S.companies.filter(x => x.is_active).length}</span></div>
     </div>
+    <div id="ob-sum"></div>
     ${!S.fy && can('fiscal_years', 'add') ? `<div class="notice" style="margin-top:14px">هالشركة ما إلها سنة مالية. <a href="#/fiscal-years">أضف سنة مالية</a> قبل ما تبلّش القيود.</div>` : ''}
     <div class="card" style="margin-top:14px">
       <h3 style="margin-top:0">ابدأ من هون</h3>
@@ -251,8 +254,12 @@ async function viewHome(v) {
         ${can('payment_vouchers', 'add') ? '<a class="btn" href="#/payments">📤 سند صرف</a>' : ''}
         ${can('reports', 'view') ? '<a class="btn" href="#/rep-trial">⚖️ ميزان المراجعة</a>' : ''}
       </div>
-      <p class="muted" style="margin:12px 0 0;font-size:13px">المراحل الجاية: الزبائن والموردين ← المبيعات والمشتريات ← الضرائب والفوترة الإلكترونية ← الشيكات ← المخزون ← متابعة إقرارات العملاء.</p>
+      <p class="muted" style="margin:12px 0 0;font-size:13px">المراحل الجاية: محفظة الشيكات ← المخزون والجرد ← الفوترة الإلكترونية (جوفوترة) ← إغلاق السنة وتدوير الأرصدة.</p>
     </div>`;
+  if (S.companies.some(c => can('obligations', 'view', c.id))) {
+    obligationsSummary().then(({ late, soon }) => { const el = v.querySelector('#ob-sum'); if (!el || (!late && !soon)) return;
+      el.innerHTML = `<a href="#/obligations" class="notice ${late ? '' : 'info'}" style="display:block;margin-top:14px;text-decoration:none">🔔 متابعة الإقرارات: ${late ? `<b>${late} متأخرة</b>` : ''}${late && soon ? ' و' : ''}${soon ? `<b>${soon}</b> خلال 14 يوم` : ''} — اضغط للتفاصيل</a>`; }).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------

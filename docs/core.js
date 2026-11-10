@@ -30,6 +30,7 @@ export const SCREENS = [
   { key: 'customers',        label: 'العملاء',              group: 'العملاء والموردين' },
   { key: 'suppliers',        label: 'الموردين',             group: 'العملاء والموردين' },
   { key: 'reports',          label: 'التقارير المالية',     group: 'التقارير' },
+  { key: 'obligations',      label: 'متابعة إقرارات العملاء', group: 'المكتب' },
 ];
 export const ACTIONS = [
   { key: 'view', label: 'عرض' }, { key: 'add', label: 'إضافة' },
