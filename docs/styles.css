@@ -139,3 +139,27 @@ table.t{width:100%;border-collapse:collapse}
   .wm-inner{opacity:.08}
   .layout{display:block}.content{padding:0}.card{box-shadow:none}
 }
+
+/* ---------- المرحلة 2 و3: شجرة الحسابات والسندات والتقارير ---------- */
+.tree tr.grp td{background:#faf7fd}
+.tree tr.inactive td{opacity:.55}
+.tog{display:inline-block;width:20px;cursor:pointer;color:var(--brand);font-size:14px;user-select:none}
+.tog-sp{display:inline-block;width:20px}
+.t tr.click{cursor:pointer}
+.t.lines td{padding:5px 6px}
+.cell{width:100%;border:1px solid transparent;border-radius:7px;padding:7px 8px;background:#fafafa;outline:none}
+.cell:focus{border-color:var(--brand-2);background:#fff;box-shadow:0 0 0 3px var(--brand-soft)}
+.cell:disabled{background:transparent;color:var(--text)}
+.cell.bad{border-color:var(--bad);background:var(--bad-soft)}
+.cell.n,.n{text-align:left;direction:ltr;font-variant-numeric:tabular-nums}
+.filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px}
+.filters .field{margin:0}
+.t.rep th{text-align:center}
+.t.rep td.n{white-space:nowrap}
+.t.rep tr.grp td{font-weight:700;background:#faf7fd}
+.t.rep tr.tot td,.t.rep tfoot td{font-weight:800;background:#f1e9f8}
+.t.statement tr.sec td{font-weight:800;color:var(--brand);font-size:16px;background:#fff;padding-top:16px;border-bottom:2px solid var(--brand-soft)}
+.t.statement tr.net td{font-weight:800;font-size:16px}
+.t.statement tr.net.pos td{background:var(--ok-soft);color:var(--ok)}
+.t.statement tr.net.neg td{background:var(--bad-soft);color:var(--bad)}
+.t.statement td:nth-child(2),.t.statement td:nth-child(3){width:170px}

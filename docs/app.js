@@ -1,162 +1,12 @@
 // =====================================================================
-//  السمو ERP — المرحلة 1
+//  السمو ERP — الهيكل الرئيسي وشاشات المرحلة 1
 // =====================================================================
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_KEY, APP_NAME, APP_VERSION } from './config.js';
+import { APP_NAME, APP_VERSION } from './config.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { FINANCE_ROUTES } from './finance.js';
+import { REPORT_ROUTES } from './reports.js';
 
-const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 const $app = document.getElementById('app');
-
-// ---------------------------------------------------------------------
-//  الحالة العامة
-// ---------------------------------------------------------------------
-const S = {
-  session: null, profile: null,
-  companies: [], memberships: [], groups: [],
-  company: null, fiscalYears: [], fy: null,
-};
-
-// الشاشات اللي إلها صلاحيات (بتزيد مع كل مرحلة)
-const SCREENS = [
-  { key: 'companies',    label: 'بيانات الشركة' },
-  { key: 'fiscal_years', label: 'السنوات المالية' },
-];
-const ACTIONS = [
-  { key: 'view', label: 'عرض' }, { key: 'add', label: 'إضافة' },
-  { key: 'edit', label: 'تعديل' }, { key: 'delete', label: 'حذف' }, { key: 'print', label: 'طباعة' },
-];
-
-const COMPANY_TYPES = ['مؤسسة فردية','شركة تضامن','شركة توصية بسيطة','شركة ذات مسؤولية محدودة','شركة مساهمة خاصة','شركة مساهمة عامة','شركة غير ربحية','جمعية','أخرى'];
-const ACTIVITY_TYPES = ['تجارية','صناعية','خدمية','مقاولات','تعليمية','زراعية','سياحية','أخرى'];
-
-// ---------------------------------------------------------------------
-//  أدوات مساعدة
-// ---------------------------------------------------------------------
-const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '';
-const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { hour12: false }) : '';
-
-function toast(msg, type = '') {
-  const el = document.createElement('div');
-  el.className = 'toast ' + type; el.textContent = msg;
-  document.getElementById('toast-root').appendChild(el);
-  setTimeout(() => el.remove(), 3800);
-}
-
-function arError(err) {
-  const m = (err && (err.message || err.error_description)) || String(err);
-  if (/Invalid login credentials/i.test(m)) return 'الإيميل أو كلمة السر غلط';
-  if (/Email not confirmed/i.test(m)) return 'لازم تأكد الإيميل أول. افتح الإيميل اللي وصلك واضغط رابط التأكيد';
-  if (/User already registered/i.test(m)) return 'هذا الإيميل مسجّل من قبل';
-  if (/Password should be at least/i.test(m)) return 'كلمة السر لازم تكون 6 أحرف أو أكثر';
-  if (/duplicate key/i.test(m)) return 'الرمز مستخدم من قبل، اختار رمز ثاني';
-  if (/row-level security|permission denied/i.test(m)) return 'ما عندك صلاحية لهالعملية';
-  if (/end_date|check constraint/i.test(m)) return 'تاريخ النهاية لازم يكون بعد تاريخ البداية';
-  if (/Failed to fetch|NetworkError/i.test(m)) return 'في مشكلة بالاتصال بالإنترنت';
-  return m;
-}
-
-function modal({ title, body, foot = '', size = '' }) {
-  const root = document.getElementById('modal-root');
-  root.innerHTML = `
-    <div class="modal-back">
-      <div class="modal ${size}">
-        <div class="modal-head"><h3>${esc(title)}</h3><button class="x" data-close>×</button></div>
-        <div class="modal-body">${body}</div>
-        ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
-      </div>
-    </div>`;
-  const back = root.firstElementChild;
-  const close = () => { root.innerHTML = ''; };
-  back.addEventListener('click', e => { if (e.target === back || e.target.closest('[data-close]')) close(); });
-  return { el: back, close };
-}
-
-function confirmBox(text) {
-  return new Promise(resolve => {
-    const m = modal({ title: 'تأكيد', size: 'sm', body: `<p>${esc(text)}</p>`,
-      foot: `<button class="btn primary" data-yes>نعم</button><button class="btn" data-close>إلغاء</button>` });
-    m.el.querySelector('[data-yes]').onclick = () => { m.close(); resolve(true); };
-    m.el.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => resolve(false)));
-  });
-}
-
-function formData(form) {
-  const o = {};
-  form.querySelectorAll('[name]').forEach(el => {
-    if (el.type === 'checkbox') o[el.name] = el.checked;
-    else o[el.name] = el.value.trim() === '' ? null : el.value.trim();
-  });
-  return o;
-}
-
-function setupTabs(root) {
-  root.querySelectorAll('.tabs').forEach(tabs => {
-    tabs.addEventListener('click', e => {
-      const t = e.target.closest('.tab'); if (!t) return;
-      const scope = tabs.parentElement;
-      scope.querySelectorAll(':scope > .tabs .tab').forEach(x => x.classList.toggle('active', x === t));
-      scope.querySelectorAll(':scope > .tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === t.dataset.tab));
-    });
-  });
-}
-
-async function log(action, entity, entity_id = null, details = null) {
-  try {
-    await sb.from('activity_log').insert({ user_id: S.session.user.id, company_id: S.company?.id ?? null, action, entity, entity_id, details });
-  } catch (_) { /* السجل ما لازم يوقف الشغل */ }
-}
-
-// ---------------------------------------------------------------------
-//  الصلاحيات (للواجهة فقط — الحماية الحقيقية بقاعدة البيانات)
-// ---------------------------------------------------------------------
-const isAdmin = () => !!(S.profile?.is_admin && S.profile?.is_active);
-function can(screen, act, companyId = S.company?.id) {
-  if (isAdmin()) return true;
-  const m = S.memberships.find(x => x.company_id === companyId);
-  const g = m && S.groups.find(x => x.id === m.group_id);
-  return !!g?.permissions?.[screen]?.[act];
-}
-
-// ---------------------------------------------------------------------
-//  تحميل البيانات
-// ---------------------------------------------------------------------
-async function loadProfile() {
-  const { data, error } = await sb.from('profiles').select('*').eq('id', S.session.user.id).maybeSingle();
-  if (error) throw error;
-  S.profile = data;
-}
-
-async function loadContext() {
-  const [c, m, g] = await Promise.all([
-    sb.from('companies').select('*').order('code'),
-    sb.from('user_companies').select('*').eq('user_id', S.session.user.id),
-    sb.from('user_groups').select('*').order('name'),
-  ]);
-  if (c.error) throw c.error;
-  S.companies = c.data || [];
-  S.memberships = m.data || [];
-  S.groups = g.data || [];
-  const saved = localStorageGet('sumou.company') || S.profile.default_company_id;
-  S.company = S.companies.find(x => x.id === saved && x.is_active) || S.companies.find(x => x.is_active) || null;
-  await loadFiscalYears();
-}
-
-async function loadFiscalYears() {
-  S.fiscalYears = []; S.fy = null;
-  if (!S.company) return;
-  const { data } = await sb.from('fiscal_years').select('*').eq('company_id', S.company.id).order('start_date', { ascending: false });
-  S.fiscalYears = data || [];
-  const saved = localStorageGet('sumou.fy.' + S.company.id);
-  const today = new Date().toISOString().slice(0, 10);
-  S.fy = S.fiscalYears.find(x => x.id === saved)
-      || S.fiscalYears.find(x => x.start_date <= today && x.end_date >= today)
-      || S.fiscalYears[0] || null;
-}
-
-function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
-function localStorageSet(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
-
 // ---------------------------------------------------------------------
 //  شاشات الدخول
 // ---------------------------------------------------------------------
@@ -253,10 +103,23 @@ const NAV = () => [
     { r: 'groups', i: '🔐', l: 'المجموعات والصلاحيات', show: isAdmin },
     { r: 'log', i: '📜', l: 'سجل النشاط', show: isAdmin },
   ]},
+  { title: 'المالية', items: [
+    { r: 'accounts', i: '🌳', l: 'دليل الحسابات', show: () => S.company && can('accounts', 'view') },
+    { r: 'opening', i: '🧮', l: 'الأرصدة الافتتاحية', show: () => S.company && can('opening_balances', 'view') },
+    { r: 'journal', i: '📒', l: 'سندات القيد', show: () => S.company && can('journal_entries', 'view') },
+    { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
+    { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
+  ]},
+  { title: 'التقارير', items: [
+    { r: 'rep-ledger', i: '📄', l: 'كشف حساب', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-journal', i: '📚', l: 'اليومية العامة', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-trial', i: '⚖️', l: 'ميزان المراجعة', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-income', i: '📈', l: 'قائمة الدخل', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-balance', i: '🏦', l: 'الميزانية العمومية', show: () => S.company && can('reports', 'view') },
+  ]},
   { title: 'قريباً', items: [
-    { soon: true, i: '📒', l: 'المالية' }, { soon: true, i: '🧾', l: 'المبيعات' },
-    { soon: true, i: '🛒', l: 'المشتريات' }, { soon: true, i: '📦', l: 'المخزون' },
-    { soon: true, i: '🏛️', l: 'الضرائب' }, { soon: true, i: '📊', l: 'التقارير' },
+    { soon: true, i: '🧾', l: 'المبيعات' }, { soon: true, i: '🛒', l: 'المشتريات' },
+    { soon: true, i: '📦', l: 'المخزون' }, { soon: true, i: '🏛️', l: 'الضرائب' },
   ]},
 ];
 
@@ -325,6 +188,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
+  ...FINANCE_ROUTES, ...REPORT_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -334,10 +198,10 @@ async function route_() {
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + r));
   const view = document.getElementById('view'); if (!view) return;
   view.innerHTML = '<div class="empty">جاري التحميل…</div>';
-  try { await (ROUTES[r] || viewHome)(view); }
+  try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); }
   catch (err) { view.innerHTML = `<div class="notice">${esc(arError(err))}</div>`; }
 }
-window.addEventListener('hashchange', () => { if (S.profile?.is_active) route_(); });
+window.addEventListener('hashchange', () => { document.getElementById('modal-root').innerHTML = ''; if (S.profile?.is_active) route_(); });
 
 // ---------------------------------------------------------------------
 //  لوحة التحكم
@@ -363,8 +227,16 @@ async function viewHome(v) {
     </div>
     ${!S.fy && can('fiscal_years', 'add') ? `<div class="notice" style="margin-top:14px">هالشركة ما إلها سنة مالية. <a href="#/fiscal-years">أضف سنة مالية</a> قبل ما تبلّش القيود.</div>` : ''}
     <div class="card" style="margin-top:14px">
-      <h3 style="margin-top:0">المراحل الجاية</h3>
-      <p class="muted" style="margin:0">المالية (دليل الحسابات والقيود) ← التقارير المالية ← الزبائن والموردين ← المبيعات والمشتريات ← الضرائب والفوترة الإلكترونية ← الشيكات ← المخزون ← متابعة إقرارات العملاء.</p>
+      <h3 style="margin-top:0">ابدأ من هون</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${can('accounts', 'view') ? '<a class="btn" href="#/accounts">🌳 دليل الحسابات</a>' : ''}
+        ${can('opening_balances', 'view') ? '<a class="btn" href="#/opening">🧮 الأرصدة الافتتاحية</a>' : ''}
+        ${can('journal_entries', 'add') ? '<a class="btn" href="#/journal">📒 سند قيد</a>' : ''}
+        ${can('receipt_vouchers', 'add') ? '<a class="btn" href="#/receipts">📥 سند قبض</a>' : ''}
+        ${can('payment_vouchers', 'add') ? '<a class="btn" href="#/payments">📤 سند صرف</a>' : ''}
+        ${can('reports', 'view') ? '<a class="btn" href="#/rep-trial">⚖️ ميزان المراجعة</a>' : ''}
+      </div>
+      <p class="muted" style="margin:12px 0 0;font-size:13px">المراحل الجاية: الزبائن والموردين ← المبيعات والمشتريات ← الضرائب والفوترة الإلكترونية ← الشيكات ← المخزون ← متابعة إقرارات العملاء.</p>
     </div>`;
 }
 
@@ -698,7 +570,7 @@ async function viewGroups(v) {
         <tbody>${SCREENS.map(s => `<tr><td>${s.label}</td>
           ${ACTIONS.map(a => `<td><input type="checkbox" data-s="${s.key}" data-a="${a.key}" ${g.permissions?.[s.key]?.[a.key] ? 'checked' : ''}></td>`).join('')}
           <td><input type="checkbox" data-all="${s.key}"></td></tr>`).join('')}</tbody></table></div>
-      <p class="muted" style="font-size:13px">رح تنضاف شاشات جديدة هون مع كل مرحلة (المالية، المبيعات، ...).</p>`,
+      <p class="muted" style="font-size:13px">«ترحيل» يعني الموظف بيقدر يرحّل السندات ويعمل قيد عكسي. رح تنضاف شاشات جديدة هون مع كل مرحلة.</p>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
     m.el.querySelectorAll('[data-all]').forEach(cb => cb.onchange = () =>
       m.el.querySelectorAll(`[data-s="${cb.dataset.all}"]`).forEach(x => x.checked = cb.checked));

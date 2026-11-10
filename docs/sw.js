@@ -1,6 +1,6 @@
 // Service worker: تخزين ملفات الواجهة لفتح أسرع. البيانات دائماً من الإنترنت.
-const CACHE = 'sumou-erp-v1.1.0';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './config.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png'];
+const CACHE = 'sumou-erp-v2.0.0';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './config.js', './core.js', './finance.js', './reports.js', './print.js', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))); self.clients.claim(); });
 self.addEventListener('fetch', e => {
