@@ -211,7 +211,7 @@ begin
   tax_acc := case when is_sale then st.output_tax_account_id else st.input_tax_account_id end;
 
   -- إعادة حساب السطور
-  perform set_config('sumou.internal', 'on', true);
+  perform set_config('sumou.internal', public.internal_token(), true);
   for r in select * from public.invoice_lines where invoice_id = p_id order by line_no loop
     gross := round(r.qty * r.unit_price - r.discount, 3);
     if gross < 0 then raise exception 'الخصم أكبر من قيمة السطر %', r.line_no; end if;
@@ -283,7 +283,7 @@ begin
   if i.status <> 'posted' then raise exception 'بس الفواتير المرحّلة بتنلغى'; end if;
   select * into fy from public.fiscal_years where company_id = i.company_id and p_date between start_date and end_date and not is_closed order by start_date desc limit 1;
   if fy.id is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ %', p_date; end if;
-  perform set_config('sumou.internal', 'on', true);
+  perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, status, reversal_of)
   select company_id, fy.id, 'invoice', p_date, 'إلغاء: ' || description, reference, 'draft', id from public.journal_entries where id = i.entry_id
   returning id into new_id;

@@ -133,7 +133,7 @@ begin
    order by start_date desc limit 1;
   if fy.id is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ %', p_date; end if;
 
-  perform set_config('sumou.internal', 'on', true);
+  perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, reversal_of)
   values (e.company_id, fy.id, e.entry_type, p_date,
           coalesce(p_note, 'قيد عكسي للقيد رقم ' || e.entry_no || coalesce(' - ' || e.description, '')),
