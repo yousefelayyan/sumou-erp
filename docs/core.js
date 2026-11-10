@@ -24,6 +24,8 @@ export const SCREENS = [
   { key: 'journal_entries',  label: 'سندات القيد',          group: 'المالية' },
   { key: 'receipt_vouchers', label: 'سندات القبض',          group: 'المالية' },
   { key: 'payment_vouchers', label: 'سندات الصرف',          group: 'المالية' },
+  { key: 'customers',        label: 'العملاء',              group: 'العملاء والموردين' },
+  { key: 'suppliers',        label: 'الموردين',             group: 'العملاء والموردين' },
   { key: 'reports',          label: 'التقارير المالية',     group: 'التقارير' },
 ];
 export const ACTIONS = [

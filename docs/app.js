@@ -5,6 +5,7 @@ import { APP_NAME, APP_VERSION } from './config.js';
 import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
+import { PARTY_ROUTES } from './parties.js';
 
 const $app = document.getElementById('app');
 // ---------------------------------------------------------------------
@@ -110,12 +111,18 @@ const NAV = () => [
     { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
     { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
   ]},
+  { title: 'العملاء والموردين', items: [
+    { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
+    { r: 'suppliers', i: '🏭', l: 'الموردين', show: () => S.company && can('suppliers', 'view') },
+  ]},
   { title: 'التقارير', items: [
     { r: 'rep-ledger', i: '📄', l: 'كشف حساب', show: () => S.company && can('reports', 'view') },
     { r: 'rep-journal', i: '📚', l: 'اليومية العامة', show: () => S.company && can('reports', 'view') },
     { r: 'rep-trial', i: '⚖️', l: 'ميزان المراجعة', show: () => S.company && can('reports', 'view') },
     { r: 'rep-income', i: '📈', l: 'قائمة الدخل', show: () => S.company && can('reports', 'view') },
     { r: 'rep-balance', i: '🏦', l: 'الميزانية العمومية', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-party', i: '👤', l: 'كشف حساب عميل/مورد', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-aging', i: '⏳', l: 'أعمار الذمم', show: () => S.company && can('reports', 'view') },
   ]},
   { title: 'قريباً', items: [
     { soon: true, i: '🧾', l: 'المبيعات' }, { soon: true, i: '🛒', l: 'المشتريات' },
@@ -188,7 +195,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

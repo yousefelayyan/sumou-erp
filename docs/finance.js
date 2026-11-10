@@ -4,6 +4,7 @@
 // =====================================================================
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { printDoc, amountToWords } from './print.js';
+import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 
 export const CATEGORIES = { assets: 'الموجودات', liabilities: 'المطلوبات', equity: 'حقوق الملكية', revenue: 'الإيرادات', expenses: 'المصاريف' };
 export const ACC_TYPES = { general: 'عام', cash: 'صندوق', bank: 'بنك', customer: 'عميل', supplier: 'مورد', employee: 'موظف', tax: 'ضريبة' };
@@ -273,8 +274,9 @@ function voucherList(type) {
 // ---------------------------------------------------------------------
 async function voucherEditor(type, entry, ctx) {
   const T = ENTRY_TYPES[type];
-  const accs = await loadAccounts();
+  const [accs, parties] = await Promise.all([loadAccounts(), loadParties()]);
   if (!leafAccounts(accs).length) return toast('لازم يكون في حسابات فرعية بدليل الحسابات أول', 'err');
+  const pById = Object.fromEntries(parties.map(p => [p.id, p]));
   let lines = [];
   if (entry) {
     const { data, error } = await sb.from('journal_lines').select('*').eq('entry_id', entry.id).order('line_no');
@@ -290,9 +292,9 @@ async function voucherEditor(type, entry, ctx) {
   let rows;
   if (isCash) {
     rows = lines.filter(l => !(l.line_no === 1 && l.account_id === e.cash_account_id))
-      .map(l => ({ acc: accLabel(byId[l.account_id]), desc: l.description || '', amount: num(type === 'receipt' ? l.credit : l.debit) }));
+      .map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', amount: num(type === 'receipt' ? l.credit : l.debit) }));
   } else {
-    rows = lines.map(l => ({ acc: accLabel(byId[l.account_id]), desc: l.description || '', debit: num(l.debit), credit: num(l.credit) }));
+    rows = lines.map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', debit: num(l.debit), credit: num(l.credit) }));
   }
   while (rows.length < (isCash ? 1 : 2)) rows.push(isCash ? { acc: '', desc: '', amount: 0 } : { acc: '', desc: '', debit: 0, credit: 0 });
 
@@ -311,15 +313,15 @@ async function voucherEditor(type, entry, ctx) {
       <div class="field"><label>المرجع / رقم الشيك</label><input name="reference" value="${esc(e.reference)}" ${ro}></div>
       <div class="field" style="grid-column:span 2"><label>البيان</label><input name="description" value="${esc(e.description)}" ${ro}></div>
     </div></form>
-    ${accountDatalist(accs)}
+    ${accountDatalist(accs)}${partyDatalist(parties)}
     <div class="table-wrap"><table class="t lines" id="lines">
-      <thead><tr><th style="width:36px">#</th><th style="min-width:240px">الحساب</th><th>البيان</th>
+      <thead><tr><th style="width:36px">#</th><th style="min-width:230px">الحساب</th><th style="min-width:170px">العميل / المورد</th><th>البيان</th>
         ${isCash ? '<th style="width:150px">المبلغ</th>' : '<th style="width:140px">مدين</th><th style="width:140px">دائن</th>'}<th style="width:40px"></th></tr></thead>
       <tbody></tbody>
-      <tfoot><tr><td></td><td>${!readOnly ? '<button class="btn sm" id="add-line" type="button">➕ سطر</button>' : ''}</td><td style="text-align:left"><b>المجموع</b></td>
+      <tfoot><tr><td></td><td>${!readOnly ? '<button class="btn sm" id="add-line" type="button">➕ سطر</button>' : ''}</td><td></td><td style="text-align:left"><b>المجموع</b></td>
         ${isCash ? '<td><b id="t-amt" dir="ltr"></b></td>' : '<td><b id="t-dr" dir="ltr"></b></td><td><b id="t-cr" dir="ltr"></b></td>'}<td></td></tr>
-        ${!isCash ? '<tr><td></td><td></td><td style="text-align:left">الفرق</td><td colspan="2"><b id="t-diff" dir="ltr"></b></td><td></td></tr>' : ''}
-        <tr><td></td><td colspan="${isCash ? 4 : 5}" class="muted" id="t-words" style="font-size:13px"></td></tr></tfoot>
+        ${!isCash ? '<tr><td></td><td></td><td></td><td style="text-align:left">الفرق</td><td colspan="2"><b id="t-diff" dir="ltr"></b></td><td></td></tr>' : ''}
+        <tr><td></td><td colspan="${isCash ? 5 : 6}" class="muted" id="t-words" style="font-size:13px"></td></tr></tfoot>
     </table></div>`,
     foot: `
       ${!readOnly ? `<button class="btn primary" data-save>💾 حفظ مسودة</button>` : ''}
@@ -335,6 +337,7 @@ async function voucherEditor(type, entry, ctx) {
     tb.innerHTML = rows.map((r, i) => `<tr>
       <td class="muted">${i + 1}</td>
       <td><input list="acc-list" data-i="${i}" data-k="acc" value="${esc(r.acc)}" placeholder="رقم أو اسم الحساب…" ${ro} class="cell"></td>
+      <td><input list="party-list" data-i="${i}" data-k="party" value="${esc(r.party || '')}" placeholder="اختياري" ${ro} class="cell"></td>
       <td><input data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro} class="cell"></td>
       ${isCash ? `<td><input data-i="${i}" data-k="amount" value="${r.amount || ''}" inputmode="decimal" dir="ltr" ${ro} class="cell n"></td>`
                : `<td><input data-i="${i}" data-k="debit" value="${r.debit || ''}" inputmode="decimal" dir="ltr" ${ro} class="cell n"></td>
@@ -366,7 +369,18 @@ async function voucherEditor(type, entry, ctx) {
     totals();
   });
   tb.addEventListener('change', (ev) => {
-    const t = ev.target; if (t.dataset.k !== 'acc') return;
+    const t = ev.target;
+    if (t.dataset.k === 'party') {
+      const p = resolveParty(parties, t.value), r = rows[+t.dataset.i];
+      t.classList.toggle('bad', !!t.value && !p);
+      if (p) {
+        t.value = partyLabel(p); r.party = t.value;
+        if (!resolveAccount(accs, r.acc)) { r.acc = accLabel(byId[p.account_id]); const ai = tb.querySelector(`[data-i="${t.dataset.i}"][data-k="acc"]`); if (ai) ai.value = r.acc; }
+        const pn = m.el.querySelector('[name=party_name]'); if (pn && !pn.value) pn.value = p.name;
+      }
+      return;
+    }
+    if (t.dataset.k !== 'acc') return;
     const a = resolveAccount(accs, t.value);
     t.classList.toggle('bad', !!t.value && !a);
     if (a) { t.value = accLabel(a); rows[+t.dataset.i].acc = t.value; }
@@ -379,7 +393,7 @@ async function voucherEditor(type, entry, ctx) {
   });
   tb.addEventListener('click', (ev) => { const b = ev.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) addLine(false); drawRows(); });
   const addLine = (redraw = true) => {
-    if (isCash) rows.push({ acc: '', desc: '', amount: 0 });
+    if (isCash) rows.push({ acc: '', party: '', desc: '', amount: 0 });
     else {   // اقتراح المبلغ اللي بيوازن القيد
       const d = rows.reduce((s, r) => s + num(r.debit), 0), c = rows.reduce((s, r) => s + num(r.credit), 0);
       rows.push({ acc: '', desc: rows.at(-1)?.desc || '', debit: c > d ? Math.round((c - d) * 1000) / 1000 : 0, credit: d > c ? Math.round((d - c) * 1000) / 1000 : 0 });
@@ -394,16 +408,19 @@ async function voucherEditor(type, entry, ctx) {
     if (h.entry_date < S.fy.start_date || h.entry_date > S.fy.end_date) return toast('التاريخ لازم يكون جوّا السنة المالية الحالية', 'err');
     const out = [];
     for (const [i, r] of rows.entries()) {
-      const empty = !r.acc && !num(r.amount) && !num(r.debit) && !num(r.credit);
+      const empty = !r.acc && !r.party && !num(r.amount) && !num(r.debit) && !num(r.credit);
       if (empty) continue;
       const a = resolveAccount(accs, r.acc);
       if (!a) return toast(`السطر ${i + 1}: اختار حساب صحيح من القائمة`, 'err');
+      const pt = resolveParty(parties, r.party);
+      if (r.party && !pt) return toast(`السطر ${i + 1}: العميل/المورد مش موجود بالقائمة`, 'err');
+      const party_id = pt?.id || null;
       if (isCash) {
         if (!num(r.amount)) return toast(`السطر ${i + 1}: المبلغ مطلوب`, 'err');
-        out.push({ account_id: a.id, description: r.desc || null, debit: type === 'payment' ? num(r.amount) : 0, credit: type === 'receipt' ? num(r.amount) : 0 });
+        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: type === 'payment' ? num(r.amount) : 0, credit: type === 'receipt' ? num(r.amount) : 0 });
       } else {
         if (!num(r.debit) && !num(r.credit)) return toast(`السطر ${i + 1}: اكتب مبلغ مدين أو دائن`, 'err');
-        out.push({ account_id: a.id, description: r.desc || null, debit: num(r.debit), credit: num(r.credit) });
+        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: num(r.debit), credit: num(r.credit) });
       }
     }
     if (isCash) {
@@ -467,7 +484,7 @@ function printVoucher(type, e, lines, byId) {
       <tr><td colspan="3"><b>البيان:</b> ${esc(e.description || '')}</td></tr></table>
     ${isCash ? `<div class="amount-box">مبلغ وقدره: <b>${fmtNum(total)}</b> دينار<br><span>${amountToWords(total)}</span></div>` : ''}
     <table class="pt"><thead><tr><th>#</th><th>رقم الحساب</th><th>اسم الحساب</th><th>البيان</th>${isCash ? '<th>المبلغ</th>' : '<th>مدين</th><th>دائن</th>'}</tr></thead><tbody>
-      ${body.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(byId[l.account_id]?.code)}</td><td>${esc(byId[l.account_id]?.name)}</td><td>${esc(l.description || '')}</td>
+      ${body.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(byId[l.account_id]?.code)}</td><td>${esc(byId[l.account_id]?.name)}${l.party_id && S.parties ? ' — ' + esc(S.parties.find(p => p.id === l.party_id)?.name || '') : ''}</td><td>${esc(l.description || '')}</td>
         ${isCash ? `<td class="n">${fmtNum(num(l.debit) + num(l.credit))}</td>` : `<td class="n">${num(l.debit) ? fmtNum(l.debit) : ''}</td><td class="n">${num(l.credit) ? fmtNum(l.credit) : ''}</td>`}</tr>`).join('')}
       </tbody><tfoot><tr><td colspan="4"><b>المجموع</b> — ${amountToWords(total)}</td>${isCash ? `<td class="n"><b>${fmtNum(total)}</b></td>` : `<td class="n"><b>${fmtNum(total)}</b></td><td class="n"><b>${fmtNum(lines.reduce((s, l) => s + num(l.credit), 0))}</b></td>`}</tr></tfoot></table>
     <div class="signs"><div>المحاسب</div><div>المدير المالي</div><div>${type === 'receipt' ? 'المستلِم' : type === 'payment' ? 'المستلِم' : 'المدقق'}</div></div>`);
@@ -478,60 +495,91 @@ function printVoucher(type, e, lines, byId) {
 // ---------------------------------------------------------------------
 async function viewOpening(v, ctx) {
   if (!needCompanyFY(v)) return;
-  const accs = await loadAccounts();
+  const [accs, parties] = await Promise.all([loadAccounts(), loadParties()]);
   if (!accs.length) return void (v.innerHTML = `<div class="notice">لازم يكون في دليل حسابات أول. <a href="#/accounts">روح لدليل الحسابات</a></div>`);
   const { data: ents, error } = await sb.from('journal_entries').select('*').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id).eq('entry_type', 'opening').order('created_at', { ascending: false });
   if (error) throw error;
   const entry = (ents || []).find(x => x.status !== 'reversed') || null;
   let lines = [];
   if (entry) { const r = await sb.from('journal_lines').select('*').eq('entry_id', entry.id); lines = r.data || []; }
-  const vals = {}; lines.forEach(l => vals[l.account_id] = { d: num(l.debit), c: num(l.credit) });
-  const leaves = accs.filter(a => !a.is_group && (a.is_active || vals[a.id])).sort((x, y) => x.code.localeCompare(y.code, 'en', { numeric: true }));
+  // أرصدة الحسابات العادية، وأرصدة العملاء والموردين لحالها
+  const vals = {}, pvals = {};
+  lines.forEach(l => { const t = l.party_id ? (pvals[l.party_id] ||= { d: 0, c: 0 }) : (vals[l.account_id] ||= { d: 0, c: 0 }); t.d += num(l.debit); t.c += num(l.credit); });
+  const partyAcc = new Set(parties.map(p => p.account_id));     // حسابات إجمالية بتتعبّى من أرصدة الأطراف
+  const leaves = accs.filter(a => !a.is_group && (a.is_active || vals[a.id] || partyAcc.has(a.id))).sort((x, y) => x.code.localeCompare(y.code, 'en', { numeric: true }));
+  const plist = parties.filter(p => p.is_active || pvals[p.id]);
   const readOnly = (entry && entry.status !== 'draft') || !(entry ? can('opening_balances', 'edit') : can('opening_balances', 'add'));
-  const T = ENTRY_TYPES.opening;
+  const dis = readOnly ? 'disabled' : '';
+  const CAT = { assets: 'موجودات', liabilities: 'مطلوبات', equity: 'حقوق ملكية', revenue: 'إيرادات', expenses: 'مصاريف' };
   v.innerHTML = `
     <div class="page-head"><h2>🧮 الأرصدة الافتتاحية</h2><span class="muted">${esc(S.fy.name || S.fy.code)} — بتاريخ ${fmtDate(S.fy.start_date)}</span>
       ${entry ? statusBadge(entry.status) : ''}<div class="spacer"></div>
-      <input class="search" id="q" placeholder="بحث بالحساب…">
+      <input class="search" id="q" placeholder="بحث…">
       <label class="check" style="margin:0"><input type="checkbox" id="only"> اللي إلها رصيد بس</label></div>
     ${entry?.status === 'posted' ? `<div class="notice info">الأرصدة الافتتاحية مرحّلة. لأي تعديل اعمل <a href="#/journal">سند قيد</a> تسوية.</div>` : ''}
-    <div class="card table-wrap"><table class="t lines" id="ob">
+    ${plist.length ? `<div class="tabs"><div class="tab active" data-tab="acc">الحسابات</div><div class="tab" data-tab="par">العملاء والموردين (${plist.length})</div></div>` : ''}
+    <div class="tab-panel active" data-tab="acc"><div class="card table-wrap"><table class="t lines" id="ob">
       <thead><tr><th style="width:120px">رقم الحساب</th><th>اسم الحساب</th><th>التصنيف</th><th style="width:160px">مدين</th><th style="width:160px">دائن</th></tr></thead>
-      <tbody>${leaves.map(a => `<tr data-row="${a.id}" data-s="${esc((a.code + ' ' + a.name).toLowerCase())}">
-        <td dir="ltr" style="text-align:right">${esc(a.code)}</td><td>${esc(a.name)}</td><td class="muted">${a.category ? { assets: 'موجودات', liabilities: 'مطلوبات', equity: 'حقوق ملكية', revenue: 'إيرادات', expenses: 'مصاريف' }[a.category] : ''}</td>
-        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="d" value="${vals[a.id]?.d || ''}" ${readOnly ? 'disabled' : ''}></td>
-        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="c" value="${vals[a.id]?.c || ''}" ${readOnly ? 'disabled' : ''}></td></tr>`).join('')}</tbody>
-      <tfoot><tr><td></td><td colspan="2" style="text-align:left"><b>المجموع</b></td><td><b id="td" dir="ltr"></b></td><td><b id="tc" dir="ltr"></b></td></tr>
-        <tr><td></td><td colspan="2" style="text-align:left">الفرق</td><td colspan="2"><b id="tf" dir="ltr"></b></td></tr></tfoot></table></div>
-    <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+      <tbody>${leaves.map(a => `<tr data-row="a:${a.id}" data-s="${esc((a.code + ' ' + a.name).toLowerCase())}">
+        <td dir="ltr" style="text-align:right">${esc(a.code)}</td><td>${esc(a.name)}${partyAcc.has(a.id) ? ' <span class="badge brand">من أرصدة العملاء/الموردين</span>' : ''}</td><td class="muted">${CAT[a.category] || ''}</td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="d" value="${vals[a.id]?.d || ''}" ${dis || (partyAcc.has(a.id) ? 'disabled' : '')}></td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="c" value="${vals[a.id]?.c || ''}" ${dis || (partyAcc.has(a.id) ? 'disabled' : '')}></td></tr>`).join('')}</tbody></table></div></div>
+    <div class="tab-panel" data-tab="par"><div class="card table-wrap"><table class="t lines" id="obp">
+      <thead><tr><th style="width:90px">الرقم</th><th>الاسم</th><th>النوع</th><th>الحساب</th><th style="width:160px">مدين</th><th style="width:160px">دائن</th></tr></thead>
+      <tbody>${plist.map(p => `<tr data-row="p:${p.id}" data-s="${esc((p.code + ' ' + p.name).toLowerCase())}">
+        <td>${esc(p.code)}</td><td>${esc(p.name)}</td><td>${p.party_type === 'customer' ? 'عميل' : 'مورد'}</td><td class="muted">${esc(accs.find(a => a.id === p.account_id)?.name || '')}</td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="d" value="${pvals[p.id]?.d || ''}" ${dis}></td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="c" value="${pvals[p.id]?.c || ''}" ${dis}></td></tr>`).join('')}</tbody></table></div>
+      <p class="muted" style="font-size:13px">رصيد العميل عادة مدين (إله علينا نحصّله)، ورصيد المورد عادة دائن.</p></div>
+    <div class="card" style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
+      <div>مجموع المدين: <b id="td" dir="ltr"></b></div><div>مجموع الدائن: <b id="tc" dir="ltr"></b></div><div>الفرق: <b id="tf" dir="ltr"></b></div>
+      <div class="spacer" style="flex:1"></div>
       ${!readOnly ? `<button class="btn primary" id="save">💾 حفظ مسودة</button>` : ''}
       ${!readOnly && can('opening_balances', 'post') ? `<button class="btn primary" id="savepost">✅ حفظ وترحيل</button>` : ''}
       ${entry && can('opening_balances', 'print') ? `<button class="btn" id="prn">🖨️ طباعة</button>` : ''}
     </div>`;
+  v.querySelectorAll('.tabs').forEach(tabs => tabs.addEventListener('click', ev => {
+    const t = ev.target.closest('.tab'); if (!t) return;
+    tabs.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+    v.querySelectorAll('.tab-panel').forEach(x => x.classList.toggle('active', x.dataset.tab === t.dataset.tab));
+  }));
+  const syncPartyAccounts = () => {     // مجموع أرصدة الأطراف على حساباتهم الإجمالية
+    const sums = {};
+    plist.forEach(p => { const x = pvals[p.id]; if (!x) return; const s2 = sums[p.account_id] ||= 0; sums[p.account_id] = s2 + (x.d || 0) - (x.c || 0); });
+    partyAcc.forEach(id => { const n = sums[id] || 0;
+      const d = v.querySelector(`[data-a="${id}"][data-k="d"]`), c = v.querySelector(`[data-a="${id}"][data-k="c"]`);
+      if (d) d.value = n > 0 ? fmtNum(n) : ''; if (c) c.value = n < 0 ? fmtNum(-n) : ''; });
+  };
   const tot = () => {
     let d = 0, c = 0;
-    Object.values(vals).forEach(x => { d += x.d || 0; c += x.c || 0; });
+    Object.entries(vals).forEach(([id, x]) => { if (!partyAcc.has(id)) { d += x.d || 0; c += x.c || 0; } });
+    Object.values(pvals).forEach(x => { d += x.d || 0; c += x.c || 0; });
     v.querySelector('#td').textContent = fmtNum(d); v.querySelector('#tc').textContent = fmtNum(c);
     const f = Math.round((d - c) * 1000) / 1000, el = v.querySelector('#tf');
     el.textContent = f ? fmtNum(Math.abs(f)) + (f > 0 ? ' (مدين أكثر)' : ' (دائن أكثر)') : '✓ متوازن'; el.style.color = f ? 'var(--bad)' : 'var(--ok)';
+    syncPartyAccounts();
   };
   tot();
-  v.querySelector('#ob tbody').addEventListener('input', (e) => {
-    const t = e.target; if (!t.dataset.a) return;
-    const x = vals[t.dataset.a] ||= { d: 0, c: 0 };
+  v.addEventListener('input', (e) => {
+    const t = e.target; if (!t.dataset.k || !(t.dataset.a || t.dataset.p)) return;
+    const store = t.dataset.a ? vals : pvals, key = t.dataset.a || t.dataset.p, attr = t.dataset.a ? 'a' : 'p';
+    const x = store[key] ||= { d: 0, c: 0 };
     x[t.dataset.k] = num(t.value);
-    if (x[t.dataset.k]) { const o = t.dataset.k === 'd' ? 'c' : 'd'; x[o] = 0; v.querySelector(`[data-a="${t.dataset.a}"][data-k="${o}"]`).value = ''; }
+    if (x[t.dataset.k]) { const o = t.dataset.k === 'd' ? 'c' : 'd'; x[o] = 0; v.querySelector(`[data-${attr}="${key}"][data-k="${o}"]`).value = ''; }
     tot();
   });
   const filter = () => {
     const q = v.querySelector('#q').value.trim().toLowerCase(), only = v.querySelector('#only').checked;
-    v.querySelectorAll('[data-row]').forEach(r => { const x = vals[r.dataset.row]; r.style.display = (!q || r.dataset.s.includes(q)) && (!only || (x && (x.d || x.c))) ? '' : 'none'; });
+    v.querySelectorAll('[data-row]').forEach(r => { const [k, id] = r.dataset.row.split(':'); const x = k === 'a' ? vals[id] : pvals[id];
+      r.style.display = (!q || r.dataset.s.includes(q)) && (!only || (x && (x.d || x.c)) || (k === 'a' && partyAcc.has(id))) ? '' : 'none'; });
   };
   v.querySelector('#q').oninput = filter; v.querySelector('#only').onchange = filter;
   const save = async (post) => {
-    const out = Object.entries(vals).filter(([, x]) => x.d || x.c).map(([id, x], k) => ({ account_id: id, debit: x.d || 0, credit: x.c || 0, line_no: k + 1, description: 'رصيد افتتاحي' }));
+    const out = [];
+    Object.entries(vals).forEach(([id, x]) => { if (!partyAcc.has(id) && (x.d || x.c)) out.push({ account_id: id, party_id: null, debit: x.d || 0, credit: x.c || 0, description: 'رصيد افتتاحي' }); });
+    plist.forEach(p => { const x = pvals[p.id]; if (x && (x.d || x.c)) out.push({ account_id: p.account_id, party_id: p.id, debit: x.d || 0, credit: x.c || 0, description: 'رصيد افتتاحي - ' + p.name }); });
     if (out.length < 2) return toast('أدخل أرصدة لحسابين على الأقل', 'err');
-    const d = out.reduce((s, l) => s + l.debit, 0), c = out.reduce((s, l) => s + l.credit, 0);
+    const d = out.reduce((s2, l) => s2 + l.debit, 0), c = out.reduce((s2, l) => s2 + l.credit, 0);
     if (post && Math.abs(d - c) > 0.0005) return toast('الأرصدة مش متوازنة، ما بتنرحّل', 'err');
     try {
       let id = entry?.id;
@@ -541,9 +589,9 @@ async function viewOpening(v, ctx) {
       } else {
         const del = await sb.from('journal_lines').delete().eq('entry_id', id); if (del.error) throw del.error;
       }
-      const li = await sb.from('journal_lines').insert(out.map(l => ({ ...l, entry_id: id }))); if (li.error) throw li.error;
+      const li = await sb.from('journal_lines').insert(out.map((l, k) => ({ ...l, entry_id: id, line_no: k + 1 }))); if (li.error) throw li.error;
       await log('حفظ', 'opening_balances', id, { lines: out.length });
-      if (post) { const p = await sb.rpc('post_entry', { p_id: id }); if (p.error) throw p.error; toast('تم الحفظ والترحيل', 'ok'); }
+      if (post) { const p2 = await sb.rpc('post_entry', { p_id: id }); if (p2.error) throw p2.error; toast('تم الحفظ والترحيل', 'ok'); }
       else toast('تم الحفظ كمسودة', 'ok');
       ctx.rerender();
     } catch (err) { toast(arError(err), 'err'); }
