@@ -1,0 +1,17 @@
+{
+  "name": "السمو ERP",
+  "short_name": "السمو ERP",
+  "description": "نظام السمو المحاسبي المتكامل",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./#/home",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#5b2a86",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

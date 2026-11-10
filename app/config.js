@@ -1,0 +1,5 @@
+// إعدادات الاتصال بقاعدة البيانات (المفتاح العام آمن للنشر — الحماية من سياسات RLS)
+export const SUPABASE_URL = 'https://zobmukdrkmzzkpcykguc.supabase.co';
+export const SUPABASE_KEY = 'sb_publishable_nyFE2-2-a2ZSCWZEqFjs8Q_QbLDXSQF';
+export const APP_NAME = 'السمو ERP';
+export const APP_VERSION = '1.0.0';

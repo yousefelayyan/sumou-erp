@@ -1,0 +1,778 @@
+// =====================================================================
+//  السمو ERP — المرحلة 1
+// =====================================================================
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import { SUPABASE_URL, SUPABASE_KEY, APP_NAME, APP_VERSION } from './config.js';
+
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const $app = document.getElementById('app');
+
+// ---------------------------------------------------------------------
+//  الحالة العامة
+// ---------------------------------------------------------------------
+const S = {
+  session: null, profile: null,
+  companies: [], memberships: [], groups: [],
+  company: null, fiscalYears: [], fy: null,
+};
+
+// الشاشات اللي إلها صلاحيات (بتزيد مع كل مرحلة)
+const SCREENS = [
+  { key: 'companies',    label: 'بيانات الشركة' },
+  { key: 'fiscal_years', label: 'السنوات المالية' },
+];
+const ACTIONS = [
+  { key: 'view', label: 'عرض' }, { key: 'add', label: 'إضافة' },
+  { key: 'edit', label: 'تعديل' }, { key: 'delete', label: 'حذف' }, { key: 'print', label: 'طباعة' },
+];
+
+const COMPANY_TYPES = ['مؤسسة فردية','شركة تضامن','شركة توصية بسيطة','شركة ذات مسؤولية محدودة','شركة مساهمة خاصة','شركة مساهمة عامة','شركة غير ربحية','جمعية','أخرى'];
+const ACTIVITY_TYPES = ['تجارية','صناعية','خدمية','مقاولات','تعليمية','زراعية','سياحية','أخرى'];
+
+// ---------------------------------------------------------------------
+//  أدوات مساعدة
+// ---------------------------------------------------------------------
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '';
+const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { hour12: false }) : '';
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type; el.textContent = msg;
+  document.getElementById('toast-root').appendChild(el);
+  setTimeout(() => el.remove(), 3800);
+}
+
+function arError(err) {
+  const m = (err && (err.message || err.error_description)) || String(err);
+  if (/Invalid login credentials/i.test(m)) return 'الإيميل أو كلمة السر غلط';
+  if (/Email not confirmed/i.test(m)) return 'لازم تأكد الإيميل أول. افتح الإيميل اللي وصلك واضغط رابط التأكيد';
+  if (/User already registered/i.test(m)) return 'هذا الإيميل مسجّل من قبل';
+  if (/Password should be at least/i.test(m)) return 'كلمة السر لازم تكون 6 أحرف أو أكثر';
+  if (/duplicate key/i.test(m)) return 'الرمز مستخدم من قبل، اختار رمز ثاني';
+  if (/row-level security|permission denied/i.test(m)) return 'ما عندك صلاحية لهالعملية';
+  if (/end_date|check constraint/i.test(m)) return 'تاريخ النهاية لازم يكون بعد تاريخ البداية';
+  if (/Failed to fetch|NetworkError/i.test(m)) return 'في مشكلة بالاتصال بالإنترنت';
+  return m;
+}
+
+function modal({ title, body, foot = '', size = '' }) {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+    <div class="modal-back">
+      <div class="modal ${size}">
+        <div class="modal-head"><h3>${esc(title)}</h3><button class="x" data-close>×</button></div>
+        <div class="modal-body">${body}</div>
+        ${foot ? `<div class="modal-foot">${foot}</div>` : ''}
+      </div>
+    </div>`;
+  const back = root.firstElementChild;
+  const close = () => { root.innerHTML = ''; };
+  back.addEventListener('click', e => { if (e.target === back || e.target.closest('[data-close]')) close(); });
+  return { el: back, close };
+}
+
+function confirmBox(text) {
+  return new Promise(resolve => {
+    const m = modal({ title: 'تأكيد', size: 'sm', body: `<p>${esc(text)}</p>`,
+      foot: `<button class="btn primary" data-yes>نعم</button><button class="btn" data-close>إلغاء</button>` });
+    m.el.querySelector('[data-yes]').onclick = () => { m.close(); resolve(true); };
+    m.el.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => resolve(false)));
+  });
+}
+
+function formData(form) {
+  const o = {};
+  form.querySelectorAll('[name]').forEach(el => {
+    if (el.type === 'checkbox') o[el.name] = el.checked;
+    else o[el.name] = el.value.trim() === '' ? null : el.value.trim();
+  });
+  return o;
+}
+
+function setupTabs(root) {
+  root.querySelectorAll('.tabs').forEach(tabs => {
+    tabs.addEventListener('click', e => {
+      const t = e.target.closest('.tab'); if (!t) return;
+      const scope = tabs.parentElement;
+      scope.querySelectorAll(':scope > .tabs .tab').forEach(x => x.classList.toggle('active', x === t));
+      scope.querySelectorAll(':scope > .tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tab === t.dataset.tab));
+    });
+  });
+}
+
+async function log(action, entity, entity_id = null, details = null) {
+  try {
+    await sb.from('activity_log').insert({ user_id: S.session.user.id, company_id: S.company?.id ?? null, action, entity, entity_id, details });
+  } catch (_) { /* السجل ما لازم يوقف الشغل */ }
+}
+
+// ---------------------------------------------------------------------
+//  الصلاحيات (للواجهة فقط — الحماية الحقيقية بقاعدة البيانات)
+// ---------------------------------------------------------------------
+const isAdmin = () => !!(S.profile?.is_admin && S.profile?.is_active);
+function can(screen, act, companyId = S.company?.id) {
+  if (isAdmin()) return true;
+  const m = S.memberships.find(x => x.company_id === companyId);
+  const g = m && S.groups.find(x => x.id === m.group_id);
+  return !!g?.permissions?.[screen]?.[act];
+}
+
+// ---------------------------------------------------------------------
+//  تحميل البيانات
+// ---------------------------------------------------------------------
+async function loadProfile() {
+  const { data, error } = await sb.from('profiles').select('*').eq('id', S.session.user.id).maybeSingle();
+  if (error) throw error;
+  S.profile = data;
+}
+
+async function loadContext() {
+  const [c, m, g] = await Promise.all([
+    sb.from('companies').select('*').order('code'),
+    sb.from('user_companies').select('*').eq('user_id', S.session.user.id),
+    sb.from('user_groups').select('*').order('name'),
+  ]);
+  if (c.error) throw c.error;
+  S.companies = c.data || [];
+  S.memberships = m.data || [];
+  S.groups = g.data || [];
+  const saved = localStorageGet('sumou.company') || S.profile.default_company_id;
+  S.company = S.companies.find(x => x.id === saved && x.is_active) || S.companies.find(x => x.is_active) || null;
+  await loadFiscalYears();
+}
+
+async function loadFiscalYears() {
+  S.fiscalYears = []; S.fy = null;
+  if (!S.company) return;
+  const { data } = await sb.from('fiscal_years').select('*').eq('company_id', S.company.id).order('start_date', { ascending: false });
+  S.fiscalYears = data || [];
+  const saved = localStorageGet('sumou.fy.' + S.company.id);
+  const today = new Date().toISOString().slice(0, 10);
+  S.fy = S.fiscalYears.find(x => x.id === saved)
+      || S.fiscalYears.find(x => x.start_date <= today && x.end_date >= today)
+      || S.fiscalYears[0] || null;
+}
+
+function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localStorageSet(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
+
+// ---------------------------------------------------------------------
+//  شاشات الدخول
+// ---------------------------------------------------------------------
+function renderAuth(mode = 'login') {
+  const titles = { login: 'تسجيل الدخول', signup: 'حساب جديد', reset: 'نسيت كلمة السر' };
+  $app.innerHTML = `
+    <div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
+      <p class="auth-sub">${titles[mode]}</p>
+      <form id="auth-form">
+        ${mode === 'signup' ? `<div class="field"><label>الاسم الكامل</label><input name="full_name" required></div>` : ''}
+        <div class="field"><label>الإيميل</label><input name="email" type="email" dir="ltr" required autocomplete="email"></div>
+        ${mode !== 'reset' ? `<div class="field"><label>كلمة السر</label><input name="password" type="password" dir="ltr" required minlength="6" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></div>` : ''}
+        <button class="btn primary block" type="submit">${mode === 'login' ? 'دخول' : mode === 'signup' ? 'إنشاء الحساب' : 'إرسال رابط تغيير كلمة السر'}</button>
+      </form>
+      <div class="auth-switch">
+        ${mode === 'login' ? `<a data-mode="signup">إنشاء حساب جديد</a> · <a data-mode="reset">نسيت كلمة السر؟</a>` : `<a data-mode="login">رجوع لتسجيل الدخول</a>`}
+      </div>
+      <p class="muted" style="text-align:center;font-size:12px;margin-top:18px">الإصدار ${APP_VERSION}</p>
+    </div></div>`;
+  $app.querySelectorAll('[data-mode]').forEach(a => a.onclick = () => renderAuth(a.dataset.mode));
+  const form = document.getElementById('auth-form');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button'); btn.disabled = true;
+    const f = formData(form);
+    try {
+      if (mode === 'login') {
+        const { error } = await sb.auth.signInWithPassword({ email: f.email, password: f.password });
+        if (error) throw error;
+      } else if (mode === 'signup') {
+        const { data, error } = await sb.auth.signUp({ email: f.email, password: f.password,
+          options: { data: { full_name: f.full_name }, emailRedirectTo: location.origin + location.pathname } });
+        if (error) throw error;
+        if (!data.session) {
+          modal({ title: 'تم إنشاء الحساب', size: 'sm',
+            body: `<p>وصلك إيميل تأكيد على <b dir="ltr">${esc(f.email)}</b>. افتح الإيميل واضغط رابط التأكيد، وبعدها سجّل دخول.</p>
+                   <p class="muted">إذا ما كنت أول مستخدم، حسابك بيحتاج موافقة مدير النظام.</p>`,
+            foot: `<button class="btn primary" data-close>تمام</button>` });
+          renderAuth('login');
+        }
+      } else {
+        const { error } = await sb.auth.resetPasswordForEmail(f.email, { redirectTo: location.origin + location.pathname });
+        if (error) throw error;
+        toast('أرسلنا رابط تغيير كلمة السر على إيميلك', 'ok');
+        renderAuth('login');
+      }
+    } catch (err) { toast(arError(err), 'err'); }
+    finally { btn.disabled = false; }
+  };
+}
+
+function renderNewPassword() {
+  $app.innerHTML = `
+    <div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
+      <p class="auth-sub">اختار كلمة سر جديدة</p>
+      <form id="pw-form">
+        <div class="field"><label>كلمة السر الجديدة</label><input name="password" type="password" dir="ltr" minlength="6" required></div>
+        <button class="btn primary block">حفظ</button>
+      </form></div></div>`;
+  document.getElementById('pw-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const { error } = await sb.auth.updateUser({ password: e.target.password.value });
+    if (error) return toast(arError(error), 'err');
+    toast('تم تغيير كلمة السر', 'ok'); history.replaceState(null, '', location.pathname + '#/home'); boot();
+  };
+}
+
+function renderPending() {
+  $app.innerHTML = `
+    <div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
+      <div class="notice">حسابك <b>بانتظار موافقة مدير النظام</b>. أول ما يفعّل حسابك ويعطيك صلاحية على شركة، بتقدر تدخل.</div>
+      <p class="muted">الإيميل: <span dir="ltr">${esc(S.session.user.email)}</span></p>
+      <button class="btn block" id="refresh">تحديث</button>
+      <div style="height:8px"></div>
+      <button class="btn danger block" id="logout">تسجيل خروج</button>
+    </div></div>`;
+  document.getElementById('refresh').onclick = boot;
+  document.getElementById('logout').onclick = () => sb.auth.signOut();
+}
+
+// ---------------------------------------------------------------------
+//  الهيكل الرئيسي
+// ---------------------------------------------------------------------
+const NAV = () => [
+  { title: 'الرئيسية', items: [{ r: 'home', i: '🏠', l: 'لوحة التحكم' }] },
+  { title: 'ملف', items: [
+    { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
+    { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
+    { r: 'companies', i: '🗂️', l: 'الشركات', show: isAdmin },
+    { r: 'users', i: '👥', l: 'المستخدمين', show: isAdmin },
+    { r: 'groups', i: '🔐', l: 'المجموعات والصلاحيات', show: isAdmin },
+    { r: 'log', i: '📜', l: 'سجل النشاط', show: isAdmin },
+  ]},
+  { title: 'قريباً', items: [
+    { soon: true, i: '📒', l: 'المالية' }, { soon: true, i: '🧾', l: 'المبيعات' },
+    { soon: true, i: '🛒', l: 'المشتريات' }, { soon: true, i: '📦', l: 'المخزون' },
+    { soon: true, i: '🏛️', l: 'الضرائب' }, { soon: true, i: '📊', l: 'التقارير' },
+  ]},
+];
+
+function renderShell() {
+  const route = currentRoute();
+  const initials = (S.profile.full_name || S.profile.email || '?').trim().charAt(0);
+  $app.innerHTML = `
+    <div class="layout">
+      <aside class="sidebar" id="sidebar">
+        <div class="side-brand"><img src="icons/icon.svg" alt=""><b>${APP_NAME}</b></div>
+        <nav class="nav">
+          ${NAV().map(g => {
+            const items = g.items.filter(it => it.soon || !it.show || it.show());
+            if (!items.length) return '';
+            return `<div class="nav-group"><div class="nav-title">${g.title}</div>
+              ${items.map(it => it.soon
+                ? `<div class="soon"><span class="ico">${it.i}</span>${it.l}<small>قريباً</small></div>`
+                : `<a href="#/${it.r}" class="${route === it.r ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
+            </div>`;
+          }).join('')}
+        </nav>
+      </aside>
+      <div class="main">
+        <header class="topbar">
+          <button class="btn sm menu-btn" id="menu-btn">☰</button>
+          <div class="pill-select"><label>الشركة</label>
+            <select id="company-select">
+              ${S.companies.filter(c => c.is_active).map(c => `<option value="${c.id}" ${c.id === S.company?.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('') || '<option>لا يوجد شركات</option>'}
+            </select></div>
+          <div class="pill-select"><label>السنة المالية</label>
+            <select id="fy-select">
+              ${S.fiscalYears.map(y => `<option value="${y.id}" ${y.id === S.fy?.id ? 'selected' : ''}>${esc(y.name || y.code)}${y.is_closed ? ' (مغلقة)' : ''}</option>`).join('') || '<option>—</option>'}
+            </select></div>
+          <div class="spacer"></div>
+          <div class="user-chip"><span>${esc(S.profile.full_name || S.profile.email)}</span><div class="avatar">${esc(initials)}</div></div>
+          <button class="btn sm" id="logout">خروج</button>
+        </header>
+        <section class="content" id="view"></section>
+      </div>
+    </div>`;
+  document.getElementById('menu-btn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('logout').onclick = async () => { await log('خروج', 'auth'); sb.auth.signOut(); };
+  document.getElementById('company-select').onchange = async (e) => {
+    S.company = S.companies.find(c => c.id === e.target.value) || null;
+    localStorageSet('sumou.company', S.company?.id);
+    await loadFiscalYears(); renderShell(); route_();
+  };
+  document.getElementById('fy-select').onchange = (e) => {
+    S.fy = S.fiscalYears.find(y => y.id === e.target.value) || null;
+    localStorageSet('sumou.fy.' + S.company.id, S.fy?.id);
+  };
+  document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => document.getElementById('sidebar').classList.remove('open')));
+}
+
+function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
+
+const ROUTES = {
+  'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
+  'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
+};
+
+async function route_() {
+  const r = currentRoute();
+  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + r));
+  const view = document.getElementById('view'); if (!view) return;
+  view.innerHTML = '<div class="empty">جاري التحميل…</div>';
+  try { await (ROUTES[r] || viewHome)(view); }
+  catch (err) { view.innerHTML = `<div class="notice">${esc(arError(err))}</div>`; }
+}
+window.addEventListener('hashchange', () => { if (S.profile?.is_active) route_(); });
+
+// ---------------------------------------------------------------------
+//  لوحة التحكم
+// ---------------------------------------------------------------------
+async function viewHome(v) {
+  if (!S.company) {
+    v.innerHTML = `<div class="page-head"><h2>أهلاً ${esc(S.profile.full_name || '')} 👋</h2></div>
+      <div class="notice info">${isAdmin()
+        ? 'ما في شركات لسا. ابدأ بإضافة أول شركة من <a href="#/companies">الشركات</a>.'
+        : 'ما عندك صلاحية على أي شركة لسا. تواصل مع مدير النظام.'}</div>`;
+    return;
+  }
+  const c = S.company;
+  v.innerHTML = `
+    <div class="page-head"><h2>${esc(c.name)}</h2><span class="badge brand">${esc(c.code)}</span></div>
+    <div class="grid cols-4">
+      <div class="card stat"><span class="k">السنة المالية الحالية</span><span class="v" style="font-size:18px">${esc(S.fy ? (S.fy.name || S.fy.code) : '—')}</span>
+        <span class="muted">${S.fy ? fmtDate(S.fy.start_date) + ' ← ' + fmtDate(S.fy.end_date) : 'ما في سنة مالية'}</span></div>
+      <div class="card stat"><span class="k">نوع الشركة</span><span class="v" style="font-size:18px">${esc(c.company_type || '—')}</span></div>
+      <div class="card stat"><span class="k">ضريبة المبيعات</span><span class="v" style="font-size:18px">${c.subject_to_sales_tax ? 'خاضعة' : 'غير خاضعة'}</span>
+        <span class="muted">${c.subject_to_sales_tax ? (c.sales_tax_period === 'monthly' ? 'إقرار شهري' : 'إقرار كل شهرين') : ''}</span></div>
+      <div class="card stat"><span class="k">عدد الشركات المتاحة</span><span class="v">${S.companies.filter(x => x.is_active).length}</span></div>
+    </div>
+    ${!S.fy && can('fiscal_years', 'add') ? `<div class="notice" style="margin-top:14px">هالشركة ما إلها سنة مالية. <a href="#/fiscal-years">أضف سنة مالية</a> قبل ما تبلّش القيود.</div>` : ''}
+    <div class="card" style="margin-top:14px">
+      <h3 style="margin-top:0">المراحل الجاية</h3>
+      <p class="muted" style="margin:0">المالية (دليل الحسابات والقيود) ← التقارير المالية ← الزبائن والموردين ← المبيعات والمشتريات ← الضرائب والفوترة الإلكترونية ← الشيكات ← المخزون ← متابعة إقرارات العملاء.</p>
+    </div>`;
+}
+
+// ---------------------------------------------------------------------
+//  نموذج الشركة (مشترك بين "بيانات الشركة" و"الشركات")
+// ---------------------------------------------------------------------
+function companyFormHTML(c = {}, readOnly = false) {
+  const ro = readOnly ? 'disabled' : '';
+  const opt = (list, val) => `<option value="">— اختار —</option>` + list.map(x => `<option ${x === val ? 'selected' : ''}>${esc(x)}</option>`).join('');
+  return `
+  <form id="company-form">
+    <div class="tabs">
+      <div class="tab active" data-tab="general">عام</div>
+      <div class="tab" data-tab="tax">الضرائب والتسجيل</div>
+      <div class="tab" data-tab="contact">العنوان والاتصال</div>
+      <div class="tab" data-tab="logo">الشعار</div>
+      <div class="tab" data-tab="notes">ملاحظات</div>
+    </div>
+    <div class="tab-panel active" data-tab="general">
+      <div class="grid cols-2">
+        <div class="field"><label>رمز الشركة *</label><input name="code" required value="${esc(c.code)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>اسم الشركة *</label><input name="name" required value="${esc(c.name)}" ${ro}></div>
+        <div class="field"><label>الاسم القانوني</label><input name="legal_name" value="${esc(c.legal_name)}" ${ro}></div>
+        <div class="field"><label>الاسم التجاري</label><input name="trade_name" value="${esc(c.trade_name)}" ${ro}></div>
+        <div class="field"><label>نوع الشركة</label><select name="company_type" ${ro}>${opt(COMPANY_TYPES, c.company_type)}</select></div>
+        <div class="field"><label>نوع النشاط</label><select name="activity_type" ${ro}>${opt(ACTIVITY_TYPES, c.activity_type)}</select></div>
+        <div class="field"><label>العملة</label><select name="currency" ${ro}>
+          ${[['JOD','دينار أردني'],['USD','دولار أمريكي'],['EUR','يورو'],['SAR','ريال سعودي'],['AED','درهم إماراتي']].map(([k,l]) => `<option value="${k}" ${(c.currency || 'JOD') === k ? 'selected' : ''}>${l}</option>`).join('')}
+        </select></div>
+      </div>
+      <label class="check"><input type="checkbox" name="is_active" ${c.is_active !== false ? 'checked' : ''} ${ro || (!isAdmin() ? 'disabled' : '')}> الشركة فعّالة</label>
+    </div>
+    <div class="tab-panel" data-tab="tax">
+      <div class="grid cols-2">
+        <div class="field"><label>الرقم الوطني للمنشأة</label><input name="national_no" value="${esc(c.national_no)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>رقم السجل التجاري</label><input name="commercial_reg_no" value="${esc(c.commercial_reg_no)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>الرقم الضريبي (ضريبة الدخل)</label><input name="income_tax_no" value="${esc(c.income_tax_no)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>رقم ضريبة المبيعات</label><input name="sales_tax_no" value="${esc(c.sales_tax_no)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>دورية إقرار ضريبة المبيعات</label><select name="sales_tax_period" ${ro}>
+          <option value="bimonthly" ${c.sales_tax_period !== 'monthly' ? 'selected' : ''}>كل شهرين</option>
+          <option value="monthly" ${c.sales_tax_period === 'monthly' ? 'selected' : ''}>شهري</option></select></div>
+        <div></div>
+        <div class="field"><label>رمز الاستيراد</label><input name="import_code" value="${esc(c.import_code)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>رمز التصدير</label><input name="export_code" value="${esc(c.export_code)}" ${ro} dir="ltr"></div>
+      </div>
+      <label class="check"><input type="checkbox" name="subject_to_sales_tax" ${c.subject_to_sales_tax ? 'checked' : ''} ${ro}> خاضعة لضريبة المبيعات</label>
+    </div>
+    <div class="tab-panel" data-tab="contact">
+      <div class="grid cols-2">
+        <div class="field"><label>المدينة</label><input name="city" value="${esc(c.city)}" ${ro}></div>
+        <div class="field"><label>العنوان</label><input name="address" value="${esc(c.address)}" ${ro}></div>
+        <div class="field"><label>الهاتف</label><input name="phone" value="${esc(c.phone)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>الموبايل</label><input name="mobile" value="${esc(c.mobile)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>الإيميل</label><input name="email" type="email" value="${esc(c.email)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>الموقع الإلكتروني</label><input name="website" value="${esc(c.website)}" ${ro} dir="ltr"></div>
+      </div>
+    </div>
+    <div class="tab-panel" data-tab="logo">
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <div class="logo-preview" id="logo-preview">${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : '<span class="muted">بدون شعار</span>'}</div>
+        <div style="flex:1;min-width:220px">
+          <div class="field"><label>رابط الشعار</label><input name="logo_url" value="${esc(c.logo_url)}" ${ro} dir="ltr" placeholder="https://..."></div>
+          ${!readOnly ? `<div class="field"><label>أو اختار صورة من جهازك (أقل من 300 كيلوبايت)</label><input type="file" id="logo-file" accept="image/*"></div>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="tab-panel" data-tab="notes">
+      <div class="field"><label>ملاحظات</label><textarea name="notes" ${ro}>${esc(c.notes)}</textarea></div>
+    </div>
+  </form>`;
+}
+
+function wireLogo(root) {
+  const file = root.querySelector('#logo-file'); if (!file) return;
+  const urlInput = root.querySelector('[name=logo_url]');
+  const preview = root.querySelector('#logo-preview');
+  const show = (src) => preview.innerHTML = src ? `<img src="${esc(src)}" alt="">` : '<span class="muted">بدون شعار</span>';
+  urlInput.addEventListener('input', () => show(urlInput.value));
+  file.onchange = () => {
+    const f = file.files[0]; if (!f) return;
+    if (f.size > 300 * 1024) { toast('الصورة كبيرة، اختار صورة أقل من 300 كيلوبايت', 'err'); file.value = ''; return; }
+    const rd = new FileReader();
+    rd.onload = () => { urlInput.value = rd.result; show(rd.result); };
+    rd.readAsDataURL(f);
+  };
+}
+
+async function saveCompany(form, id) {
+  const d = formData(form);
+  if (!d.code || !d.name) { toast('رمز الشركة واسمها مطلوبين', 'err'); return null; }
+  if (!isAdmin()) delete d.is_active;
+  let res;
+  if (id) res = await sb.from('companies').update(d).eq('id', id).select().single();
+  else res = await sb.from('companies').insert({ ...d, created_by: S.session.user.id }).select().single();
+  if (res.error) { toast(arError(res.error), 'err'); return null; }
+  await log(id ? 'تعديل' : 'إضافة', 'companies', res.data.id, { code: d.code, name: d.name });
+  toast('تم الحفظ', 'ok');
+  return res.data;
+}
+
+// ---------------------------------------------------------------------
+//  بيانات الشركة الحالية
+// ---------------------------------------------------------------------
+async function viewCompany(v) {
+  if (!S.company) return viewHome(v);
+  const editable = can('companies', 'edit');
+  v.innerHTML = `
+    <div class="page-head"><h2>بيانات الشركة</h2><div class="spacer"></div>
+      ${can('companies', 'print') ? `<button class="btn no-print" id="print">🖨️ طباعة</button>` : ''}
+      ${editable ? `<button class="btn primary no-print" id="save">💾 حفظ</button>` : ''}</div>
+    <div class="card">${companyFormHTML(S.company, !editable)}</div>`;
+  setupTabs(v); wireLogo(v);
+  v.querySelector('#print')?.addEventListener('click', () => { v.querySelectorAll('.tab-panel').forEach(p => p.classList.add('active')); window.print(); v.querySelectorAll('.tab-panel:not([data-tab=general])').forEach(p => p.classList.remove('active')); });
+  v.querySelector('#save')?.addEventListener('click', async () => {
+    const saved = await saveCompany(v.querySelector('#company-form'), S.company.id);
+    if (saved) { Object.assign(S.company, saved); const i = S.companies.findIndex(c => c.id === saved.id); if (i > -1) S.companies[i] = saved; renderShell(); route_(); }
+  });
+}
+
+// ---------------------------------------------------------------------
+//  الشركات (للمدير)
+// ---------------------------------------------------------------------
+async function viewCompanies(v) {
+  if (!isAdmin()) return viewHome(v);
+  const { data, error } = await sb.from('companies').select('*').order('code');
+  if (error) throw error;
+  v.innerHTML = `
+    <div class="page-head"><h2>الشركات</h2><span class="badge brand">${data.length}</span><div class="spacer"></div>
+      <input class="search" id="q" placeholder="بحث بالاسم أو الرمز أو الرقم الضريبي…">
+      <button class="btn primary" id="add">➕ شركة جديدة</button></div>
+    <div class="card table-wrap"><table class="t">
+      <thead><tr><th>الرمز</th><th>اسم الشركة</th><th>النوع</th><th>الرقم الضريبي</th><th>ضريبة المبيعات</th><th>الحالة</th><th></th></tr></thead>
+      <tbody id="rows"></tbody></table></div>`;
+  const draw = (q = '') => {
+    const rows = data.filter(c => !q || [c.code, c.name, c.legal_name, c.income_tax_no, c.sales_tax_no].some(x => (x || '').toLowerCase().includes(q.toLowerCase())));
+    v.querySelector('#rows').innerHTML = rows.map(c => `
+      <tr><td dir="ltr" style="text-align:right">${esc(c.code)}</td><td><b>${esc(c.name)}</b><div class="muted" style="font-size:12px">${esc(c.legal_name || '')}</div></td>
+      <td>${esc(c.company_type || '')}</td><td dir="ltr" style="text-align:right">${esc(c.income_tax_no || '')}</td>
+      <td>${c.subject_to_sales_tax ? '<span class="badge brand">خاضعة</span>' : '<span class="muted">—</span>'}</td>
+      <td>${c.is_active ? '<span class="badge ok">فعّالة</span>' : '<span class="badge bad">موقوفة</span>'}</td>
+      <td class="actions"><button class="btn sm" data-edit="${c.id}">تعديل</button> <button class="btn sm danger" data-del="${c.id}">حذف</button></td></tr>`).join('')
+      || `<tr><td colspan="7" class="empty">ما في شركات</td></tr>`;
+  };
+  draw();
+  v.querySelector('#q').oninput = (e) => draw(e.target.value);
+  const open = (c) => {
+    const m = modal({ title: c ? 'تعديل شركة: ' + c.name : 'شركة جديدة', body: companyFormHTML(c || {}),
+      foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+    setupTabs(m.el); wireLogo(m.el);
+    m.el.querySelector('[data-save]').onclick = async () => {
+      const saved = await saveCompany(m.el.querySelector('#company-form'), c?.id);
+      if (saved) { m.close(); await loadContext(); if (!S.company) S.company = saved; renderShell(); route_(); }
+    };
+  };
+  v.querySelector('#add').onclick = () => open(null);
+  v.querySelector('#rows').onclick = async (e) => {
+    const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
+    if (ed) open(data.find(x => x.id === ed.dataset.edit));
+    if (dl) {
+      const c = data.find(x => x.id === dl.dataset.del);
+      if (!(await confirmBox(`متأكد بدك تحذف «${c.name}»؟ كل بياناتها رح تنحذف ومش رح ترجع. الأفضل توقفها بدل الحذف.`))) return;
+      const { error } = await sb.from('companies').delete().eq('id', c.id);
+      if (error) return toast(arError(error), 'err');
+      await log('حذف', 'companies', c.id, { code: c.code, name: c.name });
+      toast('تم الحذف', 'ok'); await loadContext(); renderShell(); route_();
+    }
+  };
+}
+
+// ---------------------------------------------------------------------
+//  السنوات المالية
+// ---------------------------------------------------------------------
+async function viewFiscalYears(v) {
+  if (!S.company) return viewHome(v);
+  await loadFiscalYears();
+  const rows = S.fiscalYears;
+  v.innerHTML = `
+    <div class="page-head"><h2>السنوات المالية</h2><span class="muted">${esc(S.company.name)}</span><div class="spacer"></div>
+      ${can('fiscal_years', 'add') ? `<button class="btn primary" id="add">➕ سنة مالية جديدة</button>` : ''}</div>
+    <div class="card table-wrap"><table class="t">
+      <thead><tr><th>الرمز</th><th>الاسم</th><th>من</th><th>إلى</th><th>الحالة</th><th></th></tr></thead>
+      <tbody>${rows.map(y => `
+        <tr><td>${esc(y.code)}</td><td>${esc(y.name || '')}</td><td>${fmtDate(y.start_date)}</td><td>${fmtDate(y.end_date)}</td>
+        <td>${y.is_closed ? '<span class="badge bad">مغلقة</span>' : '<span class="badge ok">مفتوحة</span>'}</td>
+        <td class="actions">
+          ${can('fiscal_years', 'edit') && (!y.is_closed || isAdmin()) ? `<button class="btn sm" data-edit="${y.id}">تعديل</button>` : ''}
+          ${can('fiscal_years', 'delete') && !y.is_closed ? `<button class="btn sm danger" data-del="${y.id}">حذف</button>` : ''}
+        </td></tr>`).join('') || `<tr><td colspan="6" class="empty">ما في سنوات مالية لهالشركة</td></tr>`}</tbody></table></div>
+    <p class="muted" style="font-size:13px">إغلاق السنة بيمنع أي تعديل عليها. بس مدير النظام بيقدر يفتحها من جديد.</p>`;
+  const open = (y) => {
+    const yr = new Date().getFullYear();
+    y = y || { code: String(yr), name: 'السنة المالية ' + yr, start_date: yr + '-01-01', end_date: yr + '-12-31' };
+    const m = modal({ title: y.id ? 'تعديل سنة مالية' : 'سنة مالية جديدة', size: 'sm', body: `
+      <form id="fy-form">
+        <div class="field"><label>الرمز *</label><input name="code" required value="${esc(y.code)}"></div>
+        <div class="field"><label>الاسم</label><input name="name" value="${esc(y.name)}"></div>
+        <div class="grid cols-2">
+          <div class="field"><label>من *</label><input type="date" name="start_date" required value="${esc(y.start_date)}"></div>
+          <div class="field"><label>إلى *</label><input type="date" name="end_date" required value="${esc(y.end_date)}"></div>
+        </div>
+        ${y.id ? `<label class="check"><input type="checkbox" name="is_closed" ${y.is_closed ? 'checked' : ''} ${y.is_closed && !isAdmin() ? 'disabled' : ''}> السنة مغلقة</label>` : ''}
+      </form>`, foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+    m.el.querySelector('[data-save]').onclick = async () => {
+      const d = formData(m.el.querySelector('#fy-form'));
+      if (!d.code || !d.start_date || !d.end_date) return toast('عبّي الحقول المطلوبة', 'err');
+      if (d.end_date <= d.start_date) return toast('تاريخ النهاية لازم يكون بعد تاريخ البداية', 'err');
+      const overlap = S.fiscalYears.find(o => o.id !== y.id && d.start_date <= o.end_date && d.end_date >= o.start_date);
+      if (overlap && !(await confirmBox(`هالفترة متداخلة مع «${overlap.name || overlap.code}». بدك تكمّل؟`))) return;
+      const res = y.id ? await sb.from('fiscal_years').update(d).eq('id', y.id)
+                       : await sb.from('fiscal_years').insert({ ...d, company_id: S.company.id });
+      if (res.error) return toast(arError(res.error), 'err');
+      await log(y.id ? 'تعديل' : 'إضافة', 'fiscal_years', y.id || d.code, d);
+      toast('تم الحفظ', 'ok'); m.close(); await loadFiscalYears(); renderShell(); route_();
+    };
+  };
+  v.querySelector('#add')?.addEventListener('click', () => open(null));
+  v.querySelector('tbody').onclick = async (e) => {
+    const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
+    if (ed) open(rows.find(x => x.id === ed.dataset.edit));
+    if (dl) {
+      const y = rows.find(x => x.id === dl.dataset.del);
+      if (!(await confirmBox(`حذف السنة المالية «${y.name || y.code}»؟`))) return;
+      const { error } = await sb.from('fiscal_years').delete().eq('id', y.id);
+      if (error) return toast(arError(error), 'err');
+      await log('حذف', 'fiscal_years', y.id, { code: y.code });
+      toast('تم الحذف', 'ok'); await loadFiscalYears(); renderShell(); route_();
+    }
+  };
+}
+
+// ---------------------------------------------------------------------
+//  المستخدمين (للمدير)
+// ---------------------------------------------------------------------
+async function viewUsers(v) {
+  if (!isAdmin()) return viewHome(v);
+  const [p, uc, c] = await Promise.all([
+    sb.from('profiles').select('*').order('created_at'),
+    sb.from('user_companies').select('*'),
+    sb.from('companies').select('id,code,name').order('code'),
+  ]);
+  if (p.error) throw p.error;
+  const users = p.data, links = uc.data || [], comps = c.data || [];
+  const pending = users.filter(u => !u.is_active).length;
+  v.innerHTML = `
+    <div class="page-head"><h2>المستخدمين</h2><span class="badge brand">${users.length}</span>
+      ${pending ? `<span class="badge warn">${pending} بانتظار الموافقة</span>` : ''}<div class="spacer"></div></div>
+    <div class="notice info">لإضافة موظف: خلّيه يفتح النظام ويضغط <b>«إنشاء حساب جديد»</b>. حسابه بيظهر هون بانتظار موافقتك، وبعدها بتفعّله وبتعطيه الشركات والمجموعة.</div>
+    <div class="card table-wrap"><table class="t">
+      <thead><tr><th>الاسم</th><th>الإيميل</th><th>النوع</th><th>الشركات</th><th>الحالة</th><th></th></tr></thead>
+      <tbody>${users.map(u => {
+        const mine = links.filter(l => l.user_id === u.id);
+        return `<tr><td><b>${esc(u.full_name || '')}</b></td><td dir="ltr" style="text-align:right">${esc(u.email)}</td>
+          <td>${u.is_admin ? '<span class="badge brand">مدير النظام</span>' : 'موظف'}</td>
+          <td>${u.is_admin ? '<span class="muted">كل الشركات</span>' : (mine.length ? mine.length + ' شركة' : '<span class="muted">—</span>')}</td>
+          <td>${u.is_active ? '<span class="badge ok">مفعّل</span>' : '<span class="badge warn">بانتظار الموافقة</span>'}</td>
+          <td class="actions"><button class="btn sm" data-edit="${u.id}">إدارة</button></td></tr>`;
+      }).join('')}</tbody></table></div>`;
+  v.querySelector('tbody').onclick = (e) => {
+    const b = e.target.closest('[data-edit]'); if (!b) return;
+    const u = users.find(x => x.id === b.dataset.edit);
+    const self = u.id === S.session.user.id;
+    const mine = Object.fromEntries(links.filter(l => l.user_id === u.id).map(l => [l.company_id, l.group_id]));
+    const gOpts = (sel) => `<option value="">— بدون مجموعة —</option>` + S.groups.map(g => `<option value="${g.id}" ${g.id === sel ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
+    const m = modal({ title: 'إدارة المستخدم: ' + (u.full_name || u.email), body: `
+      <form id="u-form">
+        <div class="grid cols-2">
+          <div class="field"><label>الاسم الكامل</label><input name="full_name" value="${esc(u.full_name)}"></div>
+          <div class="field"><label>الهاتف</label><input name="phone" value="${esc(u.phone)}" dir="ltr"></div>
+        </div>
+        <label class="check"><input type="checkbox" name="is_active" ${u.is_active ? 'checked' : ''} ${self ? 'disabled' : ''}> الحساب مفعّل</label>
+        <label class="check"><input type="checkbox" name="is_admin" ${u.is_admin ? 'checked' : ''} ${self ? 'disabled' : ''}> مدير النظام (صلاحيات كاملة على كل الشركات)</label>
+      </form>
+      <h4 style="margin:18px 0 8px">الشركات المسموحة والمجموعة بكل شركة</h4>
+      <div class="table-wrap"><table class="t" id="uc-table">
+        <thead><tr><th style="width:40px"></th><th>الشركة</th><th>المجموعة</th></tr></thead>
+        <tbody>${comps.map(c => `<tr>
+          <td><input type="checkbox" data-c="${c.id}" ${c.id in mine ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--brand)"></td>
+          <td>${esc(c.name)} <span class="muted">(${esc(c.code)})</span></td>
+          <td><select data-g="${c.id}" class="search" style="min-width:160px">${gOpts(mine[c.id])}</select></td></tr>`).join('')
+          || '<tr><td colspan="3" class="empty">ما في شركات</td></tr>'}</tbody></table></div>`,
+      foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>
+             ${!self ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف المستخدم</button>` : ''}` });
+    m.el.querySelector('[data-save]').onclick = async () => {
+      const d = formData(m.el.querySelector('#u-form'));
+      if (self) { delete d.is_active; delete d.is_admin; }
+      const up = await sb.from('profiles').update(d).eq('id', u.id);
+      if (up.error) return toast(arError(up.error), 'err');
+      const wanted = [...m.el.querySelectorAll('[data-c]')].filter(x => x.checked)
+        .map(x => ({ user_id: u.id, company_id: x.dataset.c, group_id: m.el.querySelector(`[data-g="${x.dataset.c}"]`).value || null }));
+      const del = await sb.from('user_companies').delete().eq('user_id', u.id);
+      if (del.error) return toast(arError(del.error), 'err');
+      if (wanted.length) { const ins = await sb.from('user_companies').insert(wanted); if (ins.error) return toast(arError(ins.error), 'err'); }
+      await log('تعديل', 'users', u.id, { email: u.email, active: d.is_active, admin: d.is_admin, companies: wanted.length });
+      toast('تم الحفظ', 'ok'); m.close(); route_();
+    };
+    m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
+      if (!(await confirmBox(`حذف المستخدم ${u.email} من النظام؟ (الأفضل توقف الحساب بدل الحذف)`))) return;
+      const { error } = await sb.from('profiles').delete().eq('id', u.id);
+      if (error) return toast(arError(error), 'err');
+      await log('حذف', 'users', u.id, { email: u.email });
+      toast('تم الحذف', 'ok'); m.close(); route_();
+    });
+  };
+}
+
+// ---------------------------------------------------------------------
+//  المجموعات والصلاحيات (للمدير)
+// ---------------------------------------------------------------------
+async function viewGroups(v) {
+  if (!isAdmin()) return viewHome(v);
+  const { data, error } = await sb.from('user_groups').select('*').order('name');
+  if (error) throw error;
+  S.groups = data;
+  v.innerHTML = `
+    <div class="page-head"><h2>المجموعات والصلاحيات</h2><div class="spacer"></div><button class="btn primary" id="add">➕ مجموعة جديدة</button></div>
+    <p class="muted">الصلاحيات بتنعطى للمجموعة، وكل موظف بياخذ صلاحيات مجموعته بكل شركة. مدير النظام إله كل الصلاحيات دائماً.</p>
+    <div class="grid cols-3">${data.map(g => {
+      const n = Object.values(g.permissions || {}).reduce((a, s) => a + Object.values(s).filter(Boolean).length, 0);
+      return `<div class="card"><h3 style="margin:0 0 6px">${esc(g.name)}</h3><p class="muted" style="margin:0 0 12px;min-height:20px">${esc(g.description || '')}</p>
+        <span class="badge brand">${n} صلاحية</span>
+        <div style="margin-top:12px;display:flex;gap:6px"><button class="btn sm" data-edit="${g.id}">تعديل</button><button class="btn sm danger" data-del="${g.id}">حذف</button></div></div>`;
+    }).join('') || '<div class="empty">ما في مجموعات</div>'}</div>`;
+  const open = (g) => {
+    g = g || { name: '', description: '', permissions: {} };
+    const m = modal({ title: g.id ? 'تعديل مجموعة' : 'مجموعة جديدة', body: `
+      <form id="g-form"><div class="grid cols-2">
+        <div class="field"><label>اسم المجموعة *</label><input name="name" required value="${esc(g.name)}"></div>
+        <div class="field"><label>الوصف</label><input name="description" value="${esc(g.description)}"></div></div></form>
+      <div class="table-wrap"><table class="t perm-table">
+        <thead><tr><th>الشاشة</th>${ACTIONS.map(a => `<th>${a.label}</th>`).join('')}<th>الكل</th></tr></thead>
+        <tbody>${SCREENS.map(s => `<tr><td>${s.label}</td>
+          ${ACTIONS.map(a => `<td><input type="checkbox" data-s="${s.key}" data-a="${a.key}" ${g.permissions?.[s.key]?.[a.key] ? 'checked' : ''}></td>`).join('')}
+          <td><input type="checkbox" data-all="${s.key}"></td></tr>`).join('')}</tbody></table></div>
+      <p class="muted" style="font-size:13px">رح تنضاف شاشات جديدة هون مع كل مرحلة (المالية، المبيعات، ...).</p>`,
+      foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+    m.el.querySelectorAll('[data-all]').forEach(cb => cb.onchange = () =>
+      m.el.querySelectorAll(`[data-s="${cb.dataset.all}"]`).forEach(x => x.checked = cb.checked));
+    m.el.querySelector('[data-save]').onclick = async () => {
+      const d = formData(m.el.querySelector('#g-form'));
+      if (!d.name) return toast('اسم المجموعة مطلوب', 'err');
+      const perms = {};
+      m.el.querySelectorAll('[data-s]').forEach(x => { if (x.checked) (perms[x.dataset.s] ||= {})[x.dataset.a] = true; });
+      const row = { name: d.name, description: d.description, permissions: perms };
+      const res = g.id ? await sb.from('user_groups').update(row).eq('id', g.id) : await sb.from('user_groups').insert(row);
+      if (res.error) return toast(arError(res.error), 'err');
+      await log(g.id ? 'تعديل' : 'إضافة', 'groups', g.id || d.name, row);
+      toast('تم الحفظ', 'ok'); m.close(); route_();
+    };
+  };
+  v.querySelector('#add').onclick = () => open(null);
+  v.querySelector('.grid').onclick = async (e) => {
+    const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
+    if (ed) open(data.find(x => x.id === ed.dataset.edit));
+    if (dl) {
+      const g = data.find(x => x.id === dl.dataset.del);
+      if (!(await confirmBox(`حذف مجموعة «${g.name}»؟ الموظفين اللي فيها رح يصيروا بدون صلاحيات.`))) return;
+      const { error } = await sb.from('user_groups').delete().eq('id', g.id);
+      if (error) return toast(arError(error), 'err');
+      await log('حذف', 'groups', g.id, { name: g.name });
+      toast('تم الحذف', 'ok'); route_();
+    }
+  };
+}
+
+// ---------------------------------------------------------------------
+//  سجل النشاط (للمدير)
+// ---------------------------------------------------------------------
+async function viewLog(v) {
+  if (!isAdmin()) return viewHome(v);
+  const [l, p, c] = await Promise.all([
+    sb.from('activity_log').select('*').order('created_at', { ascending: false }).limit(300),
+    sb.from('profiles').select('id,full_name,email'),
+    sb.from('companies').select('id,name'),
+  ]);
+  if (l.error) throw l.error;
+  const uName = Object.fromEntries((p.data || []).map(x => [x.id, x.full_name || x.email]));
+  const cName = Object.fromEntries((c.data || []).map(x => [x.id, x.name]));
+  const ent = { companies: 'الشركات', fiscal_years: 'السنوات المالية', users: 'المستخدمين', groups: 'المجموعات', auth: 'الدخول' };
+  v.innerHTML = `
+    <div class="page-head"><h2>سجل النشاط</h2><span class="muted">آخر 300 عملية</span></div>
+    <div class="card table-wrap"><table class="t">
+      <thead><tr><th>الوقت</th><th>المستخدم</th><th>العملية</th><th>الشاشة</th><th>الشركة</th><th>التفاصيل</th></tr></thead>
+      <tbody>${l.data.map(r => `<tr><td dir="ltr" style="text-align:right">${fmtDateTime(r.created_at)}</td><td>${esc(uName[r.user_id] || '')}</td>
+        <td>${esc(r.action)}</td><td>${esc(ent[r.entity] || r.entity || '')}</td><td>${esc(cName[r.company_id] || '')}</td>
+        <td class="muted" style="font-size:12px">${esc(r.details ? (r.details.name || r.details.code || r.details.email || '') : '')}</td></tr>`).join('')
+        || '<tr><td colspan="6" class="empty">ما في نشاط لسا</td></tr>'}</tbody></table></div>`;
+}
+
+// ---------------------------------------------------------------------
+//  التشغيل
+// ---------------------------------------------------------------------
+let booting = false;
+async function boot() {
+  if (booting) return; booting = true;
+  try {
+    const { data } = await sb.auth.getSession();
+    S.session = data.session;
+    if (!S.session) return renderAuth('login');
+    await loadProfile();
+    if (!S.profile) { // الملف الشخصي لسا ما انعمل (احتياط)
+      $app.innerHTML = `<div class="auth-wrap"><div class="auth-card"><div class="notice">ما لقينا ملفك الشخصي. تأكد إن ملف قاعدة البيانات (SQL) انشغّل كامل، وبعدين اعمل تحديث للصفحة.</div>
+        <button class="btn danger block" onclick="window.__logout()">تسجيل خروج</button></div></div>`;
+      return;
+    }
+    if (!S.profile.is_active) return renderPending();
+    await loadContext();
+    renderShell(); route_();
+  } catch (err) {
+    $app.innerHTML = `<div class="auth-wrap"><div class="auth-card"><div class="notice">${esc(arError(err))}</div>
+      <button class="btn block" onclick="location.reload()">إعادة المحاولة</button></div></div>`;
+  } finally { booting = false; }
+}
+window.__logout = () => sb.auth.signOut();
+
+sb.auth.onAuthStateChange((event, session) => {
+  if (event === 'PASSWORD_RECOVERY') { S.session = session; return renderNewPassword(); }
+  if (event === 'SIGNED_IN' && !S.profile) { setTimeout(async () => { await boot(); if (S.profile?.is_active) log('دخول', 'auth'); }, 0); }
+  if (event === 'SIGNED_OUT') { Object.assign(S, { session: null, profile: null, companies: [], company: null }); renderAuth('login'); }
+});
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+boot();
