@@ -6,6 +6,7 @@ import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, S, SCREENS, arError, can, confi
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
+import { INVOICE_ROUTES } from './invoices.js';
 
 const $app = document.getElementById('app');
 // ---------------------------------------------------------------------
@@ -99,6 +100,7 @@ const NAV = () => [
   { title: 'ملف', items: [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
+    { r: 'settings', i: '🔗', l: 'حسابات الربط والضريبة', show: () => S.company && can('companies', 'edit') },
     { r: 'companies', i: '🗂️', l: 'الشركات', show: isAdmin },
     { r: 'users', i: '👥', l: 'المستخدمين', show: isAdmin },
     { r: 'groups', i: '🔐', l: 'المجموعات والصلاحيات', show: isAdmin },
@@ -110,6 +112,11 @@ const NAV = () => [
     { r: 'journal', i: '📒', l: 'سندات القيد', show: () => S.company && can('journal_entries', 'view') },
     { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
     { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
+  ]},
+  { title: 'المبيعات والمشتريات', items: [
+    { r: 'sales', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
+    { r: 'purchases', i: '🛒', l: 'فواتير المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
+    { r: 'items', i: '🏷️', l: 'الأصناف والخدمات', show: () => S.company && can('items', 'view') },
   ]},
   { title: 'العملاء والموردين', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
@@ -123,10 +130,11 @@ const NAV = () => [
     { r: 'rep-balance', i: '🏦', l: 'الميزانية العمومية', show: () => S.company && can('reports', 'view') },
     { r: 'rep-party', i: '👤', l: 'كشف حساب عميل/مورد', show: () => S.company && can('reports', 'view') },
     { r: 'rep-aging', i: '⏳', l: 'أعمار الذمم', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-salestax', i: '🏛️', l: 'إقرار ضريبة المبيعات', show: () => S.company && can('reports', 'view') },
   ]},
   { title: 'قريباً', items: [
-    { soon: true, i: '🧾', l: 'المبيعات' }, { soon: true, i: '🛒', l: 'المشتريات' },
-    { soon: true, i: '📦', l: 'المخزون' }, { soon: true, i: '🏛️', l: 'الضرائب' },
+    { soon: true, i: '📦', l: 'المخزون والجرد' }, { soon: true, i: '💳', l: 'محفظة الشيكات' },
+    { soon: true, i: '🔔', l: 'متابعة إقرارات العملاء' }, { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
   ]},
 ];
 
@@ -195,7 +203,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

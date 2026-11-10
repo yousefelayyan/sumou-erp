@@ -13,6 +13,7 @@ export const ENTRY_TYPES = {
   receipt: { label: 'سند قبض', plural: 'سندات القبض', screen: 'receipt_vouchers', route: 'receipts', icon: '📥' },
   payment: { label: 'سند صرف', plural: 'سندات الصرف', screen: 'payment_vouchers', route: 'payments', icon: '📤' },
   opening: { label: 'قيد افتتاحي', plural: 'الأرصدة الافتتاحية', screen: 'opening_balances', route: 'opening', icon: '🧮' },
+  invoice: { label: 'قيد فاتورة', plural: 'قيود الفواتير', screen: 'journal_entries', route: 'sales', icon: '🧾' },
 };
 const STATUS = { draft: ['مسودة', 'warn'], posted: ['مرحّل', 'ok'], reversed: ['معكوس', 'bad'] };
 const statusBadge = (s) => `<span class="badge ${STATUS[s][1]}">${STATUS[s][0]}</span>`;

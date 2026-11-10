@@ -163,3 +163,6 @@ table.t{width:100%;border-collapse:collapse}
 .t.statement tr.net.pos td{background:var(--ok-soft);color:var(--ok)}
 .t.statement tr.net.neg td{background:var(--bad-soft);color:var(--bad)}
 .t.statement td:nth-child(2),.t.statement td:nth-child(3){width:170px}
+.inv-totals{display:flex;flex-direction:column;gap:6px;margin:12px 0 0 auto;max-width:380px;margin-inline-start:auto;background:#faf7fd;border-radius:10px;padding:12px 14px}
+.inv-totals div{display:flex;justify-content:space-between;gap:10px}
+.inv-totals .big{font-size:18px;color:var(--brand);border-top:1px solid var(--line);padding-top:6px}
