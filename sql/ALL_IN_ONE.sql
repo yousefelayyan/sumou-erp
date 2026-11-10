@@ -203,6 +203,17 @@ create trigger protect_profile_fields
 create or replace function public.touch_updated_at() returns trigger
 language plpgsql as $$ begin new.updated_at := now(); return new; end $$;
 
+-- الموظف (غير المدير) ما بيقدر يغيّر رمز الشركة أو يوقفها
+create or replace function public.protect_company_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then new.code := old.code; new.is_active := old.is_active; new.created_by := old.created_by; end if;
+  return new;
+end $$;
+drop trigger if exists protect_company_fields on public.companies;
+create trigger protect_company_fields before update on public.companies
+  for each row execute function public.protect_company_fields();
+
 drop trigger if exists companies_touch on public.companies;
 create trigger companies_touch before update on public.companies
   for each row execute function public.touch_updated_at();
@@ -211,8 +222,16 @@ create trigger companies_touch before update on public.companies
 create or replace function public.guard_closed_year() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if old.is_closed and new.is_closed and not public.is_admin() then
-    raise exception 'السنة المالية مغلقة ولا يمكن تعديلها';
+  if old.is_closed and not public.is_admin() then
+    raise exception 'السنة المالية مغلقة، بس مدير النظام بيقدر يعدّلها أو يفتحها';
+  end if;
+  new.company_id := old.company_id;
+  if (new.start_date <> old.start_date or new.end_date <> old.end_date)
+     and to_regclass('public.journal_entries') is not null then
+    if exists (select 1 from public.journal_entries e where e.fiscal_year_id = old.id
+               and (e.entry_date < new.start_date or e.entry_date > new.end_date)) then
+      raise exception 'في قيود رح تصير برّا السنة المالية إذا غيّرت التواريخ';
+    end if;
   end if;
   return new;
 end $$;
@@ -289,7 +308,7 @@ create policy fy_delete on public.fiscal_years for delete to authenticated
 -- activity_log
 drop policy if exists log_insert on public.activity_log;
 create policy log_insert on public.activity_log for insert to authenticated
-  with check (user_id = auth.uid() and public.is_active_user());
+  with check (user_id = auth.uid() and public.is_active_user() and (company_id is null or public.has_company(company_id)));
 drop policy if exists log_select on public.activity_log;
 create policy log_select on public.activity_log for select to authenticated
   using (public.is_admin());
@@ -450,7 +469,12 @@ begin
     select * into p from public.accounts where id = new.parent_id;
     if p.id is null or p.company_id <> new.company_id then raise exception 'الحساب الرئيسي غير موجود بنفس الشركة'; end if;
     if not p.is_group then raise exception 'ما بتقدر تضيف حساب تحت حساب فرعي. خلّي الحساب الأب «رئيسي» أول'; end if;
-    if tg_op = 'UPDATE' and new.parent_id = new.id then raise exception 'الحساب ما بيقدر يكون أب لحاله'; end if;
+    if tg_op = 'UPDATE' and exists (
+         with recursive up as (select id, parent_id from public.accounts where id = new.parent_id
+                               union all select a.id, a.parent_id from public.accounts a join up on a.id = up.parent_id)
+         select 1 from up where id = new.id) then
+      raise exception 'ما بيصير الحساب يكون تحت واحد من فروعه';
+    end if;
     new.level := p.level + 1;
     new.category := p.category;     -- الحساب بيرث تصنيف أبوه
   else
@@ -472,6 +496,19 @@ drop trigger if exists accounts_before on public.accounts;
 create trigger accounts_before before insert or update on public.accounts
   for each row execute function public.accounts_before();
 
+-- تغيير تصنيف حساب رئيسي بينزل على كل فروعه
+create or replace function public.accounts_after() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.category is distinct from old.category then
+    update public.accounts set category = new.category where parent_id = new.id and category is distinct from new.category;
+  end if;
+  return null;
+end $$;
+drop trigger if exists accounts_after on public.accounts;
+create trigger accounts_after after update on public.accounts
+  for each row execute function public.accounts_after();
+
 -- =====================================================================
 --  حماية القيود
 -- =====================================================================
@@ -484,16 +521,26 @@ begin
     return old;
   end if;
 
-  if tg_op = 'UPDATE' and old.status <> 'draft' and not public.is_internal() then
-    raise exception 'القيد مرحّل، ما بينعدّل. اعمل قيد عكسي';
-  end if;
-  if tg_op = 'INSERT' and new.status <> 'draft' and not public.is_internal() then
-    raise exception 'القيد الجديد لازم ينحفظ كمسودة، والترحيل من زر «ترحيل»';
+  if not public.is_internal() then
+    if tg_op = 'UPDATE' and old.status <> 'draft' then
+      raise exception 'القيد مرحّل، ما بينعدّل. اعمل قيد عكسي';
+    end if;
+    if new.status <> 'draft' then
+      raise exception 'الترحيل بس من زر «ترحيل» (بيتأكد إن القيد متوازن)';
+    end if;
+    -- حقول بتتعبّى من النظام بس
+    if tg_op = 'UPDATE' then
+      new.total := old.total; new.reversal_of := old.reversal_of; new.reversed_by := old.reversed_by;
+      new.posted_by := old.posted_by; new.posted_at := old.posted_at; new.entry_type := old.entry_type;
+    else
+      new.total := 0; new.reversal_of := null; new.reversed_by := null; new.posted_by := null; new.posted_at := null;
+      if new.entry_type = 'invoice' then raise exception 'قيود الفواتير بتنعمل من الفاتورة نفسها'; end if;
+    end if;
   end if;
 
   select * into fy from public.fiscal_years where id = new.fiscal_year_id;
   if fy.id is null or fy.company_id <> new.company_id then raise exception 'السنة المالية مش لهالشركة'; end if;
-  if fy.is_closed then raise exception 'السنة المالية مغلقة، ما بتقدر تضيف أو تعدّل قيود فيها'; end if;
+  if fy.is_closed and not public.is_internal() then raise exception 'السنة المالية مغلقة، ما بتقدر تضيف أو تعدّل قيود فيها'; end if;
   if new.entry_date < fy.start_date or new.entry_date > fy.end_date then
     raise exception 'تاريخ القيد لازم يكون جوّا السنة المالية (% إلى %)', fy.start_date, fy.end_date;
   end if;
@@ -525,16 +572,19 @@ create or replace function public.lines_before() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare e public.journal_entries; a public.accounts; eid uuid;
 begin
-  eid := case when tg_op = 'DELETE' then old.entry_id else new.entry_id end;
-  select * into e from public.journal_entries where id = eid;
+  if tg_op in ('UPDATE','DELETE') and not public.is_internal() then   -- القيد الأصلي للسطر
+    select * into e from public.journal_entries where id = old.entry_id;
+    if e.id is not null and e.status <> 'draft' then raise exception 'القيد مرحّل، ما بتقدر تعدّل سطوره'; end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  select * into e from public.journal_entries where id = new.entry_id;
   if e.id is not null and e.status <> 'draft' and not public.is_internal() then
     raise exception 'القيد مرحّل، ما بتقدر تعدّل سطوره';
   end if;
-  if tg_op = 'DELETE' then return old; end if;
   select * into a from public.accounts where id = new.account_id;
   if a.id is null or a.company_id <> e.company_id then raise exception 'الحساب مش لهالشركة'; end if;
   if a.is_group then raise exception 'الحساب «% - %» حساب رئيسي، اختار حساب فرعي', a.code, a.name; end if;
-  if not a.is_active then raise exception 'الحساب «% - %» موقوف', a.code, a.name; end if;
+  if not a.is_active and e.entry_type <> 'opening' and not public.is_internal() then raise exception 'الحساب «% - %» موقوف', a.code, a.name; end if;
   return new;
 end $$;
 
@@ -575,6 +625,7 @@ begin
   if not public.can(e.company_id, public.entry_screen(e.entry_type), 'post') then raise exception 'ما عندك صلاحية'; end if;
   if e.status <> 'posted' then raise exception 'بس القيود المرحّلة بتنعكس'; end if;
   if e.entry_type = 'opening' then raise exception 'القيد الافتتاحي ما بينعكس. عدّل الأرصدة بقيد يومية'; end if;
+  if e.entry_type = 'invoice' then raise exception 'قيد الفاتورة بينلغى من الفاتورة نفسها (زر إلغاء الفاتورة)'; end if;
   select * into fy from public.fiscal_years
    where company_id = e.company_id and p_date between start_date and end_date and not is_closed
    order by start_date desc limit 1;
@@ -1031,6 +1082,7 @@ begin
   if not public.can(e.company_id, public.entry_screen(e.entry_type), 'post') then raise exception 'ما عندك صلاحية'; end if;
   if e.status <> 'posted' then raise exception 'بس القيود المرحّلة بتنعكس'; end if;
   if e.entry_type = 'opening' then raise exception 'القيد الافتتاحي ما بينعكس. عدّل الأرصدة بقيد يومية'; end if;
+  if e.entry_type = 'invoice' then raise exception 'قيد الفاتورة بينلغى من الفاتورة نفسها (زر إلغاء الفاتورة)'; end if;
   select * into fy from public.fiscal_years
    where company_id = e.company_id and p_date between start_date and end_date and not is_closed
    order by start_date desc limit 1;
@@ -1230,11 +1282,18 @@ begin
     if old.status <> 'draft' then raise exception 'الفاتورة مرحّلة، ما بتنحذف. ألغيها بدل الحذف'; end if;
     return old;
   end if;
-  if tg_op = 'UPDATE' and old.status <> 'draft' and not public.is_internal() then raise exception 'الفاتورة مرحّلة، ما بتنعدّل'; end if;
-  if tg_op = 'INSERT' and new.status <> 'draft' then raise exception 'الفاتورة الجديدة لازم تنحفظ كمسودة'; end if;
+  if not public.is_internal() then
+    if tg_op = 'UPDATE' and old.status <> 'draft' then raise exception 'الفاتورة مرحّلة، ما بتنعدّل'; end if;
+    if new.status <> 'draft' then raise exception 'الترحيل بس من زر «ترحيل»'; end if;
+    if tg_op = 'UPDATE' then
+      new.entry_id := old.entry_id; new.cancel_entry_id := old.cancel_entry_id; new.posted_at := old.posted_at;
+    else
+      new.entry_id := null; new.cancel_entry_id := null; new.posted_at := null;
+    end if;
+  end if;
   select * into fy from public.fiscal_years where id = new.fiscal_year_id;
   if fy.id is null or fy.company_id <> new.company_id then raise exception 'السنة المالية مش لهالشركة'; end if;
-  if fy.is_closed then raise exception 'السنة المالية مغلقة'; end if;
+  if fy.is_closed and not public.is_internal() then raise exception 'السنة المالية مغلقة'; end if;
   if new.inv_date < fy.start_date or new.inv_date > fy.end_date then raise exception 'تاريخ الفاتورة لازم يكون جوّا السنة المالية'; end if;
   if new.party_id is not null then
     select * into p from public.parties where id = new.party_id;
@@ -1260,10 +1319,14 @@ create or replace function public.invoice_lines_before() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare i public.invoices; iid uuid;
 begin
-  iid := case when tg_op = 'DELETE' then old.invoice_id else new.invoice_id end;
-  select * into i from public.invoices where id = iid;
+  if tg_op in ('UPDATE','DELETE') and not public.is_internal() then
+    select * into i from public.invoices where id = old.invoice_id;
+    if i.id is not null and i.status <> 'draft' then raise exception 'الفاتورة مرحّلة، ما بتنعدّل سطورها'; end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  select * into i from public.invoices where id = new.invoice_id;
   if i.id is not null and i.status <> 'draft' and not public.is_internal() then raise exception 'الفاتورة مرحّلة، ما بتنعدّل سطورها'; end if;
-  return case when tg_op = 'DELETE' then old else new end;
+  return new;
 end $$;
 drop trigger if exists invoice_lines_before on public.invoice_lines;
 create trigger invoice_lines_before before insert or update or delete on public.invoice_lines
@@ -1285,6 +1348,13 @@ begin
   if i.status <> 'draft' then raise exception 'الفاتورة مرحّلة من قبل'; end if;
   perform public.ensure_company_settings(i.company_id);
   select * into st from public.company_settings where company_id = i.company_id;
+  if i.original_invoice_id is not null then   -- المرتجع لازم يكون من فاتورة مرحّلة لنفس الطرف
+    if not exists (select 1 from public.invoices o where o.id = i.original_invoice_id and o.company_id = i.company_id
+                   and o.status = 'posted' and o.inv_type = replace(i.inv_type, '_return', '')
+                   and o.party_id is not distinct from i.party_id) then
+      raise exception 'الفاتورة الأصلية للمرتجع مش صحيحة (لازم تكون مرحّلة، ولنفس العميل/المورد)';
+    end if;
+  end if;
   is_sale := i.inv_type in ('sale','sale_return');
   is_return := i.inv_type in ('sale_return','purchase_return');
   sgn := case when is_return then -1 else 1 end;    -- البيع: الطرف مدين / الشراء: الطرف دائن (والمرتجع بالعكس)
@@ -1371,6 +1441,9 @@ begin
   if i.id is null then raise exception 'الفاتورة غير موجودة'; end if;
   if not public.can(i.company_id, public.invoice_screen(i.inv_type), 'post') then raise exception 'ما عندك صلاحية'; end if;
   if i.status <> 'posted' then raise exception 'بس الفواتير المرحّلة بتنلغى'; end if;
+  if not exists (select 1 from public.journal_entries where id = i.entry_id and company_id = i.company_id and status = 'posted') then
+    raise exception 'قيد الفاتورة مش مرحّل أو انعكس من قبل';
+  end if;
   select * into fy from public.fiscal_years where company_id = i.company_id and p_date between start_date and end_date and not is_closed order by start_date desc limit 1;
   if fy.id is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ %', p_date; end if;
   perform set_config('sumou.internal', public.internal_token(), true);
@@ -1569,5 +1642,19 @@ update public.user_groups set permissions = permissions || '{"obligations":{"vie
  where name = 'محاسب' and not (permissions ? 'obligations');
 update public.user_groups set permissions = permissions || '{"obligations":{"view":true,"print":true}}'::jsonb
  where name in ('مدخل بيانات', 'مشاهد') and not (permissions ? 'obligations');
+
+-- انتهى ✅
+
+
+-- #################### 07_fixes_permissions.sql ####################
+-- =====================================================================
+--  نظام السمو ERP — إضافة صلاحية «ترحيل» لمجموعة المحاسب الجاهزة
+--  (بس إذا ما انحددت من قبل). مدير النظام إله كل الصلاحيات دائماً.
+-- =====================================================================
+update public.user_groups g set permissions = (
+  select jsonb_object_agg(k, case when k in ('journal_entries','receipt_vouchers','payment_vouchers','opening_balances','sales_invoices','purchase_invoices')
+                                   and not (v ? 'post') then v || '{"post":true}'::jsonb else v end)
+  from jsonb_each(g.permissions) as t(k, v))
+where g.name = 'محاسب' and g.permissions <> '{}'::jsonb;
 
 -- انتهى ✅

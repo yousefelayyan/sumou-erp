@@ -500,13 +500,14 @@ async function viewOpening(v, ctx) {
   if (!accs.length) return void (v.innerHTML = `<div class="notice">لازم يكون في دليل حسابات أول. <a href="#/accounts">روح لدليل الحسابات</a></div>`);
   const { data: ents, error } = await sb.from('journal_entries').select('*').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id).eq('entry_type', 'opening').order('created_at', { ascending: false });
   if (error) throw error;
-  const entry = (ents || []).find(x => x.status !== 'reversed') || null;
+  let entry = (ents || []).find(x => x.status !== 'reversed') || null;
   let lines = [];
   if (entry) { const r = await sb.from('journal_lines').select('*').eq('entry_id', entry.id); lines = r.data || []; }
   // أرصدة الحسابات العادية، وأرصدة العملاء والموردين لحالها
   const vals = {}, pvals = {};
   lines.forEach(l => { const t = l.party_id ? (pvals[l.party_id] ||= { d: 0, c: 0 }) : (vals[l.account_id] ||= { d: 0, c: 0 }); t.d += num(l.debit); t.c += num(l.credit); });
-  const partyAcc = new Set(parties.map(p => p.account_id));     // حسابات إجمالية بتتعبّى من أرصدة الأطراف
+  // حسابات إجمالية بتتعبّى من أرصدة الأطراف (إلا إذا إلها رصيد قديم بدون طرف)
+  const partyAcc = new Set(parties.map(p => p.account_id).filter(id => !(vals[id] && (vals[id].d || vals[id].c))));
   const leaves = accs.filter(a => !a.is_group && (a.is_active || vals[a.id] || partyAcc.has(a.id))).sort((x, y) => x.code.localeCompare(y.code, 'en', { numeric: true }));
   const plist = parties.filter(p => p.is_active || pvals[p.id]);
   const readOnly = (entry && entry.status !== 'draft') || !(entry ? can('opening_balances', 'edit') : can('opening_balances', 'add'));
@@ -561,14 +562,15 @@ async function viewOpening(v, ctx) {
     syncPartyAccounts();
   };
   tot();
-  v.addEventListener('input', (e) => {
+  const onInput = (e) => {
     const t = e.target; if (!t.dataset.k || !(t.dataset.a || t.dataset.p)) return;
     const store = t.dataset.a ? vals : pvals, key = t.dataset.a || t.dataset.p, attr = t.dataset.a ? 'a' : 'p';
     const x = store[key] ||= { d: 0, c: 0 };
     x[t.dataset.k] = num(t.value);
     if (x[t.dataset.k]) { const o = t.dataset.k === 'd' ? 'c' : 'd'; x[o] = 0; v.querySelector(`[data-${attr}="${key}"][data-k="${o}"]`).value = ''; }
     tot();
-  });
+  };
+  v.querySelectorAll('#ob, #obp').forEach(t => t.addEventListener('input', onInput));
   const filter = () => {
     const q = v.querySelector('#q').value.trim().toLowerCase(), only = v.querySelector('#only').checked;
     v.querySelectorAll('[data-row]').forEach(r => { const [k, id] = r.dataset.row.split(':'); const x = k === 'a' ? vals[id] : pvals[id];
@@ -586,7 +588,7 @@ async function viewOpening(v, ctx) {
       let id = entry?.id;
       if (!id) {
         const ins = await sb.from('journal_entries').insert({ company_id: S.company.id, fiscal_year_id: S.fy.id, entry_type: 'opening', entry_date: S.fy.start_date, description: 'الأرصدة الافتتاحية ' + (S.fy.name || S.fy.code) }).select().single();
-        if (ins.error) throw ins.error; id = ins.data.id;
+        if (ins.error) throw ins.error; id = ins.data.id; entry = ins.data;
       } else {
         const del = await sb.from('journal_lines').delete().eq('entry_id', id); if (del.error) throw del.error;
       }

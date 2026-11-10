@@ -140,11 +140,18 @@ begin
     if old.status <> 'draft' then raise exception 'الفاتورة مرحّلة، ما بتنحذف. ألغيها بدل الحذف'; end if;
     return old;
   end if;
-  if tg_op = 'UPDATE' and old.status <> 'draft' and not public.is_internal() then raise exception 'الفاتورة مرحّلة، ما بتنعدّل'; end if;
-  if tg_op = 'INSERT' and new.status <> 'draft' then raise exception 'الفاتورة الجديدة لازم تنحفظ كمسودة'; end if;
+  if not public.is_internal() then
+    if tg_op = 'UPDATE' and old.status <> 'draft' then raise exception 'الفاتورة مرحّلة، ما بتنعدّل'; end if;
+    if new.status <> 'draft' then raise exception 'الترحيل بس من زر «ترحيل»'; end if;
+    if tg_op = 'UPDATE' then
+      new.entry_id := old.entry_id; new.cancel_entry_id := old.cancel_entry_id; new.posted_at := old.posted_at;
+    else
+      new.entry_id := null; new.cancel_entry_id := null; new.posted_at := null;
+    end if;
+  end if;
   select * into fy from public.fiscal_years where id = new.fiscal_year_id;
   if fy.id is null or fy.company_id <> new.company_id then raise exception 'السنة المالية مش لهالشركة'; end if;
-  if fy.is_closed then raise exception 'السنة المالية مغلقة'; end if;
+  if fy.is_closed and not public.is_internal() then raise exception 'السنة المالية مغلقة'; end if;
   if new.inv_date < fy.start_date or new.inv_date > fy.end_date then raise exception 'تاريخ الفاتورة لازم يكون جوّا السنة المالية'; end if;
   if new.party_id is not null then
     select * into p from public.parties where id = new.party_id;
@@ -170,10 +177,14 @@ create or replace function public.invoice_lines_before() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare i public.invoices; iid uuid;
 begin
-  iid := case when tg_op = 'DELETE' then old.invoice_id else new.invoice_id end;
-  select * into i from public.invoices where id = iid;
+  if tg_op in ('UPDATE','DELETE') and not public.is_internal() then
+    select * into i from public.invoices where id = old.invoice_id;
+    if i.id is not null and i.status <> 'draft' then raise exception 'الفاتورة مرحّلة، ما بتنعدّل سطورها'; end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  select * into i from public.invoices where id = new.invoice_id;
   if i.id is not null and i.status <> 'draft' and not public.is_internal() then raise exception 'الفاتورة مرحّلة، ما بتنعدّل سطورها'; end if;
-  return case when tg_op = 'DELETE' then old else new end;
+  return new;
 end $$;
 drop trigger if exists invoice_lines_before on public.invoice_lines;
 create trigger invoice_lines_before before insert or update or delete on public.invoice_lines
@@ -195,6 +206,13 @@ begin
   if i.status <> 'draft' then raise exception 'الفاتورة مرحّلة من قبل'; end if;
   perform public.ensure_company_settings(i.company_id);
   select * into st from public.company_settings where company_id = i.company_id;
+  if i.original_invoice_id is not null then   -- المرتجع لازم يكون من فاتورة مرحّلة لنفس الطرف
+    if not exists (select 1 from public.invoices o where o.id = i.original_invoice_id and o.company_id = i.company_id
+                   and o.status = 'posted' and o.inv_type = replace(i.inv_type, '_return', '')
+                   and o.party_id is not distinct from i.party_id) then
+      raise exception 'الفاتورة الأصلية للمرتجع مش صحيحة (لازم تكون مرحّلة، ولنفس العميل/المورد)';
+    end if;
+  end if;
   is_sale := i.inv_type in ('sale','sale_return');
   is_return := i.inv_type in ('sale_return','purchase_return');
   sgn := case when is_return then -1 else 1 end;    -- البيع: الطرف مدين / الشراء: الطرف دائن (والمرتجع بالعكس)
@@ -281,6 +299,9 @@ begin
   if i.id is null then raise exception 'الفاتورة غير موجودة'; end if;
   if not public.can(i.company_id, public.invoice_screen(i.inv_type), 'post') then raise exception 'ما عندك صلاحية'; end if;
   if i.status <> 'posted' then raise exception 'بس الفواتير المرحّلة بتنلغى'; end if;
+  if not exists (select 1 from public.journal_entries where id = i.entry_id and company_id = i.company_id and status = 'posted') then
+    raise exception 'قيد الفاتورة مش مرحّل أو انعكس من قبل';
+  end if;
   select * into fy from public.fiscal_years where company_id = i.company_id and p_date between start_date and end_date and not is_closed order by start_date desc limit 1;
   if fy.id is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ %', p_date; end if;
   perform set_config('sumou.internal', public.internal_token(), true);

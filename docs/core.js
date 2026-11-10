@@ -65,7 +65,8 @@ export function arError(err) {
   if (/Password should be at least/i.test(m)) return 'كلمة السر لازم تكون 6 أحرف أو أكثر';
   if (/duplicate key/i.test(m)) return 'الرمز مستخدم من قبل، اختار رمز ثاني';
   if (/row-level security|permission denied/i.test(m)) return 'ما عندك صلاحية لهالعملية';
-  if (/end_date|check constraint/i.test(m)) return 'تاريخ النهاية لازم يكون بعد تاريخ البداية';
+  if (/fiscal_years_check|end_date/i.test(m)) return 'تاريخ النهاية لازم يكون بعد تاريخ البداية';
+  if (/check constraint/i.test(m)) return 'في قيمة مش مسموحة (مثلاً مبلغ أو كمية سالبة، أو مدين ودائن بنفس السطر)';
   if (/foreign key constraint/i.test(m)) return 'ما بينحذف لأنه مستخدم (عليه حسابات أو قيود)';
   if (/Failed to fetch|NetworkError/i.test(m)) return 'في مشكلة بالاتصال بالإنترنت';
   return m;

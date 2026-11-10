@@ -189,7 +189,7 @@ function renderShell() {
   document.getElementById('fy-select').onchange = (e) => {
     S.fy = S.fiscalYears.find(y => y.id === e.target.value) || null;
     localStorageSet('sumou.fy.' + S.company.id, S.fy?.id);
-    updateWatermark();
+    updateWatermark(); route_();
   };
   document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => document.getElementById('sidebar').classList.remove('open')));
 }

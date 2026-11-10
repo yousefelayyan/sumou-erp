@@ -128,6 +128,7 @@ begin
   if not public.can(e.company_id, public.entry_screen(e.entry_type), 'post') then raise exception 'ما عندك صلاحية'; end if;
   if e.status <> 'posted' then raise exception 'بس القيود المرحّلة بتنعكس'; end if;
   if e.entry_type = 'opening' then raise exception 'القيد الافتتاحي ما بينعكس. عدّل الأرصدة بقيد يومية'; end if;
+  if e.entry_type = 'invoice' then raise exception 'قيد الفاتورة بينلغى من الفاتورة نفسها (زر إلغاء الفاتورة)'; end if;
   select * into fy from public.fiscal_years
    where company_id = e.company_id and p_date between start_date and end_date and not is_closed
    order by start_date desc limit 1;

@@ -113,7 +113,12 @@ begin
     select * into p from public.accounts where id = new.parent_id;
     if p.id is null or p.company_id <> new.company_id then raise exception 'الحساب الرئيسي غير موجود بنفس الشركة'; end if;
     if not p.is_group then raise exception 'ما بتقدر تضيف حساب تحت حساب فرعي. خلّي الحساب الأب «رئيسي» أول'; end if;
-    if tg_op = 'UPDATE' and new.parent_id = new.id then raise exception 'الحساب ما بيقدر يكون أب لحاله'; end if;
+    if tg_op = 'UPDATE' and exists (
+         with recursive up as (select id, parent_id from public.accounts where id = new.parent_id
+                               union all select a.id, a.parent_id from public.accounts a join up on a.id = up.parent_id)
+         select 1 from up where id = new.id) then
+      raise exception 'ما بيصير الحساب يكون تحت واحد من فروعه';
+    end if;
     new.level := p.level + 1;
     new.category := p.category;     -- الحساب بيرث تصنيف أبوه
   else
@@ -135,6 +140,19 @@ drop trigger if exists accounts_before on public.accounts;
 create trigger accounts_before before insert or update on public.accounts
   for each row execute function public.accounts_before();
 
+-- تغيير تصنيف حساب رئيسي بينزل على كل فروعه
+create or replace function public.accounts_after() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.category is distinct from old.category then
+    update public.accounts set category = new.category where parent_id = new.id and category is distinct from new.category;
+  end if;
+  return null;
+end $$;
+drop trigger if exists accounts_after on public.accounts;
+create trigger accounts_after after update on public.accounts
+  for each row execute function public.accounts_after();
+
 -- =====================================================================
 --  حماية القيود
 -- =====================================================================
@@ -147,16 +165,26 @@ begin
     return old;
   end if;
 
-  if tg_op = 'UPDATE' and old.status <> 'draft' and not public.is_internal() then
-    raise exception 'القيد مرحّل، ما بينعدّل. اعمل قيد عكسي';
-  end if;
-  if tg_op = 'INSERT' and new.status <> 'draft' and not public.is_internal() then
-    raise exception 'القيد الجديد لازم ينحفظ كمسودة، والترحيل من زر «ترحيل»';
+  if not public.is_internal() then
+    if tg_op = 'UPDATE' and old.status <> 'draft' then
+      raise exception 'القيد مرحّل، ما بينعدّل. اعمل قيد عكسي';
+    end if;
+    if new.status <> 'draft' then
+      raise exception 'الترحيل بس من زر «ترحيل» (بيتأكد إن القيد متوازن)';
+    end if;
+    -- حقول بتتعبّى من النظام بس
+    if tg_op = 'UPDATE' then
+      new.total := old.total; new.reversal_of := old.reversal_of; new.reversed_by := old.reversed_by;
+      new.posted_by := old.posted_by; new.posted_at := old.posted_at; new.entry_type := old.entry_type;
+    else
+      new.total := 0; new.reversal_of := null; new.reversed_by := null; new.posted_by := null; new.posted_at := null;
+      if new.entry_type = 'invoice' then raise exception 'قيود الفواتير بتنعمل من الفاتورة نفسها'; end if;
+    end if;
   end if;
 
   select * into fy from public.fiscal_years where id = new.fiscal_year_id;
   if fy.id is null or fy.company_id <> new.company_id then raise exception 'السنة المالية مش لهالشركة'; end if;
-  if fy.is_closed then raise exception 'السنة المالية مغلقة، ما بتقدر تضيف أو تعدّل قيود فيها'; end if;
+  if fy.is_closed and not public.is_internal() then raise exception 'السنة المالية مغلقة، ما بتقدر تضيف أو تعدّل قيود فيها'; end if;
   if new.entry_date < fy.start_date or new.entry_date > fy.end_date then
     raise exception 'تاريخ القيد لازم يكون جوّا السنة المالية (% إلى %)', fy.start_date, fy.end_date;
   end if;
@@ -188,16 +216,19 @@ create or replace function public.lines_before() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare e public.journal_entries; a public.accounts; eid uuid;
 begin
-  eid := case when tg_op = 'DELETE' then old.entry_id else new.entry_id end;
-  select * into e from public.journal_entries where id = eid;
+  if tg_op in ('UPDATE','DELETE') and not public.is_internal() then   -- القيد الأصلي للسطر
+    select * into e from public.journal_entries where id = old.entry_id;
+    if e.id is not null and e.status <> 'draft' then raise exception 'القيد مرحّل، ما بتقدر تعدّل سطوره'; end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  select * into e from public.journal_entries where id = new.entry_id;
   if e.id is not null and e.status <> 'draft' and not public.is_internal() then
     raise exception 'القيد مرحّل، ما بتقدر تعدّل سطوره';
   end if;
-  if tg_op = 'DELETE' then return old; end if;
   select * into a from public.accounts where id = new.account_id;
   if a.id is null or a.company_id <> e.company_id then raise exception 'الحساب مش لهالشركة'; end if;
   if a.is_group then raise exception 'الحساب «% - %» حساب رئيسي، اختار حساب فرعي', a.code, a.name; end if;
-  if not a.is_active then raise exception 'الحساب «% - %» موقوف', a.code, a.name; end if;
+  if not a.is_active and e.entry_type <> 'opening' and not public.is_internal() then raise exception 'الحساب «% - %» موقوف', a.code, a.name; end if;
   return new;
 end $$;
 
@@ -238,6 +269,7 @@ begin
   if not public.can(e.company_id, public.entry_screen(e.entry_type), 'post') then raise exception 'ما عندك صلاحية'; end if;
   if e.status <> 'posted' then raise exception 'بس القيود المرحّلة بتنعكس'; end if;
   if e.entry_type = 'opening' then raise exception 'القيد الافتتاحي ما بينعكس. عدّل الأرصدة بقيد يومية'; end if;
+  if e.entry_type = 'invoice' then raise exception 'قيد الفاتورة بينلغى من الفاتورة نفسها (زر إلغاء الفاتورة)'; end if;
   select * into fy from public.fiscal_years
    where company_id = e.company_id and p_date between start_date and end_date and not is_closed
    order by start_date desc limit 1;

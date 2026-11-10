@@ -288,7 +288,7 @@ async function invoiceEditor(type, inv, ctx) {
     try {
       let id = inv?.id;
       if (id) { const u = await sb.from('invoices').update(header).eq('id', id); if (u.error) throw u.error; const d = await sb.from('invoice_lines').delete().eq('invoice_id', id); if (d.error) throw d.error; }
-      else { const ins = await sb.from('invoices').insert({ ...header, company_id: S.company.id, fiscal_year_id: S.fy.id, inv_type: type, original_invoice_id: i0.original_invoice_id || null }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; }
+      else { const ins = await sb.from('invoices').insert({ ...header, company_id: S.company.id, fiscal_year_id: S.fy.id, inv_type: type, original_invoice_id: i0.original_invoice_id || null }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; inv = ins.data; }
       const li = await sb.from('invoice_lines').insert(out.map((l, k) => ({ ...l, invoice_id: id, line_no: k + 1 }))); if (li.error) throw li.error;
       await log(inv ? 'تعديل' : 'إضافة', T.screen, id, { type });
       if (post) { const r = await sb.rpc('post_invoice', { p_id: id }); if (r.error) throw r.error; toast('تم الحفظ والترحيل، وانعمل القيد تلقائياً', 'ok'); }
@@ -344,7 +344,7 @@ function printInvoice(type, inv, lines, party, st) {
 // ---------------------------------------------------------------------
 async function viewSalesTax(v) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
-  const c = S.company, y = new Date().getFullYear();
+  const c = S.company, y = S.fy ? new Date(S.fy.start_date).getFullYear() : new Date().getFullYear();
   const periods = c.sales_tax_period === 'monthly'
     ? Array.from({ length: 12 }, (_, i) => [`${y}-${String(i + 1).padStart(2, '0')}-01`, new Date(y, i + 1, 0)])
     : Array.from({ length: 6 }, (_, i) => [`${y}-${String(i * 2 + 1).padStart(2, '0')}-01`, new Date(y, i * 2 + 2, 0)]);

@@ -197,6 +197,17 @@ create trigger protect_profile_fields
 create or replace function public.touch_updated_at() returns trigger
 language plpgsql as $$ begin new.updated_at := now(); return new; end $$;
 
+-- الموظف (غير المدير) ما بيقدر يغيّر رمز الشركة أو يوقفها
+create or replace function public.protect_company_fields() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_admin() then new.code := old.code; new.is_active := old.is_active; new.created_by := old.created_by; end if;
+  return new;
+end $$;
+drop trigger if exists protect_company_fields on public.companies;
+create trigger protect_company_fields before update on public.companies
+  for each row execute function public.protect_company_fields();
+
 drop trigger if exists companies_touch on public.companies;
 create trigger companies_touch before update on public.companies
   for each row execute function public.touch_updated_at();
@@ -205,8 +216,16 @@ create trigger companies_touch before update on public.companies
 create or replace function public.guard_closed_year() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
-  if old.is_closed and new.is_closed and not public.is_admin() then
-    raise exception 'السنة المالية مغلقة ولا يمكن تعديلها';
+  if old.is_closed and not public.is_admin() then
+    raise exception 'السنة المالية مغلقة، بس مدير النظام بيقدر يعدّلها أو يفتحها';
+  end if;
+  new.company_id := old.company_id;
+  if (new.start_date <> old.start_date or new.end_date <> old.end_date)
+     and to_regclass('public.journal_entries') is not null then
+    if exists (select 1 from public.journal_entries e where e.fiscal_year_id = old.id
+               and (e.entry_date < new.start_date or e.entry_date > new.end_date)) then
+      raise exception 'في قيود رح تصير برّا السنة المالية إذا غيّرت التواريخ';
+    end if;
   end if;
   return new;
 end $$;
@@ -283,7 +302,7 @@ create policy fy_delete on public.fiscal_years for delete to authenticated
 -- activity_log
 drop policy if exists log_insert on public.activity_log;
 create policy log_insert on public.activity_log for insert to authenticated
-  with check (user_id = auth.uid() and public.is_active_user());
+  with check (user_id = auth.uid() and public.is_active_user() and (company_id is null or public.has_company(company_id)));
 drop policy if exists log_select on public.activity_log;
 create policy log_select on public.activity_log for select to authenticated
   using (public.is_admin());
