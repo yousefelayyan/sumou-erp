@@ -51,6 +51,12 @@ a{color:var(--brand)}
 .page-head h2{margin:0;font-size:22px}
 .page-head .spacer{flex:1}
 
+/* ---------- Watermark ---------- */
+.watermark{position:fixed;top:58px;bottom:0;left:0;right:260px;pointer-events:none;z-index:4;display:grid;place-items:center;overflow:hidden}
+.wm-inner{transform:rotate(-24deg);text-align:center;color:var(--brand);opacity:.09;user-select:none;line-height:1.25;padding:0 40px}
+.wm-name{font-size:clamp(34px,6vw,84px);font-weight:800}
+.wm-year{font-size:clamp(24px,4vw,56px);font-weight:700;margin-top:10px}
+
 /* ---------- Components ---------- */
 .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px}
 .grid{display:grid;gap:14px}
@@ -125,8 +131,11 @@ table.t{width:100%;border-collapse:collapse}
   .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}
   .content{padding:14px}
   .user-chip span{display:none}
+  .watermark{right:0;top:110px}
 }
 @media print{
   .sidebar,.topbar,.no-print{display:none!important}
+  .watermark{position:fixed;inset:0;right:0;top:0}
+  .wm-inner{opacity:.08}
   .layout{display:block}.content{padding:0}.card{box-shadow:none}
 }

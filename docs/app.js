@@ -295,8 +295,10 @@ function renderShell() {
           <button class="btn sm" id="logout">خروج</button>
         </header>
         <section class="content" id="view"></section>
+        <div class="watermark" id="watermark" aria-hidden="true"></div>
       </div>
     </div>`;
+  updateWatermark();
   document.getElementById('menu-btn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
   document.getElementById('logout').onclick = async () => { await log('خروج', 'auth'); sb.auth.signOut(); };
   document.getElementById('company-select').onchange = async (e) => {
@@ -307,8 +309,17 @@ function renderShell() {
   document.getElementById('fy-select').onchange = (e) => {
     S.fy = S.fiscalYears.find(y => y.id === e.target.value) || null;
     localStorageSet('sumou.fy.' + S.company.id, S.fy?.id);
+    updateWatermark();
   };
   document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => document.getElementById('sidebar').classList.remove('open')));
+}
+
+// علامة مائية على الخلفية: اسم الشركة والسنة المالية الحالية
+function updateWatermark() {
+  const wm = document.getElementById('watermark'); if (!wm) return;
+  if (!S.company) { wm.innerHTML = ''; return; }
+  const year = S.fy ? (S.fy.name || S.fy.code) : '';
+  wm.innerHTML = `<div class="wm-inner"><div class="wm-name">${esc(S.company.name)}</div>${year ? `<div class="wm-year">${esc(year)}</div>` : ''}</div>`;
 }
 
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
