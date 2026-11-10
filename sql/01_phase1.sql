@@ -315,4 +315,14 @@ grant usage, select on all sequences in schema public to authenticated;
 grant execute on function public.is_active_user(), public.is_admin(),
   public.has_company(uuid), public.can(uuid, text, text) to authenticated;
 
+-- احتياط: إذا في حسابات انعملت قبل تشغيل هالملف، اعمل إلها ملفات شخصية
+-- (أول حساب بيصير مدير النظام إذا ما في ولا ملف شخصي)
+insert into public.profiles (id, email, full_name, is_admin, is_active)
+select u.id, u.email,
+       coalesce(u.raw_user_meta_data ->> 'full_name', split_part(u.email, '@', 1)),
+       (not exists (select 1 from public.profiles)) and row_number() over (order by u.created_at) = 1,
+       (not exists (select 1 from public.profiles)) and row_number() over (order by u.created_at) = 1
+from auth.users u
+where not exists (select 1 from public.profiles p where p.id = u.id);
+
 -- انتهى ✅
