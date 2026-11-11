@@ -76,6 +76,10 @@ begin
       rows := (select jsonb_agg(x - 'original_invoice_id') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'bank_recons' then
       rows := (select jsonb_agg(jsonb_set(x, '{status}', '"open"')) from jsonb_array_elements(rows) x);
+    elsif r.tbl = 'companies' then   -- المستخدم اللي أنشأها ممكن ما يكون موجود بقاعدة جديدة
+      rows := (select jsonb_agg(case when exists (select 1 from auth.users u where u.id::text = x ->> 'created_by') then x else jsonb_set(x, '{created_by}', 'null') end) from jsonb_array_elements(rows) x);
+    elsif r.tbl = 'obligations' then
+      rows := (select jsonb_agg(case when exists (select 1 from public.profiles u where u.id::text = x ->> 'assigned_to') then x else jsonb_set(x, '{assigned_to}', 'null') end) from jsonb_array_elements(rows) x);
     elsif r.tbl = 'accounts' then
       rows := (select jsonb_agg(x order by (x ->> 'level')::int) from jsonb_array_elements(rows) x);
     end if;

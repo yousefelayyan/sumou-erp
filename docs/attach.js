@@ -30,9 +30,12 @@ export async function openAttachments(entity, entityId, title = '') {
         if (w) w.location = u.signedUrl; else location.href = u.signedUrl;
       } else {
         if (!(await confirmBox(`حذف المرفق «${a.file_name}»؟`))) return;
+        // السجل أول (بيرفض إذا مش إلك)، وبعدين الملف
+        const { data: del, error: er } = await sb.from('attachments').delete().eq('id', a.id).select();
+        if (er) return toast(arError(er), 'err');
+        if (!del?.length) return toast('بس اللي رفع الملف أو المدير بيقدر يحذفه', 'err');
         await sb.storage.from('attachments').remove([a.path]);
-        const { error: er } = await sb.from('attachments').delete().eq('id', a.id);
-        if (er) return toast(arError(er), 'err'); toast('انحذف', 'ok'); load();
+        toast('انحذف', 'ok'); load();
       }
     };
   };

@@ -22,13 +22,17 @@ update public.stock_moves m set is_cost = true
  where not m.is_cost and m.source_type = 'invoice_cancel' and m.qty < 0
    and exists (select 1 from public.invoices i where i.id = m.source_id and i.inv_type = 'purchase');
 
--- متوسط الكلفة المرجّح لصنف لحد تاريخ (وإذا ما في وارد: سعر الشراء بالصنف)
+-- متوسط الكلفة المتحرك لصنف لحد تاريخ: قيمة المخزون (مجموع الكمية × كلفة كل حركة) ÷ الكمية.
+-- كل حركة صادرة بتنسجّل بالمتوسط وقتها، فالقيمة بالدفاتر = قيمة تقرير المخزون.
+-- إذا الرصيد صفر: آخر كلفة شراء، وبعدين سعر الشراء بالصنف.
 create or replace function public.item_avg_cost(p_company uuid, p_item uuid, p_date date) returns numeric
 language sql stable security definer set search_path = public as $$
-  select round(coalesce(
-    (select case when sum(m.qty) > 0.0005 then sum(m.qty * m.unit_cost) / sum(m.qty) end
-       from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.is_cost and m.move_date <= p_date),
-    (select nullif(purchase_price, 0) from public.items where id = p_item), 0), 3);
+  select case when not public.has_company(p_company) then 0 else round(coalesce(
+    (select case when sum(m.qty) > 0.0005 then greatest(sum(m.qty * m.unit_cost), 0) / sum(m.qty) end
+       from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.move_date <= p_date),
+    (select m.unit_cost from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.is_cost and m.move_date <= p_date
+      order by m.move_date desc, m.created_at desc limit 1),
+    (select nullif(purchase_price, 0) from public.items where id = p_item), 0), 3) end;
 $$;
 
 create or replace function public.ensure_company_settings(p_company uuid) returns void
@@ -81,9 +85,9 @@ begin
   -- الشراء بكلفته، والباقي بمتوسط الكلفة قبل الحركة
   insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description, is_cost)
   select new.company_id, l.item_id, w, new.inv_date, sgn * l.qty,
-         case when new.inv_type = 'purchase' then case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end
+         case when new.inv_type in ('purchase','purchase_return') then case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end
               else public.item_avg_cost(new.company_id, l.item_id, new.inv_date) end,
-         'invoice', new.id, descr, new.inv_type = 'purchase' and l.qty > 0 and l.subtotal > 0
+         'invoice', new.id, descr, new.inv_type in ('purchase','purchase_return') and l.qty > 0 and l.subtotal > 0
   from public.invoice_lines l join public.items it on it.id = l.item_id
   where l.invoice_id = new.id and it.item_type = 'goods' and it.track_stock;
 
@@ -98,9 +102,10 @@ begin
     else perform public.add_entry_pair(new.entry_id, st.inventory_account_id, st.cogs_account_id, v, 'كلفة البضاعة - ' || descr); end if;
   else
     -- إعادة تصنيف قيمة البضاعة من المشتريات/مردوداتها للمخزون
+    -- القيمة نفسها اللي دخلت/طلعت من المخزون (الكمية × كلفة الحركة)
     for r in
       select coalesce(case when new.inv_type = 'purchase_return' then coalesce(st.purchase_return_account_id, l.account_id) else l.account_id end, st.purchase_account_id) as acc,
-             sum(l.subtotal) as amt
+             sum(l.qty * case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end) as amt
       from public.invoice_lines l join public.items it on it.id = l.item_id
       where l.invoice_id = new.id and it.item_type = 'goods' and it.track_stock group by 1
     loop

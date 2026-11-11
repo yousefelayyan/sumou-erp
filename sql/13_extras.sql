@@ -146,8 +146,10 @@ begin
   end if;
   return null;
 end $$;
-drop trigger if exists invoice_cost_center on public.invoices;
-create trigger invoice_cost_center after update of status on public.invoices for each row execute function public.invoice_cost_center();
+drop trigger if exists invoice_cost_center on public.invoices;   -- الاسم القديم
+drop trigger if exists zz_invoice_cost_center on public.invoices;
+-- اسمه zz عشان يشتغل بعد trigger المخزون وقيد الكلفة (الـ triggers بتشتغل بترتيب الأسماء)
+create trigger zz_invoice_cost_center after update of status on public.invoices for each row execute function public.invoice_cost_center();
 
 -- تقرير مراكز الكلفة
 create or replace function public.rep_cost_centers(p_company uuid, p_from date, p_to date)
@@ -189,6 +191,15 @@ language plpgsql stable security definer set search_path = public as $$
 declare r jsonb; m0 date := date_trunc('month', p_date)::date;
 begin
   if not public.has_company(p_company) then raise exception 'ما عندك صلاحية'; end if;
+  if not public.can(p_company, 'reports', 'view') then   -- بدون صلاحية التقارير: المسودات بس
+    return jsonb_build_object(
+      'drafts_entries', (select count(*) from public.journal_entries where company_id = p_company and status = 'draft'),
+      'drafts_invoices', (select count(*) from public.invoices where company_id = p_company and status = 'draft'),
+      'drafts_stock', (select count(*) from public.stock_docs where company_id = p_company and status = 'draft'),
+      'cheques_in_7', case when public.can(p_company, 'cheques', 'view') then coalesce((select sum(amount) from public.cheques where company_id = p_company and direction = 'in' and status = 'portfolio' and due_date <= p_date + 7), 0) end,
+      'cheques_out_7', case when public.can(p_company, 'cheques', 'view') then coalesce((select sum(amount) from public.cheques where company_id = p_company and direction = 'out' and status = 'issued' and due_date <= p_date + 7), 0) end,
+      'month_sales', '[]'::jsonb);
+  end if;
   select jsonb_build_object(
     'sales_month', coalesce((select sum(case when inv_type = 'sale' then subtotal else -subtotal end) from public.invoices
                      where company_id = p_company and status = 'posted' and inv_type in ('sale','sale_return') and inv_date between m0 and p_date), 0),
@@ -445,6 +456,8 @@ begin
   select * into r from public.payroll_runs where id = p_run;
   if not public.can(r.company_id, 'payroll', 'edit') then raise exception 'ما عندك صلاحية على الرواتب'; end if;
   select * into st from public.company_settings where company_id = r.company_id;
+  if r.status <> 'draft' then raise exception 'مسيّر الرواتب مرحّل'; end if;
+  update public.payroll_lines l set ss_wage = case when st.ss_ceiling > 0 then least(l.ss_wage, st.ss_ceiling) else l.ss_wage end where l.run_id = p_run;
   update public.payroll_lines l set ss_employee = round(l.ss_wage * st.ss_employee_rate / 100, 3), ss_employer = round(l.ss_wage * st.ss_employer_rate / 100, 3)
    where l.run_id = p_run;
 end $$;
@@ -487,7 +500,9 @@ begin
   if s.se + s.sr > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.ss_payable_account_id, 'اشتراكات الضمان - ' || descr, 0, s.se + s.sr); end if;
   if s.t > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.wht_payable_account_id, 'ضريبة دخل مقتطعة - ' || descr, 0, s.t); end if;
   if s.a > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.advances_account_id, 'خصم سلف - ' || descr, 0, s.a); end if;
-  if s.n + s.o > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.salaries_payable_account_id, 'صافي الرواتب المستحقة - ' || descr, 0, s.n + s.o); end if;
+  -- الخصومات الأخرى (جزاءات/غياب) بتخفّض مصروف الرواتب
+  if s.o > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.salaries_account_id, 'خصومات أخرى - ' || descr, 0, s.o); end if;
+  if s.n > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.salaries_payable_account_id, 'صافي الرواتب المستحقة - ' || descr, 0, s.n); end if;
   if (select sum(debit) - sum(credit) from public.journal_lines where entry_id = eid) <> 0 then raise exception 'قيد الرواتب مش متوازن'; end if;
   update public.journal_entries set status = 'posted', total = (select sum(debit) from public.journal_lines where entry_id = eid), posted_by = auth.uid(), posted_at = now() where id = eid;
   update public.payroll_runs set status = 'posted', entry_id = eid where id = p_run;
@@ -559,13 +574,15 @@ create table if not exists public.depreciation_lines (
 -- مجمع الاستهلاك لأصل (السابق + الدورات المرحّلة)
 create or replace function public.asset_accum(p_asset uuid) returns numeric
 language sql stable security definer set search_path = public as $$
-  select coalesce((select opening_accum from public.fixed_assets where id = p_asset), 0)
+  select case when exists (select 1 from public.fixed_assets f where f.id = p_asset and public.has_company(f.company_id)) then
+    coalesce((select opening_accum from public.fixed_assets where id = p_asset), 0)
        + coalesce((select sum(l.amount) from public.depreciation_lines l join public.depreciation_runs r on r.id = l.run_id
-                   where l.asset_id = p_asset and r.status = 'posted'), 0);
+                   where l.asset_id = p_asset and r.status = 'posted'), 0) end;
 $$;
 create or replace function public.asset_last_dep(p_asset uuid) returns date
 language sql stable security definer set search_path = public as $$
-  select max(l.to_date) from public.depreciation_lines l join public.depreciation_runs r on r.id = l.run_id where l.asset_id = p_asset and r.status = 'posted';
+  select max(l.to_date) from public.depreciation_lines l join public.depreciation_runs r on r.id = l.run_id
+   where l.asset_id = p_asset and r.status = 'posted' and public.has_company(r.company_id);
 $$;
 
 create or replace function public.assets_guard() returns trigger
@@ -722,7 +739,7 @@ create or replace function public.bank_prior_cleared(p_recon uuid) returns numer
 language sql stable security definer set search_path = public as $$
   select coalesce(sum(l.debit - l.credit), 0) from public.bank_cleared c join public.bank_recons r on r.id = c.recon_id
   join public.journal_lines l on l.id = c.line_id
-  where c.recon_id <> p_recon and r.status = 'done' and r.account_id = (select account_id from public.bank_recons where id = p_recon)
+  where c.recon_id <> p_recon and r.status = 'done' and public.can(r.company_id, 'bank_recon', 'view') and r.account_id = (select account_id from public.bank_recons where id = p_recon)
     and r.company_id = (select company_id from public.bank_recons where id = p_recon);
 $$;
 

@@ -393,7 +393,10 @@ async function voucherEditor(type, entry, ctx) {
   tb.addEventListener('change', (ev) => {
     const t = ev.target;
     if (t.dataset.k === 'cc') { rows[+t.dataset.i].cc = t.value; return; }
-    if (t.dataset.k === 'cur') { const r = rows[+t.dataset.i]; r.cur = t.value; if (t.value) { r.fxr = curs.find(c => c.code === t.value)?.rate || r.fxr; } else { r.fxa = ''; r.fxr = ''; } drawRows(); return; }
+    if (t.dataset.k === 'cur') { const r = rows[+t.dataset.i]; r.cur = t.value;
+      if (t.value) { r.fxr = curs.find(c => c.code === t.value)?.rate || r.fxr;
+        if (num(r.fxa)) { const v = Math.round(num(r.fxa) * num(r.fxr) * 1000) / 1000; const k = isCash ? 'amount' : (num(r.credit) && !num(r.debit) ? 'credit' : 'debit'); r[k] = v; } }
+      else { r.fxa = ''; r.fxr = ''; } drawRows(); return; }
     if (t.dataset.k === 'party') {
       const p = resolveParty(parties, t.value), r = rows[+t.dataset.i];
       t.classList.toggle('bad', !!t.value && !p);
@@ -426,6 +429,7 @@ async function voucherEditor(type, entry, ctx) {
   };
   m.el.querySelector('#add-line')?.addEventListener('click', () => addLine());
 
+  const fxBad = (r) => r.cur && num(r.fxa) && Math.abs(num(r.fxa) * num(r.fxr) - (isCash ? num(r.amount) : num(r.debit) + num(r.credit))) > 0.0015;
   const extra = (r) => ({ cost_center_id: r.cc || null, currency: r.cur || null, fx_rate: r.cur && num(r.fxr) ? num(r.fxr) : null, fx_amount: r.cur && num(r.fxa) ? num(r.fxa) : null });
   const save = async (post) => {
     const h = formData(m.el.querySelector('#v-form'));
@@ -437,6 +441,7 @@ async function voucherEditor(type, entry, ctx) {
       if (empty) continue;
       const a = resolveAccount(accs, r.acc);
       if (!a) return toast(`السطر ${i + 1}: اختار حساب صحيح من القائمة`, 'err');
+      if (fxBad(r)) return toast(`السطر ${i + 1}: المبلغ بالدينار لازم يساوي المبلغ بالعملة × السعر`, 'err');
       const pt = resolveParty(parties, r.party);
       if (r.party && !pt) return toast(`السطر ${i + 1}: العميل/المورد مش موجود بالقائمة`, 'err');
       const party_id = pt?.id || null;

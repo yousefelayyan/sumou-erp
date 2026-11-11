@@ -2457,13 +2457,17 @@ update public.stock_moves m set is_cost = true
  where not m.is_cost and m.source_type = 'invoice_cancel' and m.qty < 0
    and exists (select 1 from public.invoices i where i.id = m.source_id and i.inv_type = 'purchase');
 
--- متوسط الكلفة المرجّح لصنف لحد تاريخ (وإذا ما في وارد: سعر الشراء بالصنف)
+-- متوسط الكلفة المتحرك لصنف لحد تاريخ: قيمة المخزون (مجموع الكمية × كلفة كل حركة) ÷ الكمية.
+-- كل حركة صادرة بتنسجّل بالمتوسط وقتها، فالقيمة بالدفاتر = قيمة تقرير المخزون.
+-- إذا الرصيد صفر: آخر كلفة شراء، وبعدين سعر الشراء بالصنف.
 create or replace function public.item_avg_cost(p_company uuid, p_item uuid, p_date date) returns numeric
 language sql stable security definer set search_path = public as $$
-  select round(coalesce(
-    (select case when sum(m.qty) > 0.0005 then sum(m.qty * m.unit_cost) / sum(m.qty) end
-       from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.is_cost and m.move_date <= p_date),
-    (select nullif(purchase_price, 0) from public.items where id = p_item), 0), 3);
+  select case when not public.has_company(p_company) then 0 else round(coalesce(
+    (select case when sum(m.qty) > 0.0005 then greatest(sum(m.qty * m.unit_cost), 0) / sum(m.qty) end
+       from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.move_date <= p_date),
+    (select m.unit_cost from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.is_cost and m.move_date <= p_date
+      order by m.move_date desc, m.created_at desc limit 1),
+    (select nullif(purchase_price, 0) from public.items where id = p_item), 0), 3) end;
 $$;
 
 create or replace function public.ensure_company_settings(p_company uuid) returns void
@@ -2516,9 +2520,9 @@ begin
   -- الشراء بكلفته، والباقي بمتوسط الكلفة قبل الحركة
   insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description, is_cost)
   select new.company_id, l.item_id, w, new.inv_date, sgn * l.qty,
-         case when new.inv_type = 'purchase' then case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end
+         case when new.inv_type in ('purchase','purchase_return') then case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end
               else public.item_avg_cost(new.company_id, l.item_id, new.inv_date) end,
-         'invoice', new.id, descr, new.inv_type = 'purchase' and l.qty > 0 and l.subtotal > 0
+         'invoice', new.id, descr, new.inv_type in ('purchase','purchase_return') and l.qty > 0 and l.subtotal > 0
   from public.invoice_lines l join public.items it on it.id = l.item_id
   where l.invoice_id = new.id and it.item_type = 'goods' and it.track_stock;
 
@@ -2533,9 +2537,10 @@ begin
     else perform public.add_entry_pair(new.entry_id, st.inventory_account_id, st.cogs_account_id, v, 'كلفة البضاعة - ' || descr); end if;
   else
     -- إعادة تصنيف قيمة البضاعة من المشتريات/مردوداتها للمخزون
+    -- القيمة نفسها اللي دخلت/طلعت من المخزون (الكمية × كلفة الحركة)
     for r in
       select coalesce(case when new.inv_type = 'purchase_return' then coalesce(st.purchase_return_account_id, l.account_id) else l.account_id end, st.purchase_account_id) as acc,
-             sum(l.subtotal) as amt
+             sum(l.qty * case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end) as amt
       from public.invoice_lines l join public.items it on it.id = l.item_id
       where l.invoice_id = new.id and it.item_type = 'goods' and it.track_stock group by 1
     loop
@@ -2774,8 +2779,10 @@ begin
   end if;
   return null;
 end $$;
-drop trigger if exists invoice_cost_center on public.invoices;
-create trigger invoice_cost_center after update of status on public.invoices for each row execute function public.invoice_cost_center();
+drop trigger if exists invoice_cost_center on public.invoices;   -- الاسم القديم
+drop trigger if exists zz_invoice_cost_center on public.invoices;
+-- اسمه zz عشان يشتغل بعد trigger المخزون وقيد الكلفة (الـ triggers بتشتغل بترتيب الأسماء)
+create trigger zz_invoice_cost_center after update of status on public.invoices for each row execute function public.invoice_cost_center();
 
 -- تقرير مراكز الكلفة
 create or replace function public.rep_cost_centers(p_company uuid, p_from date, p_to date)
@@ -2817,6 +2824,15 @@ language plpgsql stable security definer set search_path = public as $$
 declare r jsonb; m0 date := date_trunc('month', p_date)::date;
 begin
   if not public.has_company(p_company) then raise exception 'ما عندك صلاحية'; end if;
+  if not public.can(p_company, 'reports', 'view') then   -- بدون صلاحية التقارير: المسودات بس
+    return jsonb_build_object(
+      'drafts_entries', (select count(*) from public.journal_entries where company_id = p_company and status = 'draft'),
+      'drafts_invoices', (select count(*) from public.invoices where company_id = p_company and status = 'draft'),
+      'drafts_stock', (select count(*) from public.stock_docs where company_id = p_company and status = 'draft'),
+      'cheques_in_7', case when public.can(p_company, 'cheques', 'view') then coalesce((select sum(amount) from public.cheques where company_id = p_company and direction = 'in' and status = 'portfolio' and due_date <= p_date + 7), 0) end,
+      'cheques_out_7', case when public.can(p_company, 'cheques', 'view') then coalesce((select sum(amount) from public.cheques where company_id = p_company and direction = 'out' and status = 'issued' and due_date <= p_date + 7), 0) end,
+      'month_sales', '[]'::jsonb);
+  end if;
   select jsonb_build_object(
     'sales_month', coalesce((select sum(case when inv_type = 'sale' then subtotal else -subtotal end) from public.invoices
                      where company_id = p_company and status = 'posted' and inv_type in ('sale','sale_return') and inv_date between m0 and p_date), 0),
@@ -3073,6 +3089,8 @@ begin
   select * into r from public.payroll_runs where id = p_run;
   if not public.can(r.company_id, 'payroll', 'edit') then raise exception 'ما عندك صلاحية على الرواتب'; end if;
   select * into st from public.company_settings where company_id = r.company_id;
+  if r.status <> 'draft' then raise exception 'مسيّر الرواتب مرحّل'; end if;
+  update public.payroll_lines l set ss_wage = case when st.ss_ceiling > 0 then least(l.ss_wage, st.ss_ceiling) else l.ss_wage end where l.run_id = p_run;
   update public.payroll_lines l set ss_employee = round(l.ss_wage * st.ss_employee_rate / 100, 3), ss_employer = round(l.ss_wage * st.ss_employer_rate / 100, 3)
    where l.run_id = p_run;
 end $$;
@@ -3115,7 +3133,9 @@ begin
   if s.se + s.sr > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.ss_payable_account_id, 'اشتراكات الضمان - ' || descr, 0, s.se + s.sr); end if;
   if s.t > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.wht_payable_account_id, 'ضريبة دخل مقتطعة - ' || descr, 0, s.t); end if;
   if s.a > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.advances_account_id, 'خصم سلف - ' || descr, 0, s.a); end if;
-  if s.n + s.o > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.salaries_payable_account_id, 'صافي الرواتب المستحقة - ' || descr, 0, s.n + s.o); end if;
+  -- الخصومات الأخرى (جزاءات/غياب) بتخفّض مصروف الرواتب
+  if s.o > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.salaries_account_id, 'خصومات أخرى - ' || descr, 0, s.o); end if;
+  if s.n > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.salaries_payable_account_id, 'صافي الرواتب المستحقة - ' || descr, 0, s.n); end if;
   if (select sum(debit) - sum(credit) from public.journal_lines where entry_id = eid) <> 0 then raise exception 'قيد الرواتب مش متوازن'; end if;
   update public.journal_entries set status = 'posted', total = (select sum(debit) from public.journal_lines where entry_id = eid), posted_by = auth.uid(), posted_at = now() where id = eid;
   update public.payroll_runs set status = 'posted', entry_id = eid where id = p_run;
@@ -3187,13 +3207,15 @@ create table if not exists public.depreciation_lines (
 -- مجمع الاستهلاك لأصل (السابق + الدورات المرحّلة)
 create or replace function public.asset_accum(p_asset uuid) returns numeric
 language sql stable security definer set search_path = public as $$
-  select coalesce((select opening_accum from public.fixed_assets where id = p_asset), 0)
+  select case when exists (select 1 from public.fixed_assets f where f.id = p_asset and public.has_company(f.company_id)) then
+    coalesce((select opening_accum from public.fixed_assets where id = p_asset), 0)
        + coalesce((select sum(l.amount) from public.depreciation_lines l join public.depreciation_runs r on r.id = l.run_id
-                   where l.asset_id = p_asset and r.status = 'posted'), 0);
+                   where l.asset_id = p_asset and r.status = 'posted'), 0) end;
 $$;
 create or replace function public.asset_last_dep(p_asset uuid) returns date
 language sql stable security definer set search_path = public as $$
-  select max(l.to_date) from public.depreciation_lines l join public.depreciation_runs r on r.id = l.run_id where l.asset_id = p_asset and r.status = 'posted';
+  select max(l.to_date) from public.depreciation_lines l join public.depreciation_runs r on r.id = l.run_id
+   where l.asset_id = p_asset and r.status = 'posted' and public.has_company(r.company_id);
 $$;
 
 create or replace function public.assets_guard() returns trigger
@@ -3350,7 +3372,7 @@ create or replace function public.bank_prior_cleared(p_recon uuid) returns numer
 language sql stable security definer set search_path = public as $$
   select coalesce(sum(l.debit - l.credit), 0) from public.bank_cleared c join public.bank_recons r on r.id = c.recon_id
   join public.journal_lines l on l.id = c.line_id
-  where c.recon_id <> p_recon and r.status = 'done' and r.account_id = (select account_id from public.bank_recons where id = p_recon)
+  where c.recon_id <> p_recon and r.status = 'done' and public.can(r.company_id, 'bank_recon', 'view') and r.account_id = (select account_id from public.bank_recons where id = p_recon)
     and r.company_id = (select company_id from public.bank_recons where id = p_recon);
 $$;
 
@@ -3555,6 +3577,10 @@ begin
       rows := (select jsonb_agg(x - 'original_invoice_id') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'bank_recons' then
       rows := (select jsonb_agg(jsonb_set(x, '{status}', '"open"')) from jsonb_array_elements(rows) x);
+    elsif r.tbl = 'companies' then   -- المستخدم اللي أنشأها ممكن ما يكون موجود بقاعدة جديدة
+      rows := (select jsonb_agg(case when exists (select 1 from auth.users u where u.id::text = x ->> 'created_by') then x else jsonb_set(x, '{created_by}', 'null') end) from jsonb_array_elements(rows) x);
+    elsif r.tbl = 'obligations' then
+      rows := (select jsonb_agg(case when exists (select 1 from public.profiles u where u.id::text = x ->> 'assigned_to') then x else jsonb_set(x, '{assigned_to}', 'null') end) from jsonb_array_elements(rows) x);
     elsif r.tbl = 'accounts' then
       rows := (select jsonb_agg(x order by (x ->> 'level')::int) from jsonb_array_elements(rows) x);
     end if;
@@ -3583,3 +3609,59 @@ end $$;
 
 revoke execute on function public.backup_company(uuid), public.restore_company(jsonb) from public, anon;
 grant execute on function public.backup_company(uuid), public.restore_company(jsonb) to authenticated;
+
+
+-- #################### 15_fixes.sql ####################
+-- =====================================================================
+--  السمو ERP — المرحلة 15: تصليحات المراجعة
+-- =====================================================================
+
+-- حذف مستخدم أنشأ شركة: الشركة بتضل وبينفضى «أنشأها»
+alter table public.companies drop constraint if exists companies_created_by_fkey;
+alter table public.companies add constraint companies_created_by_fkey foreign key (created_by) references auth.users(id) on delete set null;
+
+-- المسيّر الملغى ما بيقفل الشهر: بتقدر تعمل مسيّر جديد لنفس الشهر
+alter table public.payroll_runs drop constraint if exists payroll_runs_company_id_period_key;
+create unique index if not exists payroll_runs_period_uq on public.payroll_runs (company_id, period) where status <> 'cancelled';
+
+-- سطور التسوية البنكية والرواتب: العرض بصلاحية «عرض»، والتعديل والحذف بصلاحية «تعديل»
+drop policy if exists bc_all on public.bank_cleared;
+drop policy if exists bc_select on public.bank_cleared;
+drop policy if exists bc_write on public.bank_cleared;
+create policy bc_select on public.bank_cleared for select to authenticated using (public.can(company_id, 'bank_recon', 'view'));
+create policy bc_write on public.bank_cleared for all to authenticated
+  using (public.can(company_id, 'bank_recon', 'edit'))
+  with check (exists (select 1 from public.bank_recons r where r.id = recon_id and public.can(r.company_id, 'bank_recon', 'edit')));
+
+drop policy if exists pl_all on public.payroll_lines;
+drop policy if exists pl_select on public.payroll_lines;
+drop policy if exists pl_write on public.payroll_lines;
+create policy pl_select on public.payroll_lines for select to authenticated
+  using (exists (select 1 from public.payroll_runs r where r.id = run_id and public.can(r.company_id, 'payroll', 'view')));
+create policy pl_write on public.payroll_lines for all to authenticated
+  using (exists (select 1 from public.payroll_runs r where r.id = run_id and public.can(r.company_id, 'payroll', 'edit')))
+  with check (exists (select 1 from public.payroll_runs r where r.id = run_id and public.can(r.company_id, 'payroll', 'edit')));
+
+-- المرفقات: مرفقات الموظفين والرواتب والأصول لأصحاب صلاحيتها بس، والحذف لصاحب الملف أو المدير
+create or replace function public.attachment_visible(p_company uuid, p_entity text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select case p_entity when 'employee' then public.can(p_company, 'payroll', 'view')
+                       when 'payroll'  then public.can(p_company, 'payroll', 'view')
+                       when 'asset'    then public.can(p_company, 'fixed_assets', 'view')
+                       else public.has_company(p_company) end;
+$$;
+drop policy if exists att_select on public.attachments;
+create policy att_select on public.attachments for select to authenticated using (public.attachment_visible(company_id, entity));
+
+do $$
+begin
+  if to_regclass('storage.objects') is not null then
+    execute 'drop policy if exists sumou_att_select on storage.objects';
+    execute 'drop policy if exists sumou_att_delete on storage.objects';
+    execute $p$create policy sumou_att_select on storage.objects for select to authenticated
+      using (bucket_id = 'attachments' and exists (select 1 from public.attachments a where a.path = name and public.attachment_visible(a.company_id, a.entity)))$p$;
+    execute $p$create policy sumou_att_delete on storage.objects for delete to authenticated
+      using (bucket_id = 'attachments' and public.has_company(((storage.foldername(name))[1])::uuid)
+             and not exists (select 1 from public.attachments a where a.path = name and not (a.created_by = auth.uid() or public.is_admin())))$p$;
+  end if;
+end $$;
