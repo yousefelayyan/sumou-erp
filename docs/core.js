@@ -132,7 +132,8 @@ export const isAdmin = () => !!(S.profile?.is_admin && S.profile?.is_active);
 export function can(screen, act, companyId = S.company?.id) {
   if (isAdmin()) return true;
   const m = S.memberships.find(x => x.company_id === companyId);
-  if (m && S.profile?.permissions?.[screen]) return true;
+  const up = S.profile?.permissions?.[screen];
+  if (m && (up === true || up?.[act])) return true;
   const g = m && S.groups.find(x => x.id === m.group_id);
   return !!g?.permissions?.[screen]?.[act];
 }

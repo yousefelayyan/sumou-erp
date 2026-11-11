@@ -2,7 +2,7 @@
 //  السمو ERP — المخزون والجرد
 // =====================================================================
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
-import { downloadCSV } from './finance.js';
+import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadItems } from './invoices.js';
 import { printDoc } from './print.js';
 
@@ -125,6 +125,9 @@ async function viewStockDocs(v, ctx) {
 
 async function docEditor(type, doc, whs, ctx) {
   const D = DOC[type], items = (await loadItems()).filter(i => i.item_type === 'goods');
+  const st = (await sb.from('company_settings').select('perpetual_inventory,cogs_account_id').eq('company_id', S.company.id).maybeSingle()).data || {};
+  const perp = !!st.perpetual_inventory && type !== 'transfer';
+  const accs = perp ? leafAccounts(await loadAccounts()) : [];
   let lines = [];
   if (doc) { const r = await sb.from('stock_doc_lines').select('*').eq('doc_id', doc.id).order('line_no'); lines = r.data || []; }
   const byId = Object.fromEntries(items.map(i => [i.id, i]));
@@ -139,6 +142,8 @@ async function docEditor(type, doc, whs, ctx) {
       <div class="field"><label>التاريخ</label><input type="date" name="doc_date" value="${esc(d0.doc_date)}" ${ro}></div>
       <div class="field"><label>${type === 'transfer' ? 'من مستودع' : 'المستودع'}</label><select name="warehouse_id" ${ro}>${whs.map(w => `<option value="${w.id}" ${w.id === d0.warehouse_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>
       ${type === 'transfer' ? `<div class="field"><label>إلى مستودع</label><select name="to_warehouse_id" ${ro}><option value="">—</option>${whs.map(w => `<option value="${w.id}" ${w.id === d0.to_warehouse_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : '<div></div>'}
+      ${perp ? `<div class="field" style="grid-column:span 3"><label>الحساب المقابل بالقيد (الجرد المستمر)</label><select name="account_id" ${ro}><option value="">— الافتراضي: ${esc(accs.find(a => a.id === st.cogs_account_id)?.name || 'كلفة البضاعة المباعة')} —</option>${accs.map(a => `<option value="${a.id}" ${a.id === d0.account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select>
+        <small class="muted">${type === 'in' ? 'مثلاً لبضاعة أول المدة اختار رأس المال أو الأرصدة الافتتاحية' : 'مثلاً مصروف تالف أو هدايا'}</small></div>` : ''}
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(d0.notes)}" ${ro}></div></div></form>
     <datalist id="sd-items">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}"></option>`).join('')}</datalist>
     ${isCount ? '<div class="notice info">اكتب الكمية الفعلية اللي عدّيتها. لما ترحّل، النظام بيحسب الفرق عن رصيد الدفاتر وبيعمل تسوية.</div>' : ''}
@@ -178,7 +183,7 @@ async function docEditor(type, doc, whs, ctx) {
     if (!out.length) return toast('أضف صنف واحد على الأقل', 'err');
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {
-      const header = { doc_date: h.doc_date, warehouse_id: h.warehouse_id, to_warehouse_id: type === 'transfer' ? h.to_warehouse_id : null, notes: h.notes };
+      const header = { doc_date: h.doc_date, warehouse_id: h.warehouse_id, to_warehouse_id: type === 'transfer' ? h.to_warehouse_id : null, notes: h.notes, ...(perp ? { account_id: h.account_id } : {}) };
       let id = doc?.id;
       if (id) { const u = await sb.from('stock_docs').update(header).eq('id', id); if (u.error) throw u.error; const dl = await sb.from('stock_doc_lines').delete().eq('doc_id', id); if (dl.error) throw dl.error; }
       else { const ins = await sb.from('stock_docs').insert({ ...header, company_id: S.company.id, doc_type: type }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; doc = ins.data; }

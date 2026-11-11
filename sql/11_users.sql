@@ -5,7 +5,7 @@
 create extension if not exists pgcrypto with schema extensions;
 
 alter table public.profiles add column if not exists username text;
-alter table public.profiles add column if not exists permissions jsonb not null default '{}'::jsonb;  -- {"sales_invoices": true, ...}
+alter table public.profiles add column if not exists permissions jsonb not null default '{}'::jsonb;  -- {"sales_invoices": true} = كل شي، أو {"customers": {"view": true, "print": true}}
 create unique index if not exists profiles_username_uq on public.profiles (lower(username)) where username is not null;
 
 -- الموظف ما بيقدر يغيّر صلاحياته أو اسم المستخدم
@@ -22,7 +22,7 @@ begin
   return new;
 end $$;
 
--- الصلاحية: مدير، أو الشاشة مأشّرة للمستخدم (كل العمليات)، أو من مجموعته بالشركة
+-- الصلاحية: مدير، أو الشاشة مأشّرة للمستخدم (true = كل العمليات، أو عمليات محددة)، أو من مجموعته بالشركة
 create or replace function public.can(cid uuid, screen text, act text) returns boolean
 language sql stable security definer set search_path = public as $$
   select public.is_admin() or (
@@ -31,7 +31,10 @@ language sql stable security definer set search_path = public as $$
       left join public.user_groups g on g.id = uc.group_id
       join public.profiles p on p.id = uc.user_id
       where uc.user_id = auth.uid() and uc.company_id = cid
-        and (coalesce((p.permissions ->> screen)::boolean, false)
+        and ((case jsonb_typeof(p.permissions -> screen)
+                when 'boolean' then (p.permissions ->> screen)::boolean
+                when 'object'  then coalesce((p.permissions -> screen ->> act)::boolean, false)
+                else false end)
              or coalesce((g.permissions -> screen ->> act)::boolean, false))
     )
   );

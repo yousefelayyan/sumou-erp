@@ -15,6 +15,7 @@ export const ENTRY_TYPES = {
   opening: { label: 'قيد افتتاحي', plural: 'الأرصدة الافتتاحية', screen: 'opening_balances', route: 'opening', icon: '🧮' },
   invoice: { label: 'قيد فاتورة', plural: 'قيود الفواتير', screen: 'journal_entries', route: 'sales', icon: '🧾' },
   cheque: { label: 'قيد شيك', plural: 'قيود الشيكات', screen: 'journal_entries', route: 'cheques', icon: '💳' },
+  stock: { label: 'قيد مخزون', plural: 'قيود المخزون', screen: 'journal_entries', route: 'stock', icon: '📦' },
   closing: { label: 'قيد إقفال', plural: 'قيود الإقفال', screen: 'journal_entries', route: 'fiscal-years', icon: '🔒' },
 };
 const STATUS = { draft: ['مسودة', 'warn'], posted: ['مرحّل', 'ok'], reversed: ['معكوس', 'bad'] };

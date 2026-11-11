@@ -566,7 +566,7 @@ async function viewUsers(v) {
       <thead><tr><th>الاسم</th><th>اسم الدخول</th><th>النوع</th><th>الشاشات</th><th>الشركات</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${users.map(u => {
         const mine = links.filter(l => l.user_id === u.id);
-        const np = Object.values(u.permissions || {}).filter(Boolean).length;
+        const np = Object.keys(u.permissions || {}).length;
         return `<tr><td><b>${esc(u.full_name || '')}</b></td><td dir="ltr" style="text-align:right">${esc(login(u))}</td>
           <td>${u.is_admin ? '<span class="badge brand">مدير النظام</span>' : 'موظف'}</td>
           <td>${u.is_admin ? '<span class="muted">الكل</span>' : (np ? np + ' شاشة' : '<span class="muted">—</span>')}</td>
@@ -589,6 +589,13 @@ function userEditor(u, links, comps) {
   const box = 'style="width:20px;height:20px;accent-color:var(--brand);cursor:pointer;flex:none"';
   const row = (attr, label, on) => `<label class="perm-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer">
       <span>${label}</span><input type="checkbox" ${attr} ${on ? 'checked' : ''} ${box}></label>`;
+  const has = (k, a) => perms[k] === true || !!perms[k]?.[a];
+  const prow = (sc) => { const any = ACTIONS.some(a => has(sc.key, a.key));
+    return `<div class="perm-row" data-row="${sc.key}" style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;min-width:150px"><span style="flex:1;font-weight:600">${esc(sc.label)}</span></label>
+      <span class="acts" style="display:flex;gap:4px;flex-wrap:wrap">${ACTIONS.map(a => `<label title="${a.label}" style="display:inline-flex;align-items:center;gap:3px;font-size:12px;padding:2px 7px;border:1px solid var(--line);border-radius:999px;cursor:pointer;background:#fff">
+        <input type="checkbox" data-a="${a.key}" ${has(sc.key, a.key) ? 'checked' : ''} style="width:14px;height:14px;accent-color:var(--brand)">${a.label}</label>`).join('')}</span>
+      <input type="checkbox" data-p="${sc.key}" ${any ? 'checked' : ''} ${box} title="كل الصلاحيات على الشاشة"></div>`; };
   const m = modal({ title: isNew ? '➕ مستخدم جديد' : '✏️ تعديل المستخدم: ' + esc(u.full_name || u.username || u.email), body: `
     <form id="u-form" autocomplete="off"><div class="grid cols-3">
       <div class="field"><label>اسم المستخدم (للدخول) *</label><input name="username" dir="ltr" autocapitalize="none" value="${esc(u?.username || '')}" placeholder="hala"></div>
@@ -603,10 +610,11 @@ function userEditor(u, links, comps) {
     <div id="perm-area">
     <div style="display:flex;align-items:center;margin:16px 0 6px"><h3 style="margin:0">🔐 الصلاحيات</h3><div class="spacer" style="flex:1"></div>
       <button class="btn sm" type="button" data-all="1">تحديد الكل</button> <button class="btn sm" type="button" data-all="0">إلغاء الكل</button></div>
-    <div class="grid cols-2" style="gap:12px">
+    <p class="muted" style="font-size:13px;margin:0 0 8px">المربع الكبير = كل شي على الشاشة. وإذا بدك تحدد، أشّر بس على العمليات الصغيرة (مثلاً «عرض» و«طباعة» بس).</p>
+    <div style="display:grid;gap:12px">
       ${groups.map(g => `<div class="card" style="padding:0;overflow:hidden">
         <div style="padding:8px 12px;background:var(--brand-soft, #f1ebf8);font-weight:700">${esc(g)}</div>
-        ${SCREENS.filter(s => s.group === g).map(s => row(`data-p="${s.key}"`, esc(s.label), !!perms[s.key])).join('')}</div>`).join('')}
+        ${SCREENS.filter(s => s.group === g).map(prow).join('')}</div>`).join('')}
     </div>
     <h3 style="margin:16px 0 6px">🏢 الشركات اللي بيشتغل عليها</h3>
     <div class="card" style="padding:0;overflow:hidden">${comps.map(c => row(`data-c="${c.id}"`, `${esc(c.name)} <span class="muted">(${esc(c.code)})</span>`, myComps.has(c.id))).join('') || '<p class="muted" style="padding:10px">ما في شركات</p>'}</div>
@@ -619,14 +627,21 @@ function userEditor(u, links, comps) {
   if (isNew) { let touched = false; f.password.oninput = () => touched = true; f.username.oninput = () => { if (!touched) f.password.value = f.username.value.trim().toLowerCase(); }; }
   const adminToggle = () => { m.el.querySelector('#perm-area').style.opacity = f.is_admin.checked ? .45 : 1; };
   f.is_admin.onchange = adminToggle; adminToggle();
-  m.el.querySelectorAll('[data-all]').forEach(b => b.onclick = () => m.el.querySelectorAll('[data-p]').forEach(x => x.checked = b.dataset.all === '1'));
+  const syncRow = (r) => { const as = [...r.querySelectorAll('[data-a]')]; const n = as.filter(x => x.checked).length; const p = r.querySelector('[data-p]');
+    p.checked = n > 0; p.indeterminate = n > 0 && n < as.length; };
+  m.el.querySelectorAll('[data-row]').forEach(r => { syncRow(r);
+    r.querySelector('[data-p]').onchange = (e) => { r.querySelectorAll('[data-a]').forEach(x => x.checked = e.target.checked); syncRow(r); };
+    r.querySelectorAll('[data-a]').forEach(x => x.onchange = () => { if (x.checked && x.dataset.a !== 'view') r.querySelector('[data-a="view"]').checked = true; syncRow(r); }); });
+  m.el.querySelectorAll('[data-all]').forEach(b => b.onclick = () => m.el.querySelectorAll('[data-row]').forEach(r => { r.querySelectorAll('[data-a]').forEach(x => x.checked = b.dataset.all === '1'); syncRow(r); }));
   m.el.querySelector('[data-save]').onclick = async (e) => {
     const d = formData(f);
     const username = (d.username || '').trim().toLowerCase();
     if (isNew && !username) return toast('اكتب اسم المستخدم', 'err');
     if (username && !/^[a-z0-9._-]{2,30}$/.test(username)) return toast('اسم المستخدم لازم يكون أحرف إنجليزي أو أرقام بدون فراغات', 'err');
     if (isNew && (d.password || '').length < 4) return toast('كلمة السر لازم تكون 4 أحرف على الأقل', 'err');
-    const permissions = Object.fromEntries([...m.el.querySelectorAll('[data-p]')].filter(x => x.checked).map(x => [x.dataset.p, true]));
+    const permissions = {};
+    m.el.querySelectorAll('[data-row]').forEach(r => { const on = [...r.querySelectorAll('[data-a]')].filter(x => x.checked).map(x => x.dataset.a);
+      if (on.length === ACTIONS.length) permissions[r.dataset.row] = true; else if (on.length) permissions[r.dataset.row] = Object.fromEntries(on.map(a => [a, true])); });
     const companies = [...m.el.querySelectorAll('[data-c]')].filter(x => x.checked).map(x => x.dataset.c);
     e.target.disabled = true;
     const r = isNew
