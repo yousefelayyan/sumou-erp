@@ -109,13 +109,15 @@ async function viewNumbering(v, ctx) {
   v.innerHTML = `<div class="page-head"><h2>🔢 طريقة الترقيم</h2><div class="spacer"></div>${editable ? '<button class="btn primary" id="save">💾 حفظ</button>' : ''}</div>
     <p class="muted">لكل نوع مستند بهالشركة: كيف ينرقّم، وإيمتى يبدأ من جديد، وشو شكل الرقم اللي بيطلع بالشاشات والطباعة. التغيير بيمشي على المستندات الجديدة بس.</p>
     <div class="grid" style="grid-template-columns:230px 1fr 1fr;gap:16px;align-items:start">
-      <div class="card" style="padding:8px" id="kinds">${groups.map(g => `<div class="muted" style="font-size:12px;margin:8px 6px 4px">${g}</div>
-        ${NUM_KINDS.filter(k => k.group === g).map(k => `<button type="button" class="btn sm" data-k="${k.key}" style="display:flex;width:100%;justify-content:flex-start;margin-bottom:4px">${k.label}<span class="badge" data-tag="${k.key}" style="margin-inline-start:auto"></span></button>`).join('')}`).join('')}</div>
+      <div class="card" style="padding:8px" id="kinds">${groups.map(g => `<div class="kgrp" data-grp="${esc(g)}">
+        <button type="button" class="kgrp-title" data-toggle="${esc(g)}">${g}<span class="chev">›</span></button>
+        <div class="kgrp-items">${NUM_KINDS.filter(k => k.group === g).map(k => `<button type="button" class="btn sm" data-k="${k.key}" style="display:flex;width:100%;justify-content:flex-start;margin-bottom:4px">${k.label}<span class="badge" data-tag="${k.key}" style="margin-inline-start:auto"></span></button>`).join('')}</div></div>`).join('')}</div>
       <form class="card" id="nf-mode"></form>
       <form class="card" id="nf-fmt"></form>
     </div>`;
   const rule = () => ({ ...defaultRule(cur), ...(all[cur] || {}) });
   const tag = (k) => { if (k.startsWith('m_') && !all[k]) return 'افتراضي'; const r = { ...defaultRule(k), ...(all[k] || {}) }; return r.mode === 'manual' ? 'يدوي' : 'تلقائي'; };
+  const openGrp = (g) => v.querySelectorAll('.kgrp').forEach(el => el.classList.toggle('open', el.dataset.grp === g));
   const drawTags = () => NUM_KINDS.forEach(k => { v.querySelector(`[data-tag="${k.key}"]`).textContent = tag(k.key);
     v.querySelector(`[data-k="${k.key}"]`).classList.toggle('primary', k.key === cur); });
   const radio = (name, val, label, r) => `<label class="check"><input type="radio" name="${name}" value="${val}" ${r[name] === val ? 'checked' : ''} ${dis}> ${label}</label>`;
@@ -180,7 +182,11 @@ async function viewNumbering(v, ctx) {
   v.querySelector('#nf-mode').addEventListener('change', onChange);
   v.querySelector('#nf-fmt').addEventListener('input', onChange);
   v.querySelector('#nf-fmt').addEventListener('change', onChange);
-  v.querySelector('#kinds').addEventListener('click', (e) => { const b = e.target.closest('[data-k]'); if (!b) return; cur = b.dataset.k; draw(); });
+  v.querySelector('#kinds').addEventListener('click', (e) => {
+    const t = e.target.closest('[data-toggle]');
+    if (t) { const el = t.closest('.kgrp'); openGrp(el.classList.contains('open') ? null : t.dataset.toggle); return; }
+    const b = e.target.closest('[data-k]'); if (!b) return; cur = b.dataset.k; draw(); });
+  openGrp(KIND[cur].group);
   v.querySelector('#save')?.addEventListener('click', async () => {
     await sb.rpc('ensure_company_settings', { p_company: S.company.id });
     const { error } = await sb.from('company_settings').update({ numbering: all, updated_at: new Date().toISOString() }).eq('company_id', S.company.id);

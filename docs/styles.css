@@ -29,8 +29,14 @@ a{color:var(--brand)}
 .side-brand img{width:34px;height:34px}
 .side-brand b{font-size:18px;color:#fff}
 .nav{padding:10px 8px 20px;flex:1}
-.nav-group{margin-top:10px}
-.nav-title{font-size:12px;letter-spacing:.3px;color:#b69ad3;padding:8px 12px 4px}
+.nav-group{margin-top:4px}
+.nav-title{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;font:inherit;font-size:14.5px;font-weight:600;color:#d9c6ee;padding:10px 12px;border-radius:9px;cursor:pointer;text-align:start}
+.nav-title:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav-title .chev{margin-inline-start:auto;font-size:18px;line-height:1;transition:transform .2s;transform:rotate(180deg);opacity:.7}
+.nav-group.open>.nav-title{color:#fff}
+.nav-group.open>.nav-title .chev{transform:rotate(90deg)}
+.nav-items{display:none;padding:2px 0 6px;padding-inline-start:8px}
+.nav-group.open>.nav-items{display:block}
 .nav a,.nav .soon{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:#e9ddf5;text-decoration:none;cursor:pointer}
 .nav a:hover{background:rgba(255,255,255,.07)}
 .nav a.active{background:var(--brand-2);color:#fff}
@@ -166,3 +172,11 @@ table.t{width:100%;border-collapse:collapse}
 .inv-totals{display:flex;flex-direction:column;gap:6px;margin:12px 0 0 auto;max-width:380px;margin-inline-start:auto;background:#faf7fd;border-radius:10px;padding:12px 14px}
 .inv-totals div{display:flex;justify-content:space-between;gap:10px}
 .inv-totals .big{font-size:18px;color:var(--brand);border-top:1px solid var(--line);padding-top:6px}
+
+/* قوائم جانبية قابلة للطي (مثل شاشة طريقة الترقيم) */
+.kgrp-title{display:flex;align-items:center;width:100%;background:none;border:0;font:inherit;font-size:14px;font-weight:700;color:var(--ink,#2b2140);padding:9px 8px;border-radius:8px;cursor:pointer;text-align:start}
+.kgrp-title:hover{background:rgba(0,0,0,.04)}
+.kgrp-title .chev{margin-inline-start:auto;font-size:18px;line-height:1;transition:transform .2s;transform:rotate(180deg);opacity:.6}
+.kgrp.open>.kgrp-title .chev{transform:rotate(90deg)}
+.kgrp-items{display:none;padding:2px 4px 6px}
+.kgrp.open>.kgrp-items{display:block}

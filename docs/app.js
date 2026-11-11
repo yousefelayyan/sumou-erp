@@ -170,8 +170,23 @@ const NAV = () => [
   ]},
 ];
 
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والأصول': '👷', 'المبيعات والمشتريات': '🧾', 'المخزون': '📦', 'العملاء والموردين': '🤝', 'التقارير': '📊', 'قريباً': '⏳' };
+// القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
+function groupOfRoute(route) {
+  const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
+  return g?.title || null;
+}
+function setOpenGroup(title) {
+  document.querySelectorAll('.nav-group').forEach(el => {
+    const on = el.dataset.g === title; el.classList.toggle('open', on);
+    el.querySelector('.nav-title')?.setAttribute('aria-expanded', on);
+  });
+  localStorageSet('sumou.nav.open', title || '');
+}
+
 function renderShell() {
   const route = currentRoute();
+  const openGroup = groupOfRoute(route) || localStorageGet('sumou.nav.open') || '';
   const initials = (S.profile.full_name || S.profile.email || '?').trim().charAt(0);
   $app.innerHTML = `
     <div class="layout">
@@ -181,12 +196,13 @@ function renderShell() {
           ${NAV().map(g => {
             const items = g.items.filter(it => it.soon || !it.show || it.show());
             if (!items.length) return '';
-            return `<div class="nav-group"><div class="nav-title">${g.title}</div>
-              ${items.map(it => it.soon
+            const open = g.title === openGroup;
+            return `<div class="nav-group ${open ? 'open' : ''}" data-g="${esc(g.title)}"><button type="button" class="nav-title" aria-expanded="${open}"><span class="ico">${GROUP_ICONS[g.title] || '📁'}</span>${g.title}<span class="chev">›</span></button>
+              <div class="nav-items">${items.map(it => it.soon
                 ? `<div class="soon"><span class="ico">${it.i}</span>${it.l}<small>قريباً</small></div>`
                 : it.href ? `<a href="${it.href}" target="_blank" rel="noopener"><span class="ico">${it.i}</span>${it.l} ↗</a>`
                 : `<a href="#/${it.r}" class="${route === it.r.split('?')[0] ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
-            </div>`;
+            </div></div>`;
           }).join('')}
         </nav>
       </aside>
@@ -224,6 +240,9 @@ function renderShell() {
     updateWatermark(); route_();
   };
   document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => document.getElementById('sidebar').classList.remove('open')));
+  document.querySelectorAll('.nav-title').forEach(b => b.addEventListener('click', () => {
+    const g = b.closest('.nav-group'); setOpenGroup(g.classList.contains('open') ? null : g.dataset.g);
+  }));
 }
 
 // علامة مائية على الخلفية: اسم الشركة والسنة المالية الحالية
@@ -245,6 +264,7 @@ const ROUTES = {
 async function route_() {
   const r = currentRoute();
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + r));
+  const og = groupOfRoute(r); if (og && !document.querySelector(`.nav-group.open[data-g="${CSS.escape(og)}"]`)) setOpenGroup(og);
   const view = document.getElementById('view'); if (!view) return;
   view.innerHTML = '<div class="empty">جاري التحميل…</div>';
   try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); }
