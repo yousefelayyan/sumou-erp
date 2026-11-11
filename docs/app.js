@@ -111,10 +111,7 @@ const NAV = () => [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
     { r: 'settings', i: '🔗', l: 'حسابات الربط والضريبة', show: () => S.company && can('companies', 'edit') },
-    { r: 'print-settings', i: '🖨️', l: 'نماذج الطباعة', show: () => S.company && can('companies', 'edit') },
-    { r: 'numbering', i: '🔢', l: 'طريقة الترقيم', show: () => S.company && can('companies', 'edit') },
     { r: 'import', i: '📥', l: 'الاستيراد من إكسل', show: () => S.company && ['customers', 'suppliers', 'items', 'accounts', 'opening_balances', 'payroll'].some(x => can(x, 'add') || can(x, 'edit')) },
-    { r: 'backup', i: '💾', l: 'النسخ الاحتياطي', show: isAdmin },
     { r: 'companies', i: '🗂️', l: 'الشركات', show: isAdmin },
     { r: 'users', i: '👥', l: 'المستخدمين', show: isAdmin },
     { r: 'groups', i: '🔐', l: 'المجموعات والصلاحيات', show: isAdmin },
@@ -168,9 +165,14 @@ const NAV = () => [
   { title: 'قريباً', items: [
  { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
   ]},
+  { title: 'الأدوات', items: [
+    { r: 'numbering', i: '🔢', l: 'طريقة الترقيم', show: () => S.company && can('companies', 'edit') },
+    { r: 'backup', i: '💾', l: 'النسخ الاحتياطي', show: isAdmin },
+    { r: 'print-settings', i: '🖨️', l: 'نماذج الطباعة', show: () => S.company && can('companies', 'edit') },
+  ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والأصول': '👷', 'المبيعات والمشتريات': '🧾', 'المخزون': '📦', 'العملاء والموردين': '🤝', 'التقارير': '📊', 'قريباً': '⏳' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والأصول': '👷', 'المبيعات والمشتريات': '🧾', 'المخزون': '📦', 'العملاء والموردين': '🤝', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
