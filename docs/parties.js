@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — المرحلة 4: الزبائن والموردين
 // =====================================================================
+import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, ENTRY_TYPES, downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
@@ -39,7 +40,7 @@ function partyList(type) {
   return async function (v, ctx) {
     if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
     const P = PARTY[type];
-    const [parties, accs] = await Promise.all([loadParties(true), loadAccounts()]);
+    const [parties, accs] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true)]);
     let bal = {};
     if (S.fy) {
       const { data } = await sb.from('party_balances').select('party_id,debit,credit').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id);
@@ -95,7 +96,7 @@ function partyForm(type, p, accs, ctx) {
   const P = PARTY[type], isNew = !p;
   const leaves = leafAccounts(accs);
   const def = leaves.find(a => a.account_type === P.accType);
-  p = p || { name: '', code: '', account_id: def?.id, credit_limit: 0, payment_terms_days: 0, is_active: true };
+  p = p || { name: '', code: masterCode(type === 'customer' ? 'm_customer' : 'm_supplier', (S.parties || []).filter(x => x.party_type === type).map(x => x.code)) || '', account_id: def?.id, credit_limit: 0, payment_terms_days: 0, is_active: true };
   const sorted = [...leaves].sort((a, b) => (b.account_type === P.accType) - (a.account_type === P.accType) || a.code.localeCompare(b.code, 'en', { numeric: true }));
   const m = modal({ title: isNew ? `${P.label} جديد` : `تعديل ${P.label}: ${p.name}`, body: `
     <form id="p-form">
@@ -169,7 +170,7 @@ async function viewPartyLedger(v) {
     let b = num(ob.data), td = 0, tc = 0;
     const fmtB = (x) => `${fmtNum(Math.abs(x))} ${Math.abs(x) < 0.0005 ? '' : x > 0 ? 'مدين' : 'دائن'}`;
     const body = mv.data.map(m => { b += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit);
-      return `<tr><td>${fmtDate(m.entry_date)}</td><td>${ENTRY_TYPES[m.entry_type].label} ${m.entry_no}</td><td>${esc(m.line_description || m.description || '')}</td><td>${esc(m.reference || '')}</td>
+      return `<tr><td>${fmtDate(m.entry_date)}</td><td>${ENTRY_TYPES[m.entry_type].label} ${esc(docNo(m))}</td><td>${esc(m.line_description || m.description || '')}</td><td>${esc(m.reference || '')}</td>
         <td class="n">${num(m.debit) ? fmtNum(m.debit) : ''}</td><td class="n">${num(m.credit) ? fmtNum(m.credit) : ''}</td><td class="n">${fmtB(b)}</td></tr>`; }).join('');
     const table = `<table class="t pt rep"><thead><tr><th>التاريخ</th><th>السند</th><th>البيان</th><th>المرجع</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
       <tbody><tr class="grp"><td>${fmtDate(from)}</td><td colspan="5">رصيد أول المدة</td><td class="n">${fmtB(num(ob.data))}</td></tr>
@@ -186,13 +187,13 @@ async function viewPartyLedger(v) {
   v.querySelector('#f-print').onclick = () => last && printDoc(`كشف حساب ${PARTY[last.p.party_type].label}: ${last.p.code} — ${last.p.name}`, last.table, { subtitle: `من ${fmtDate(last.from)} إلى ${fmtDate(last.to)}` });
   v.querySelector('#f-csv').onclick = () => { if (!last) return; let b = last.ob;
     downloadCSV(`كشف حساب ${last.p.name}.csv`, [['التاريخ', 'السند', 'البيان', 'المرجع', 'مدين', 'دائن', 'الرصيد'], [last.from, 'رصيد أول المدة', '', '', '', '', b.toFixed(3)]]
-      .concat(last.mv.map(m => { b += num(m.debit) - num(m.credit); return [m.entry_date, `${ENTRY_TYPES[m.entry_type].label} ${m.entry_no}`, m.line_description || m.description || '', m.reference || '', num(m.debit).toFixed(3), num(m.credit).toFixed(3), b.toFixed(3)]; }))); };
+      .concat(last.mv.map(m => { b += num(m.debit) - num(m.credit); return [m.entry_date, `${ENTRY_TYPES[m.entry_type].label} ${docNo(m)}`, m.line_description || m.description || '', m.reference || '', num(m.debit).toFixed(3), num(m.credit).toFixed(3), b.toFixed(3)]; }))); };
   v.querySelector('#f-wa').onclick = () => {
     if (!last) return toast('اعرض الكشف أول', 'err');
     const p = last.p; let b = last.ob, td = 0, tc = 0;
     last.mv.forEach(m => { b += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit); });
     const side = (x) => Math.abs(x) < 0.0005 ? '' : x > 0 ? (p.party_type === 'customer' ? ' مدين (مستحق عليكم)' : ' مدين') : (p.party_type === 'supplier' ? ' دائن (مستحق لكم)' : ' دائن');
-    const recent = last.mv.slice(-10).map(m => `▫️ ${fmtDate(m.entry_date)} — ${ENTRY_TYPES[m.entry_type].label} ${m.entry_no}: ${num(m.debit) ? fmtNum(m.debit) + ' مدين' : fmtNum(m.credit) + ' دائن'}`).join('\n');
+    const recent = last.mv.slice(-10).map(m => `▫️ ${fmtDate(m.entry_date)} — ${ENTRY_TYPES[m.entry_type].label} ${docNo(m)}: ${num(m.debit) ? fmtNum(m.debit) + ' مدين' : fmtNum(m.credit) + ' دائن'}`).join('\n');
     const txt = `*${S.company.name}*\nكشف حساب: ${p.name}\nمن ${fmtDate(last.from)} إلى ${fmtDate(last.to)}\n\nرصيد أول المدة: ${fmtNum(Math.abs(last.ob))}\nمجموع المدين: ${fmtNum(td)}\nمجموع الدائن: ${fmtNum(tc)}\n*الرصيد النهائي: ${fmtNum(Math.abs(b))} دينار${side(b)}*`
       + (recent ? `\n\nآخر الحركات:\n${recent}` : '') + `\n\nللاستفسار يرجى التواصل معنا. شكراً لكم.`;
     let ph = String(p.mobile || p.phone || '').replace(/\D/g, '');

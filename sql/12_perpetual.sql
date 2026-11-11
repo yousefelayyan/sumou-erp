@@ -81,7 +81,7 @@ begin
     return null;
   end if;
   w := coalesce(new.warehouse_id, public.default_warehouse(new.company_id));
-  descr := case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || new.inv_no;
+  descr := case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || coalesce(new.doc_code, new.inv_no::text);
   -- الشراء بكلفته، والباقي بمتوسط الكلفة قبل الحركة
   insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description, is_cost)
   select new.company_id, l.item_id, w, new.inv_date, sgn * l.qty,
@@ -128,7 +128,7 @@ begin
   if d.status <> 'draft' then raise exception 'السند مرحّل من قبل'; end if;
   select count(*) into n from public.stock_doc_lines where doc_id = p_id;
   if n = 0 then raise exception 'السند بدون أصناف'; end if;
-  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || d.doc_no;
+  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || coalesce(d.doc_code, d.doc_no::text);
   perform set_config('sumou.internal', public.internal_token(), true);
   for r in select * from public.stock_doc_lines where doc_id = p_id order by line_no loop
     cst := public.item_avg_cost(d.company_id, r.item_id, d.doc_date);
@@ -167,7 +167,7 @@ begin
       select id into fy from public.fiscal_years where company_id = d.company_id and d.doc_date between start_date and end_date and not is_closed order by start_date desc limit 1;
       if fy is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ السند'; end if;
       insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, status)
-      values (d.company_id, fy, 'stock', d.doc_date, descr || coalesce(' - ' || nullif(d.notes, ''), ''), 'مخزون ' || d.doc_no, 'draft') returning id into eid;
+      values (d.company_id, fy, 'stock', d.doc_date, descr || coalesce(' - ' || nullif(d.notes, ''), ''), 'مخزون ' || coalesce(d.doc_code, d.doc_no::text), 'draft') returning id into eid;
       perform public.add_entry_pair(eid, st.inventory_account_id, contra, v, descr);
       update public.journal_entries set status = 'posted', posted_by = auth.uid(), posted_at = now() where id = eid;
     end if;

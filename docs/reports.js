@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — المرحلة 3: التقارير المالية
 // =====================================================================
+import { docNo } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, can } from './core.js';
 import { loadAccounts, accLabel, CATEGORIES, ENTRY_TYPES, downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
@@ -129,7 +130,7 @@ async function viewLedger(v) {
       let run = num(ob.data), td = 0, tc = 0;
       const open = drcr(run);
       const body = mv.data.map(m => { run += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit); const b = drcr(run);
-        return `<tr><td>${fmtDate(m.entry_date)}</td><td>${ENTRY_TYPES[m.entry_type].label} ${m.entry_no}</td>${a.is_group ? `<td>${esc(m.account_code)} ${esc(m.account_name)}</td>` : ''}
+        return `<tr><td>${fmtDate(m.entry_date)}</td><td>${ENTRY_TYPES[m.entry_type].label} ${esc(docNo(m))}</td>${a.is_group ? `<td>${esc(m.account_code)} ${esc(m.account_name)}</td>` : ''}
           <td>${esc(m.line_description || m.description || '')}</td><td>${esc(m.reference || '')}</td>
           <td class="n">${money(num(m.debit))}</td><td class="n">${money(num(m.credit))}</td><td class="n">${b[0]}</td><td class="n">${b[1]}</td></tr>`; }).join('');
       const close = drcr(run);
@@ -149,7 +150,7 @@ async function viewLedger(v) {
   wireOutput(v, () => last && { title: `كشف حساب: ${last.a.code} — ${last.a.name}`, html: last.table, opts: { subtitle: subtitleRange(last.r) } },
     () => { if (!last) return; let b = last.ob; return { name: `كشف حساب ${last.a.code} - ${last.a.name}.csv`,
       rows: [['التاريخ', 'السند', 'الحساب', 'البيان', 'المرجع', 'مدين', 'دائن', 'الرصيد'], [last.r.from, 'رصيد أول المدة', '', '', '', '', '', b.toFixed(3)]]
-        .concat(last.mv.map(m => { b += num(m.debit) - num(m.credit); return [m.entry_date, `${ENTRY_TYPES[m.entry_type].label} ${m.entry_no}`, `${m.account_code} ${m.account_name}`, m.line_description || m.description || '', m.reference || '', num(m.debit).toFixed(3), num(m.credit).toFixed(3), b.toFixed(3)]; })) }; });
+        .concat(last.mv.map(m => { b += num(m.debit) - num(m.credit); return [m.entry_date, `${ENTRY_TYPES[m.entry_type].label} ${docNo(m)}`, `${m.account_code} ${m.account_name}`, m.line_description || m.description || '', m.reference || '', num(m.debit).toFixed(3), num(m.credit).toFixed(3), b.toFixed(3)]; })) }; });
   if (pre) run();
 }
 
@@ -170,7 +171,7 @@ async function viewJournalReport(v) {
     const groups = []; data.forEach(x => { const g = groups.at(-1); if (g && g.id === x.entry_id) g.lines.push(x); else groups.push({ id: x.entry_id, h: x, lines: [x] }); });
     let td = 0, tc = 0;
     const body = groups.map(g => { const d = g.lines.reduce((s, l) => s + num(l.debit), 0); td += d; tc += g.lines.reduce((s, l) => s + num(l.credit), 0);
-      return `<tr class="grp"><td>${fmtDate(g.h.entry_date)}</td><td>${ENTRY_TYPES[g.h.entry_type].label} ${g.h.entry_no}${g.h.status === 'reversed' ? ' (معكوس)' : ''}</td><td colspan="4">${esc(g.h.description || '')} ${g.h.party_name ? '— ' + esc(g.h.party_name) : ''} ${g.h.reference ? '— مرجع: ' + esc(g.h.reference) : ''}</td></tr>
+      return `<tr class="grp"><td>${fmtDate(g.h.entry_date)}</td><td>${ENTRY_TYPES[g.h.entry_type].label} ${esc(docNo(g.h))}${g.h.status === 'reversed' ? ' (معكوس)' : ''}</td><td colspan="4">${esc(g.h.description || '')} ${g.h.party_name ? '— ' + esc(g.h.party_name) : ''} ${g.h.reference ? '— مرجع: ' + esc(g.h.reference) : ''}</td></tr>
         ${g.lines.map(l => `<tr><td></td><td dir="ltr" style="text-align:right">${esc(l.account_code)}</td><td>${esc(l.account_name)}</td><td>${esc(l.line_description || '')}</td><td class="n">${money(num(l.debit))}</td><td class="n">${money(num(l.credit))}</td></tr>`).join('')}`; }).join('');
     const table = `<table class="t pt rep"><thead><tr><th>التاريخ</th><th>السند / الحساب</th><th>اسم الحساب</th><th>البيان</th><th>مدين</th><th>دائن</th></tr></thead>
       <tbody>${body || '<tr><td colspan="6" class="empty">ما في قيود مرحّلة بهالفترة</td></tr>'}</tbody>
@@ -181,7 +182,7 @@ async function viewJournalReport(v) {
   v.querySelector('#f-run').onclick = run;
   wireOutput(v, () => last && { title: 'اليومية العامة', html: last.table, opts: { subtitle: subtitleRange(last.r) } },
     () => last && { name: `اليومية العامة - ${S.company.name}.csv`, rows: [['التاريخ', 'نوع السند', 'رقم السند', 'البيان', 'رقم الحساب', 'اسم الحساب', 'بيان السطر', 'مدين', 'دائن']]
-      .concat(last.data.map(x => [x.entry_date, ENTRY_TYPES[x.entry_type].label, x.entry_no, x.description || '', x.account_code, x.account_name, x.line_description || '', num(x.debit).toFixed(3), num(x.credit).toFixed(3)])) });
+      .concat(last.data.map(x => [x.entry_date, ENTRY_TYPES[x.entry_type].label, docNo(x), x.description || '', x.account_code, x.account_name, x.line_description || '', num(x.debit).toFixed(3), num(x.credit).toFixed(3)])) });
   run();
 }
 

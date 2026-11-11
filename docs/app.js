@@ -11,6 +11,7 @@ import { OBLIGATION_ROUTES, obligationsSummary } from './obligations.js';
 import { CHEQUE_ROUTES } from './cheques.js';
 import { INVENTORY_ROUTES } from './inventory.js';
 import { PRINTSET_ROUTES } from './printset.js';
+import { NUMBERING_ROUTES } from './numbering.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
@@ -111,6 +112,7 @@ const NAV = () => [
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
     { r: 'settings', i: '🔗', l: 'حسابات الربط والضريبة', show: () => S.company && can('companies', 'edit') },
     { r: 'print-settings', i: '🖨️', l: 'نماذج الطباعة', show: () => S.company && can('companies', 'edit') },
+    { r: 'numbering', i: '🔢', l: 'طريقة الترقيم', show: () => S.company && can('companies', 'edit') },
     { r: 'import', i: '📥', l: 'الاستيراد من إكسل', show: () => S.company && ['customers', 'suppliers', 'items', 'accounts', 'opening_balances', 'payroll'].some(x => can(x, 'add') || can(x, 'edit')) },
     { r: 'backup', i: '💾', l: 'النسخ الاحتياطي', show: isAdmin },
     { r: 'companies', i: '🗂️', l: 'الشركات', show: isAdmin },
@@ -235,7 +237,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

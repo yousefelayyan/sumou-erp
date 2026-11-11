@@ -267,7 +267,7 @@ begin
   if s_tax > 0 and tax_acc is null then raise exception 'حدّد حساب ضريبة المبيعات بشاشة «حسابات الربط»'; end if;
 
   descr := case i.inv_type when 'sale' then 'فاتورة بيع' when 'sale_return' then 'مرتجع بيع' when 'purchase' then 'فاتورة شراء' else 'مرتجع شراء' end
-           || ' رقم ' || i.inv_no || coalesce(' - ' || coalesce(p.name, i.party_name), '');
+           || ' رقم ' || coalesce(i.doc_code, i.inv_no::text) || coalesce(' - ' || coalesce(p.name, i.party_name), '');
 
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, status)
   values (i.company_id, i.fiscal_year_id, 'invoice', i.inv_date, descr, i.reference, coalesce(p.name, i.party_name), 'draft')

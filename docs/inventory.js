@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — المخزون والجرد
 // =====================================================================
+import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadItems } from './invoices.js';
@@ -109,7 +110,7 @@ async function viewStockDocs(v, ctx) {
   const type = new URLSearchParams(location.hash.split('?')[1] || '').get('type') || 'in';
   const D = DOC[type] || DOC.in;
   const [{ data, error }, whs] = await Promise.all([
-    sb.from('stock_docs').select('*').eq('company_id', S.company.id).eq('doc_type', type).order('doc_no', { ascending: false }).limit(2000), loadWarehouses()]);
+    sb.from('stock_docs').select('*').eq('company_id', S.company.id).eq('doc_type', type).order('doc_date', { ascending: false }).order('doc_no', { ascending: false }).limit(2000), loadWarehouses()]);
   if (error) throw error;
   const wn = Object.fromEntries(whs.map(x => [x.id, x.name]));
   v.innerHTML = `<div class="page-head"><h2>${D.icon} ${D.label}</h2><span class="badge brand">${data.length}</span><div class="spacer"></div>
@@ -117,7 +118,7 @@ async function viewStockDocs(v, ctx) {
       ${can('inventory', 'add') ? `<button class="btn primary" id="add">➕ ${D.label} جديد</button>` : ''}</div>
     <div class="tabs">${Object.entries(DOC).map(([k, d]) => `<a class="tab ${k === type ? 'active' : ''}" href="#/stock-docs?type=${k}" style="text-decoration:none">${d.icon} ${d.label}</a>`).join('')}</div>
     <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>التاريخ</th><th>المستودع</th>${type === 'transfer' ? '<th>إلى</th>' : ''}<th>ملاحظات</th><th>الحالة</th></tr></thead>
-      <tbody id="rows">${data.map(d => `<tr class="click" data-open="${d.id}"><td><b>${d.doc_no}</b></td><td>${fmtDate(d.doc_date)}</td><td>${esc(wn[d.warehouse_id] || '')}</td>
+      <tbody id="rows">${data.map(d => `<tr class="click" data-open="${d.id}"><td><b dir="ltr">${esc(docNo(d))}</b></td><td>${fmtDate(d.doc_date)}</td><td>${esc(wn[d.warehouse_id] || '')}</td>
         ${type === 'transfer' ? `<td>${esc(wn[d.to_warehouse_id] || '')}</td>` : ''}<td>${esc(d.notes || '')}</td>
         <td>${d.status === 'posted' ? '<span class="badge ok">مرحّل</span>' : '<span class="badge warn">مسودة</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">ما في سندات</td></tr>'}</tbody></table></div>`;
   v.querySelector('#add')?.addEventListener('click', () => docEditor(type, null, whs, ctx));
@@ -134,12 +135,14 @@ async function docEditor(type, doc, whs, ctx) {
   const byId = Object.fromEntries(items.map(i => [i.id, i]));
   const readOnly = (doc && doc.status === 'posted') || (doc ? !can('inventory', 'edit') : !can('inventory', 'add'));
   const ro = readOnly ? 'disabled' : '';
+  const manual = await isManual('stock_' + type);
   const d0 = doc || { doc_date: today(), warehouse_id: whs[0]?.id };
   let rows = lines.map(l => ({ item: itemLabel(byId[l.item_id]), qty: num(l.qty), counted: l.counted_qty == null ? '' : num(l.counted_qty), cost: num(l.unit_cost) }));
   if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 });
   const isCount = type === 'count';
-  const m = modal({ title: doc ? `${D.label} رقم ${doc.doc_no}` : `${D.label} جديد`, body: `
+  const m = modal({ title: doc ? `${D.label} رقم ${docNo(doc)}` : `${D.label} جديد`, body: `
     <form id="sd-form"><div class="grid cols-3">
+      ${manualField(manual, doc?.doc_no, ro)}
       <div class="field"><label>التاريخ</label><input type="date" name="doc_date" value="${esc(d0.doc_date)}" ${ro}></div>
       <div class="field"><label>${type === 'transfer' ? 'من مستودع' : 'المستودع'}</label><select name="warehouse_id" ${ro}>${whs.map(w => `<option value="${w.id}" ${w.id === d0.warehouse_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>
       ${type === 'transfer' ? `<div class="field"><label>إلى مستودع</label><select name="to_warehouse_id" ${ro}><option value="">—</option>${whs.map(w => `<option value="${w.id}" ${w.id === d0.to_warehouse_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : '<div></div>'}
@@ -183,9 +186,11 @@ async function docEditor(type, doc, whs, ctx) {
       else { if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err'); out.push({ item_id: it.id, qty: num(r.qty), unit_cost: num(r.cost) }); }
     }
     if (!out.length) return toast('أضف صنف واحد على الأقل', 'err');
+    const mn = readManual(m.el.querySelector('#sd-form'), manual);
+    if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم السند (رقم صحيح أكبر من صفر)', 'err');
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {
-      const header = { doc_date: h.doc_date, warehouse_id: h.warehouse_id, to_warehouse_id: type === 'transfer' ? h.to_warehouse_id : null, notes: h.notes, ...(perp ? { account_id: h.account_id } : {}) };
+      const header = { ...(mn.value ? { doc_no: mn.value } : {}), doc_date: h.doc_date, warehouse_id: h.warehouse_id, to_warehouse_id: type === 'transfer' ? h.to_warehouse_id : null, notes: h.notes, ...(perp ? { account_id: h.account_id } : {}) };
       let id = doc?.id;
       if (id) { const u = await sb.from('stock_docs').update(header).eq('id', id); if (u.error) throw u.error; const dl = await sb.from('stock_doc_lines').delete().eq('doc_id', id); if (dl.error) throw dl.error; }
       else { const ins = await sb.from('stock_docs').insert({ ...header, company_id: S.company.id, doc_type: type }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; doc = ins.data; }
@@ -198,13 +203,13 @@ async function docEditor(type, doc, whs, ctx) {
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
   m.el.querySelector('[data-post]')?.addEventListener('click', () => save(true));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
-    if (!(await confirmBox(`حذف ${D.label} رقم ${doc.doc_no}؟`))) return;
+    if (!(await confirmBox(`حذف ${D.label} رقم ${docNo(doc)}؟`))) return;
     const { error } = await sb.from('stock_docs').delete().eq('id', doc.id); if (error) return toast(arError(error), 'err'); toast('تم الحذف', 'ok'); m.close(); ctx.rerender();
   });
-  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('stock_doc', doc.id, `${D.label} رقم ${doc.doc_no}`));
+  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('stock_doc', doc.id, `${D.label} رقم ${docNo(doc)}`));
   m.el.querySelector('[data-print]')?.addEventListener('click', () => {
     const wn = Object.fromEntries(whs.map(x => [x.id, x.name]));
-    printDoc(`${D.label} رقم ${doc.doc_no}`, `<table class="meta"><tr><td><b>التاريخ:</b> ${fmtDate(doc.doc_date)}</td><td><b>المستودع:</b> ${esc(wn[doc.warehouse_id] || '')}</td>${type === 'transfer' ? `<td><b>إلى:</b> ${esc(wn[doc.to_warehouse_id] || '')}</td>` : ''}</tr>
+    printDoc(`${D.label} رقم ${docNo(doc)}`, `<table class="meta"><tr><td><b>التاريخ:</b> ${fmtDate(doc.doc_date)}</td><td><b>المستودع:</b> ${esc(wn[doc.warehouse_id] || '')}</td>${type === 'transfer' ? `<td><b>إلى:</b> ${esc(wn[doc.to_warehouse_id] || '')}</td>` : ''}</tr>
       ${doc.notes ? `<tr><td colspan="3"><b>ملاحظات:</b> ${esc(doc.notes)}</td></tr>` : ''}</table>
       <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الصنف</th><th>${isCount ? 'الفعلي' : 'الكمية'}</th>${isCount ? '<th>التسوية</th>' : ''}<th>الكلفة</th></tr></thead><tbody>
       ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itemLabel(byId[l.item_id]))}</td><td class="n">${fmtNum(isCount ? l.counted_qty : l.qty)}</td>${isCount ? `<td class="n">${fmtNum(l.qty)}</td>` : ''}<td class="n">${fmtNum(l.unit_cost)}</td></tr>`).join('')}</tbody></table>
@@ -217,13 +222,13 @@ async function docEditor(type, doc, whs, ctx) {
 // ---------------------------------------------------------------------
 async function viewWarehouses(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
-  const whs = await loadWarehouses();
+  const [whs] = await Promise.all([loadWarehouses(), loadNumbering(true)]);
   v.innerHTML = `<div class="page-head"><h2>🏬 المستودعات</h2><div class="spacer"></div>${can('inventory', 'edit') ? '<button class="btn primary" id="add">➕ مستودع</button>' : ''}</div>
     <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>الاسم</th><th>الحالة</th><th></th></tr></thead><tbody>
     ${whs.map(w => `<tr><td>${esc(w.code)}</td><td><b>${esc(w.name)}</b></td><td>${w.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
       <td class="actions">${can('inventory', 'edit') ? `<button class="btn sm" data-edit="${w.id}">تعديل</button>` : ''}</td></tr>`).join('')}</tbody></table></div>`;
   const open = (w) => {
-    const isNew = !w; w = w || { code: String(whs.length + 1), name: '', is_active: true };
+    const isNew = !w; w = w || { code: masterCode('m_warehouse', whs.map(x => x.code)) ?? String(whs.length + 1), name: '', is_active: true };
     const m = modal({ title: isNew ? 'مستودع جديد' : 'تعديل مستودع', size: 'sm', body: `<form id="w-form">
       <div class="field"><label>الرقم</label><input name="code" value="${esc(w.code)}"></div><div class="field"><label>الاسم *</label><input name="name" value="${esc(w.name)}"></div>
       <label class="check"><input type="checkbox" name="is_active" ${w.is_active ? 'checked' : ''}> فعّال</label></form>`,

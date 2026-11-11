@@ -75,14 +75,15 @@ where e.status in ('posted','reversed') and l.party_id is not null
 group by e.company_id, e.fiscal_year_id, l.party_id;
 
 -- كشف حساب عميل/مورد
+drop function if exists public.rep_party_ledger(uuid, uuid, uuid, date, date);
 create or replace function public.rep_party_ledger(p_company uuid, p_fy uuid, p_party uuid, p_from date, p_to date)
 returns table (entry_id uuid, entry_type text, entry_no int, entry_date date, description text, line_description text,
-               reference text, debit numeric, credit numeric)
+               reference text, debit numeric, credit numeric, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.can(p_company, 'reports', 'view') then raise exception 'ما عندك صلاحية على التقارير'; end if;
   return query
-  select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, l.description, e.reference, l.debit, l.credit
+  select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, l.description, e.reference, l.debit, l.credit, e.doc_code
   from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
   where l.party_id = p_party and e.company_id = p_company and e.fiscal_year_id = p_fy
     and e.status in ('posted','reversed') and e.entry_date between p_from and p_to
@@ -139,7 +140,7 @@ begin
   perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, reversal_of)
   values (e.company_id, fy.id, e.entry_type, p_date,
-          coalesce(p_note, 'قيد عكسي للقيد رقم ' || e.entry_no || coalesce(' - ' || e.description, '')),
+          coalesce(p_note, 'قيد عكسي للقيد رقم ' || coalesce(e.doc_code, e.entry_no::text) || coalesce(' - ' || e.description, '')),
           e.reference, e.party_name, e.cash_account_id, 'draft', e.id)
   returning id into new_id;
   insert into public.journal_lines (entry_id, line_no, account_id, party_id, description, debit, credit)

@@ -90,7 +90,7 @@ begin
   insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
   select new.company_id, l.item_id, w, new.inv_date, sgn * l.qty,
          case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end, 'invoice', new.id,
-         case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || new.inv_no
+         case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || coalesce(new.doc_code, new.inv_no::text)
   from public.invoice_lines l join public.items it on it.id = l.item_id
   where l.invoice_id = new.id and it.item_type = 'goods' and it.track_stock;
   return null;
@@ -163,7 +163,7 @@ begin
   if d.status <> 'draft' then raise exception 'السند مرحّل من قبل'; end if;
   select count(*) into n from public.stock_doc_lines where doc_id = p_id;
   if n = 0 then raise exception 'السند بدون أصناف'; end if;
-  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || d.doc_no;
+  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || coalesce(d.doc_code, d.doc_no::text);
   for r in select * from public.stock_doc_lines where doc_id = p_id loop
     if d.doc_type = 'in' then
       if r.qty <= 0 then raise exception 'الكمية لازم تكون أكبر من صفر'; end if;

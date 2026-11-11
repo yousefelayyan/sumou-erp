@@ -635,7 +635,7 @@ begin
   perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, reversal_of)
   values (e.company_id, fy.id, e.entry_type, p_date,
-          coalesce(p_note, 'قيد عكسي للقيد رقم ' || e.entry_no || coalesce(' - ' || e.description, '')),
+          coalesce(p_note, 'قيد عكسي للقيد رقم ' || coalesce(e.doc_code, e.entry_no::text) || coalesce(' - ' || e.description, '')),
           e.reference, e.party_name, e.cash_account_id, 'draft', e.id)
   returning id into new_id;
   insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit)
@@ -860,9 +860,10 @@ update public.user_groups set permissions = permissions
 -- =====================================================================
 
 -- كشف حساب: حركات حساب (أو حساب رئيسي مع كل فروعه) بفترة جوّا سنة مالية
+drop function if exists public.rep_ledger(uuid, uuid, uuid, date, date);
 create or replace function public.rep_ledger(p_company uuid, p_fy uuid, p_account uuid, p_from date, p_to date)
 returns table (entry_id uuid, entry_type text, entry_no int, entry_date date, description text,
-               line_description text, reference text, account_code text, account_name text, debit numeric, credit numeric)
+               line_description text, reference text, account_code text, account_name text, debit numeric, credit numeric, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.can(p_company, 'reports', 'view') then raise exception 'ما عندك صلاحية على التقارير'; end if;
@@ -873,7 +874,7 @@ begin
     select c.id from public.accounts c join tree t on c.parent_id = t.id
   )
   select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, l.description, e.reference,
-         a.code, a.name, l.debit, l.credit
+         a.code, a.name, l.debit, l.credit, e.doc_code
   from public.journal_lines l
   join public.journal_entries e on e.id = l.entry_id
   join public.accounts a on a.id = l.account_id
@@ -924,15 +925,16 @@ begin
 end $$;
 
 -- اليومية العامة: كل القيود المرحّلة بالفترة مع سطورها
+drop function if exists public.rep_journal(uuid, uuid, date, date, text);
 create or replace function public.rep_journal(p_company uuid, p_fy uuid, p_from date, p_to date, p_type text default null)
 returns table (entry_id uuid, entry_type text, entry_no int, entry_date date, description text, reference text, party_name text,
-               status text, line_no int, account_code text, account_name text, line_description text, debit numeric, credit numeric)
+               status text, line_no int, account_code text, account_name text, line_description text, debit numeric, credit numeric, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.can(p_company, 'reports', 'view') then raise exception 'ما عندك صلاحية على التقارير'; end if;
   return query
   select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, e.reference, e.party_name, e.status,
-         l.line_no, a.code, a.name, l.description, l.debit, l.credit
+         l.line_no, a.code, a.name, l.description, l.debit, l.credit, e.doc_code
   from public.journal_entries e
   join public.journal_lines l on l.entry_id = e.id
   join public.accounts a on a.id = l.account_id
@@ -1031,14 +1033,15 @@ where e.status in ('posted','reversed') and l.party_id is not null
 group by e.company_id, e.fiscal_year_id, l.party_id;
 
 -- كشف حساب عميل/مورد
+drop function if exists public.rep_party_ledger(uuid, uuid, uuid, date, date);
 create or replace function public.rep_party_ledger(p_company uuid, p_fy uuid, p_party uuid, p_from date, p_to date)
 returns table (entry_id uuid, entry_type text, entry_no int, entry_date date, description text, line_description text,
-               reference text, debit numeric, credit numeric)
+               reference text, debit numeric, credit numeric, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.can(p_company, 'reports', 'view') then raise exception 'ما عندك صلاحية على التقارير'; end if;
   return query
-  select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, l.description, e.reference, l.debit, l.credit
+  select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, l.description, e.reference, l.debit, l.credit, e.doc_code
   from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
   where l.party_id = p_party and e.company_id = p_company and e.fiscal_year_id = p_fy
     and e.status in ('posted','reversed') and e.entry_date between p_from and p_to
@@ -1095,7 +1098,7 @@ begin
   perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, reversal_of)
   values (e.company_id, fy.id, e.entry_type, p_date,
-          coalesce(p_note, 'قيد عكسي للقيد رقم ' || e.entry_no || coalesce(' - ' || e.description, '')),
+          coalesce(p_note, 'قيد عكسي للقيد رقم ' || coalesce(e.doc_code, e.entry_no::text) || coalesce(' - ' || e.description, '')),
           e.reference, e.party_name, e.cash_account_id, 'draft', e.id)
   returning id into new_id;
   insert into public.journal_lines (entry_id, line_no, account_id, party_id, description, debit, credit)
@@ -1413,7 +1416,7 @@ begin
   if s_tax > 0 and tax_acc is null then raise exception 'حدّد حساب ضريبة المبيعات بشاشة «حسابات الربط»'; end if;
 
   descr := case i.inv_type when 'sale' then 'فاتورة بيع' when 'sale_return' then 'مرتجع بيع' when 'purchase' then 'فاتورة شراء' else 'مرتجع شراء' end
-           || ' رقم ' || i.inv_no || coalesce(' - ' || coalesce(p.name, i.party_name), '');
+           || ' رقم ' || coalesce(i.doc_code, i.inv_no::text) || coalesce(' - ' || coalesce(p.name, i.party_name), '');
 
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, status)
   values (i.company_id, i.fiscal_year_id, 'invoice', i.inv_date, descr, i.reference, coalesce(p.name, i.party_name), 'draft')
@@ -2110,7 +2113,7 @@ begin
   insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
   select new.company_id, l.item_id, w, new.inv_date, sgn * l.qty,
          case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end, 'invoice', new.id,
-         case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || new.inv_no
+         case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || coalesce(new.doc_code, new.inv_no::text)
   from public.invoice_lines l join public.items it on it.id = l.item_id
   where l.invoice_id = new.id and it.item_type = 'goods' and it.track_stock;
   return null;
@@ -2183,7 +2186,7 @@ begin
   if d.status <> 'draft' then raise exception 'السند مرحّل من قبل'; end if;
   select count(*) into n from public.stock_doc_lines where doc_id = p_id;
   if n = 0 then raise exception 'السند بدون أصناف'; end if;
-  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || d.doc_no;
+  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || coalesce(d.doc_code, d.doc_no::text);
   for r in select * from public.stock_doc_lines where doc_id = p_id loop
     if d.doc_type = 'in' then
       if r.qty <= 0 then raise exception 'الكمية لازم تكون أكبر من صفر'; end if;
@@ -2516,7 +2519,7 @@ begin
     return null;
   end if;
   w := coalesce(new.warehouse_id, public.default_warehouse(new.company_id));
-  descr := case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || new.inv_no;
+  descr := case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || coalesce(new.doc_code, new.inv_no::text);
   -- الشراء بكلفته، والباقي بمتوسط الكلفة قبل الحركة
   insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description, is_cost)
   select new.company_id, l.item_id, w, new.inv_date, sgn * l.qty,
@@ -2563,7 +2566,7 @@ begin
   if d.status <> 'draft' then raise exception 'السند مرحّل من قبل'; end if;
   select count(*) into n from public.stock_doc_lines where doc_id = p_id;
   if n = 0 then raise exception 'السند بدون أصناف'; end if;
-  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || d.doc_no;
+  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || coalesce(d.doc_code, d.doc_no::text);
   perform set_config('sumou.internal', public.internal_token(), true);
   for r in select * from public.stock_doc_lines where doc_id = p_id order by line_no loop
     cst := public.item_avg_cost(d.company_id, r.item_id, d.doc_date);
@@ -2602,7 +2605,7 @@ begin
       select id into fy from public.fiscal_years where company_id = d.company_id and d.doc_date between start_date and end_date and not is_closed order by start_date desc limit 1;
       if fy is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ السند'; end if;
       insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, status)
-      values (d.company_id, fy, 'stock', d.doc_date, descr || coalesce(' - ' || nullif(d.notes, ''), ''), 'مخزون ' || d.doc_no, 'draft') returning id into eid;
+      values (d.company_id, fy, 'stock', d.doc_date, descr || coalesce(' - ' || nullif(d.notes, ''), ''), 'مخزون ' || coalesce(d.doc_code, d.doc_no::text), 'draft') returning id into eid;
       perform public.add_entry_pair(eid, st.inventory_account_id, contra, v, descr);
       update public.journal_entries set status = 'posted', posted_by = auth.uid(), posted_at = now() where id = eid;
     end if;
@@ -2705,7 +2708,7 @@ begin
   perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, reversal_of)
   values (e.company_id, fy.id, e.entry_type, p_date,
-          coalesce(p_note, 'قيد عكسي للقيد رقم ' || e.entry_no || coalesce(' - ' || e.description, '')),
+          coalesce(p_note, 'قيد عكسي للقيد رقم ' || coalesce(e.doc_code, e.entry_no::text) || coalesce(' - ' || e.description, '')),
           e.reference, e.party_name, e.cash_account_id, 'draft', e.id)
   returning id into new_id;
   insert into public.journal_lines (entry_id, line_no, account_id, party_id, description, debit, credit, cost_center_id, currency, fx_rate, fx_amount)
@@ -2863,20 +2866,21 @@ begin
 end $$;
 
 -- قائمة المسودات بانتظار الترحيل (للمحاسب/المدير)
+drop function if exists public.pending_posts(uuid);
 create or replace function public.pending_posts(p_company uuid)
-returns table (kind text, id uuid, doc_type text, doc_no int, doc_date date, description text, amount numeric, created_by uuid, created_at timestamptz)
+returns table (kind text, id uuid, doc_type text, doc_no int, doc_date date, description text, amount numeric, created_by uuid, created_at timestamptz, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.has_company(p_company) then raise exception 'ما عندك صلاحية'; end if;
   return query
   select 'entry', e.id, e.entry_type, e.entry_no, e.entry_date, e.description,
-         (select coalesce(sum(jl.debit), 0) from public.journal_lines jl where jl.entry_id = e.id), e.created_by, e.created_at
+         (select coalesce(sum(jl.debit), 0) from public.journal_lines jl where jl.entry_id = e.id), e.created_by, e.created_at, e.doc_code
   from public.journal_entries e where e.company_id = p_company and e.status = 'draft' and public.can(p_company, public.entry_screen(e.entry_type), 'view')
   union all
-  select 'invoice', i.id, i.inv_type, i.inv_no, i.inv_date, coalesce(i.party_name, (select pp.name from public.parties pp where pp.id = i.party_id)), i.total, i.created_by, i.created_at
+  select 'invoice', i.id, i.inv_type, i.inv_no, i.inv_date, coalesce(i.party_name, (select pp.name from public.parties pp where pp.id = i.party_id)), i.total, i.created_by, i.created_at, i.doc_code
   from public.invoices i where i.company_id = p_company and i.status = 'draft' and public.can(p_company, public.invoice_screen(i.inv_type), 'view')
   union all
-  select 'stock', d.id, d.doc_type, d.doc_no, d.doc_date, d.notes, null::numeric, d.created_by, d.created_at
+  select 'stock', d.id, d.doc_type, d.doc_no, d.doc_date, d.notes, null::numeric, d.created_by, d.created_at, d.doc_code
   from public.stock_docs d where d.company_id = p_company and d.status = 'draft' and public.can(p_company, 'inventory', 'view')
   order by 9 desc;
 end $$;
@@ -3342,8 +3346,9 @@ drop trigger if exists bank_cleared_check on public.bank_cleared;
 create trigger bank_cleared_check before insert or update or delete on public.bank_cleared for each row execute function public.bank_cleared_check();
 
 -- حركات البنك لغاية تاريخ الكشف: اللي مش مسوّاة بتسوية سابقة مقفلة
+drop function if exists public.rep_bank_lines(uuid);
 create or replace function public.rep_bank_lines(p_recon uuid)
-returns table (line_id uuid, entry_type text, entry_no int, entry_date date, description text, reference text, debit numeric, credit numeric, cleared boolean)
+returns table (line_id uuid, entry_type text, entry_no int, entry_date date, description text, reference text, debit numeric, credit numeric, cleared boolean, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 declare rc public.bank_recons;
 begin
@@ -3351,7 +3356,7 @@ begin
   if not public.can(rc.company_id, 'bank_recon', 'view') then raise exception 'ما عندك صلاحية'; end if;
   return query
   select l.id, e.entry_type, e.entry_no, e.entry_date, coalesce(l.description, e.description), e.reference, l.debit, l.credit,
-         exists (select 1 from public.bank_cleared c where c.line_id = l.id and c.recon_id = p_recon)
+         exists (select 1 from public.bank_cleared c where c.line_id = l.id and c.recon_id = p_recon), e.doc_code
   from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
   where l.account_id = rc.account_id and e.company_id = rc.company_id and e.status in ('posted','reversed') and e.entry_type <> 'closing'
     and e.entry_date <= rc.statement_date
@@ -3516,28 +3521,29 @@ language sql immutable as $$
    (5,  'currencies',         'company_id = $1', 'code'),
    (6,  'company_settings',   'company_id = $1', 'company_id'),
    (7,  'parties',            'company_id = $1', 'code'),
-   (8,  'items',              'company_id = $1', 'code'),
-   (9,  'warehouses',         'company_id = $1', 'code'),
-   (10, 'journal_entries',    'company_id = $1', 'created_at'),
-   (11, 'journal_lines',      'entry_id in (select id from public.journal_entries where company_id = $1)', 'entry_id, line_no'),
-   (12, 'invoices',           'company_id = $1', 'created_at'),
-   (13, 'invoice_lines',      'invoice_id in (select id from public.invoices where company_id = $1)', 'invoice_id, line_no'),
-   (14, 'cheques',            'company_id = $1', 'created_at'),
-   (15, 'cheque_events',      'cheque_id in (select id from public.cheques where company_id = $1)', 'created_at'),
-   (16, 'stock_docs',         'company_id = $1', 'created_at'),
-   (17, 'stock_doc_lines',    'doc_id in (select id from public.stock_docs where company_id = $1)', 'doc_id, line_no'),
-   (18, 'stock_moves',        'company_id = $1', 'created_at'),
-   (19, 'obligations',        'company_id = $1', 'due_date'),
-   (20, 'recurring_entries',  'company_id = $1', 'created_at'),
-   (21, 'employees',          'company_id = $1', 'code'),
-   (22, 'payroll_runs',       'company_id = $1', 'period'),
-   (23, 'payroll_lines',      'run_id in (select id from public.payroll_runs where company_id = $1)', 'run_id'),
-   (24, 'fixed_assets',       'company_id = $1', 'code'),
-   (25, 'depreciation_runs',  'company_id = $1', 'created_at'),
-   (26, 'depreciation_lines', 'run_id in (select id from public.depreciation_runs where company_id = $1)', 'run_id'),
-   (27, 'bank_recons',        'company_id = $1', 'created_at'),
-   (28, 'bank_cleared',       'company_id = $1', 'line_id'),
-   (29, 'attachments',        'company_id = $1', 'created_at');
+   (8,  'item_categories',    'company_id = $1', 'code'),
+   (9,  'items',              'company_id = $1', 'code'),
+   (10,  'warehouses',         'company_id = $1', 'code'),
+   (11, 'journal_entries',    'company_id = $1', 'created_at'),
+   (12, 'journal_lines',      'entry_id in (select id from public.journal_entries where company_id = $1)', 'entry_id, line_no'),
+   (13, 'invoices',           'company_id = $1', 'created_at'),
+   (14, 'invoice_lines',      'invoice_id in (select id from public.invoices where company_id = $1)', 'invoice_id, line_no'),
+   (15, 'cheques',            'company_id = $1', 'created_at'),
+   (16, 'cheque_events',      'cheque_id in (select id from public.cheques where company_id = $1)', 'created_at'),
+   (17, 'stock_docs',         'company_id = $1', 'created_at'),
+   (18, 'stock_doc_lines',    'doc_id in (select id from public.stock_docs where company_id = $1)', 'doc_id, line_no'),
+   (19, 'stock_moves',        'company_id = $1', 'created_at'),
+   (20, 'obligations',        'company_id = $1', 'due_date'),
+   (21, 'recurring_entries',  'company_id = $1', 'created_at'),
+   (22, 'employees',          'company_id = $1', 'code'),
+   (23, 'payroll_runs',       'company_id = $1', 'period'),
+   (24, 'payroll_lines',      'run_id in (select id from public.payroll_runs where company_id = $1)', 'run_id'),
+   (25, 'fixed_assets',       'company_id = $1', 'code'),
+   (26, 'depreciation_runs',  'company_id = $1', 'created_at'),
+   (27, 'depreciation_lines', 'run_id in (select id from public.depreciation_runs where company_id = $1)', 'run_id'),
+   (28, 'bank_recons',        'company_id = $1', 'created_at'),
+   (29, 'bank_cleared',       'company_id = $1', 'line_id'),
+   (30, 'attachments',        'company_id = $1', 'created_at');
 $$;
 
 create or replace function public.backup_company(p_company uuid) returns jsonb
@@ -3665,3 +3671,356 @@ begin
              and not exists (select 1 from public.attachments a where a.path = name and not (a.created_by = auth.uid() or public.is_admin())))$p$;
   end if;
 end $$;
+
+
+-- #################### 16_numbering.sql ####################
+-- =====================================================================
+--  السمو ERP — المرحلة 16: طريقة الترقيم (تنسيق أرقام المستندات)
+--  لكل شركة ولكل نوع مستند: يدوي/تلقائي، يبدأ من جديد كل سنة أو كل شهر أو ما بيبدأ،
+--  تسلسل منفصل لكل مركز كلفة أو مستودع، وشكل الرقم: عدد الخانات، حرف التنقيع، الفاصل،
+--  نص سابق ولاحق، وإضافة رمز السنة/الشهر/الفرع للرقم.
+--  الإعدادات بـ company_settings.numbering (jsonb)، والرقم المنسّق بعمود doc_code.
+--  آمن للتشغيل أكثر من مرة.
+-- =====================================================================
+
+alter table public.company_settings add column if not exists numbering jsonb not null default '{}'::jsonb;
+
+alter table public.journal_entries add column if not exists seq_key text;
+alter table public.journal_entries add column if not exists doc_code text;
+alter table public.invoices        add column if not exists seq_key text;
+alter table public.invoices        add column if not exists doc_code text;
+alter table public.stock_docs      add column if not exists seq_key text;
+alter table public.stock_docs      add column if not exists doc_code text;
+
+-- تعبئة المستندات القديمة بنفس ترقيمها الحالي (القيود والفواتير لكل سنة، والمخزون مستمر)
+do $$
+begin
+  perform set_config('sumou.internal', public.internal_token(), true);
+  update public.journal_entries set seq_key = 'Y' || fiscal_year_id, doc_code = coalesce(doc_code, entry_no::text) where seq_key is null;
+  update public.invoices        set seq_key = 'Y' || fiscal_year_id, doc_code = coalesce(doc_code, inv_no::text)   where seq_key is null;
+  update public.stock_docs      set seq_key = '',                    doc_code = coalesce(doc_code, doc_no::text)   where seq_key is null;
+  perform set_config('sumou.internal', '', true);
+end $$;
+
+alter table public.journal_entries alter column seq_key set default '';
+alter table public.invoices        alter column seq_key set default '';
+alter table public.stock_docs      alter column seq_key set default '';
+alter table public.journal_entries alter column seq_key set not null;
+alter table public.invoices        alter column seq_key set not null;
+alter table public.stock_docs      alter column seq_key set not null;
+
+-- القيد الفريد القديم (لكل سنة) بيتبدّل بقيد على مفتاح التسلسل
+do $$
+declare c record;
+begin
+  for c in
+    select con.conname, rel.relname from pg_constraint con join pg_class rel on rel.oid = con.conrelid
+    join pg_namespace n on n.oid = rel.relnamespace
+    where n.nspname = 'public' and con.contype = 'u'
+      and ((rel.relname = 'journal_entries' and pg_get_constraintdef(con.oid) = 'UNIQUE (company_id, fiscal_year_id, entry_type, entry_no)')
+        or (rel.relname = 'invoices'        and pg_get_constraintdef(con.oid) = 'UNIQUE (company_id, fiscal_year_id, inv_type, inv_no)')
+        or (rel.relname = 'stock_docs'      and pg_get_constraintdef(con.oid) = 'UNIQUE (company_id, doc_type, doc_no)'))
+  loop
+    execute format('alter table public.%I drop constraint %I', c.relname, c.conname);
+  end loop;
+end $$;
+create unique index if not exists je_seq_uq  on public.journal_entries (company_id, entry_type, seq_key, entry_no);
+create unique index if not exists inv_seq_uq on public.invoices (company_id, inv_type, seq_key, inv_no);
+create unique index if not exists sd_seq_uq  on public.stock_docs (company_id, doc_type, seq_key, doc_no);
+
+-- ---------------------------------------------------------------------
+-- القاعدة: الافتراضي + المحفوظ للشركة، بعد التنظيف
+-- ---------------------------------------------------------------------
+create or replace function public.numbering_rule(p_company uuid, p_key text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare d jsonb; u jsonb; r jsonb;
+begin
+  d := jsonb_build_object('mode', 'auto', 'reset', case when p_key like 'stock_%' then 'none' else 'year' end, 'split', 'none',
+         'digits', 0, 'pad', '0', 'sep', '-', 'prefix', '', 'suffix', '',
+         'add_year', false, 'year_digits', 4, 'add_month', false, 'add_split', false);
+  if p_key is null then return d; end if;
+  select s.numbering -> p_key into u from public.company_settings s where s.company_id = p_company;
+  if u is null or jsonb_typeof(u) <> 'object' then return d; end if;
+  r := d || u;
+  -- تنظيف القيم
+  if r->>'mode'  not in ('auto','manual') then r := r || '{"mode":"auto"}'; end if;
+  if r->>'reset' not in ('none','year','month') then r := r || jsonb_build_object('reset', d->>'reset'); end if;
+  if not ((p_key in ('sale','sale_return','purchase','purchase_return') and r->>'split' in ('none','cost_center','warehouse'))
+       or (p_key like 'stock_%' and r->>'split' in ('none','warehouse'))) then r := r || '{"split":"none"}'; end if;
+  r := r || jsonb_build_object(
+    'digits', least(greatest(coalesce(case when (r->>'digits') ~ '^\d{1,3}$' then (r->>'digits')::int end, 0), 0), 12),
+    'pad', left(regexp_replace(coalesce(r->>'pad', '0'), '[<>"''&\s]', '', 'g'), 1),
+    'sep', left(regexp_replace(coalesce(r->>'sep', ''), '[<>"''&]', '', 'g'), 3),
+    'prefix', left(regexp_replace(coalesce(r->>'prefix', ''), '[<>"''&]', '', 'g'), 15),
+    'suffix', left(regexp_replace(coalesce(r->>'suffix', ''), '[<>"''&]', '', 'g'), 15),
+    'year_digits', case when r->>'year_digits' = '2' then 2 else 4 end,
+    'add_year',  coalesce(case when jsonb_typeof(r->'add_year')  = 'boolean' then (r->>'add_year')::boolean end, false),
+    'add_month', coalesce(case when jsonb_typeof(r->'add_month') = 'boolean' then (r->>'add_month')::boolean end, false),
+    'add_split', coalesce(case when jsonb_typeof(r->'add_split') = 'boolean' then (r->>'add_split')::boolean end, false));
+  return r;
+end $$;
+
+-- مفتاح التسلسل حسب القاعدة
+create or replace function public.numbering_key(r jsonb, p_date date, p_fy uuid, p_split uuid) returns text
+language sql immutable as $$
+  select concat_ws('|',
+    case r->>'reset' when 'year'  then 'Y' || coalesce(p_fy::text, extract(year from p_date)::text)
+                     when 'month' then 'Y' || coalesce(p_fy::text, extract(year from p_date)::text) || 'M' || to_char(p_date, 'YYYY-MM') end,
+    case when r->>'split' <> 'none' then 'S' || coalesce(p_split::text, '-') end)
+$$;
+
+-- الرقم المنسّق: النص السابق + رمز الفرع + السنة + الشهر + الرقم + النص اللاحق
+create or replace function public.numbering_format(r jsonb, p_no int, p_date date, p_fy uuid, p_split_code text) returns text
+language plpgsql stable security definer set search_path = public as $$
+declare parts text[] := '{}'; y int; n text; dg int := (r->>'digits')::int;
+begin
+  if p_no is null then return null; end if;
+  if (r->>'add_split')::boolean and r->>'split' <> 'none' and nullif(regexp_replace(coalesce(p_split_code, ''), '[<>"''&]', '', 'g'), '') is not null then
+    parts := parts || left(regexp_replace(p_split_code, '[<>"''&]', '', 'g'), 15);
+  end if;
+  if (r->>'add_year')::boolean then
+    select extract(year from start_date)::int into y from public.fiscal_years where id = p_fy;
+    y := coalesce(y, extract(year from p_date)::int);
+    parts := parts || case when (r->>'year_digits')::int = 2 then lpad((y % 100)::text, 2, '0') else y::text end;
+  end if;
+  if (r->>'add_month')::boolean then parts := parts || to_char(p_date, 'MM'); end if;
+  n := p_no::text;
+  if dg > length(n) then n := lpad(n, dg, coalesce(nullif(r->>'pad', ''), '0')); end if;
+  parts := parts || n;
+  return coalesce(r->>'prefix', '') || array_to_string(parts, coalesce(r->>'sep', '')) || coalesce(r->>'suffix', '');
+end $$;
+
+-- ---------------------------------------------------------------------
+-- الـ triggers: اسمها بيبدأ بـ aa_ عشان تشتغل قبل باقي الـ triggers
+-- ---------------------------------------------------------------------
+create or replace function public.aa_number_entries() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; sp uuid; spc text; fy uuid; k text; co uuid; ty text; chg boolean := false; intl boolean := public.is_internal();
+begin
+  if tg_op = 'UPDATE' then co := old.company_id; ty := old.entry_type; else co := new.company_id; ty := new.entry_type; end if;
+  r := public.numbering_rule(co, case when ty in ('journal','receipt','payment') then ty end);
+  fy := new.fiscal_year_id;
+  k := public.numbering_key(r, new.entry_date, fy, sp);
+  if tg_op = 'INSERT' then
+    -- الاسترجاع من نسخة احتياطية: الرقم والتسلسل بيرجعوا مثل ما كانوا
+    if intl and new.doc_code is not null and new.entry_no is not null then
+      new.seq_key := coalesce(new.seq_key, k); return new;
+    end if;
+    if not intl and r->>'mode' = 'auto' then new.entry_no := null; end if;   -- التلقائي: الرقم من البرنامج بس
+    new.seq_key := k; chg := true;
+  else
+    new.seq_key := coalesce(old.seq_key, new.seq_key);
+    if new.entry_no is null then new.entry_no := old.entry_no; end if;
+    if old.doc_code is null then return new; end if;   -- تعبئة المستندات القديمة
+    if old.status = 'draft' and (new.entry_date is distinct from old.entry_date or new.fiscal_year_id is distinct from old.fiscal_year_id) and k is distinct from old.seq_key then
+      -- المسودة انتقلت لشهر/سنة/فرع ثاني: بتاخذ رقم من التسلسل الجديد
+      new.seq_key := k; if new.entry_no = old.entry_no or (not intl and r->>'mode' = 'auto') then new.entry_no := null; end if; chg := true;
+    elsif new.entry_no <> old.entry_no then
+      if not intl and r->>'mode' = 'auto' then new.entry_no := old.entry_no; else chg := true; end if;
+    elsif old.status = 'draft' and (new.entry_date is distinct from old.entry_date or new.fiscal_year_id is distinct from old.fiscal_year_id) then chg := true;
+    end if;
+    if not chg then new.doc_code := old.doc_code; return new; end if;
+  end if;
+  if new.entry_no is not null and (new.entry_no <= 0 or new.entry_no > 999999999) then raise exception 'رقم المستند لازم يكون بين 1 و 999999999'; end if;
+  perform pg_advisory_xact_lock(hashtext('je|' || co || '|' || ty || '|' || new.seq_key));
+  if new.entry_no is null then
+    select coalesce(max(x.entry_no), 0) + 1 into new.entry_no from public.journal_entries x where x.company_id = co and x.entry_type = ty and x.seq_key = new.seq_key;
+    loop   -- بعد تغيير القاعدة: نتخطى أي رقم بيطلع شكله مكرر
+      new.doc_code := public.numbering_format(r, new.entry_no, new.entry_date, fy, spc);
+      exit when not exists (select 1 from public.journal_entries x where x.company_id = co and x.entry_type = ty and x.doc_code = new.doc_code and x.fiscal_year_id = new.fiscal_year_id and x.id <> new.id);
+      new.entry_no := new.entry_no + 1;
+    end loop;
+  else
+    if exists (select 1 from public.journal_entries x where x.company_id = co and x.entry_type = ty and x.seq_key = new.seq_key and x.entry_no = new.entry_no and x.id <> new.id) then
+      raise exception 'رقم المستند % مستعمل من قبل بنفس التسلسل', new.entry_no;
+    end if;
+    new.doc_code := public.numbering_format(r, new.entry_no, new.entry_date, fy, spc);
+    if exists (select 1 from public.journal_entries x where x.company_id = co and x.entry_type = ty and x.doc_code = new.doc_code and x.fiscal_year_id = new.fiscal_year_id and x.id <> new.id) then
+      raise exception 'الرقم % موجود على مستند ثاني بنفس السنة', new.doc_code;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists aa_number_entries on public.journal_entries;
+create trigger aa_number_entries before insert or update on public.journal_entries
+  for each row execute function public.aa_number_entries();
+create index if not exists je_code_idx on public.journal_entries (company_id, entry_type, doc_code);
+
+create or replace function public.aa_number_invoices() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; sp uuid; spc text; fy uuid; k text; co uuid; ty text; chg boolean := false; intl boolean := public.is_internal();
+begin
+  if tg_op = 'UPDATE' then co := old.company_id; ty := old.inv_type; else co := new.company_id; ty := new.inv_type; end if;
+  r := public.numbering_rule(co, ty);
+  fy := new.fiscal_year_id;
+  sp := case r->>'split' when 'cost_center' then new.cost_center_id when 'warehouse' then new.warehouse_id end;
+  if sp is not null then
+    if r->>'split' = 'cost_center' then select code into spc from public.cost_centers where id = sp and company_id = co;
+    else select code into spc from public.warehouses where id = sp and company_id = co; end if;
+  end if;
+  k := public.numbering_key(r, new.inv_date, fy, sp);
+  if tg_op = 'INSERT' then
+    -- الاسترجاع من نسخة احتياطية: الرقم والتسلسل بيرجعوا مثل ما كانوا
+    if intl and new.doc_code is not null and new.inv_no is not null then
+      new.seq_key := coalesce(new.seq_key, k); return new;
+    end if;
+    if not intl and r->>'mode' = 'auto' then new.inv_no := null; end if;   -- التلقائي: الرقم من البرنامج بس
+    new.seq_key := k; chg := true;
+  else
+    new.seq_key := coalesce(old.seq_key, new.seq_key);
+    if new.inv_no is null then new.inv_no := old.inv_no; end if;
+    if old.doc_code is null then return new; end if;   -- تعبئة المستندات القديمة
+    if old.status = 'draft' and (new.inv_date is distinct from old.inv_date or new.fiscal_year_id is distinct from old.fiscal_year_id or new.cost_center_id is distinct from old.cost_center_id or new.warehouse_id is distinct from old.warehouse_id) and k is distinct from old.seq_key then
+      -- المسودة انتقلت لشهر/سنة/فرع ثاني: بتاخذ رقم من التسلسل الجديد
+      new.seq_key := k; if new.inv_no = old.inv_no or (not intl and r->>'mode' = 'auto') then new.inv_no := null; end if; chg := true;
+    elsif new.inv_no <> old.inv_no then
+      if not intl and r->>'mode' = 'auto' then new.inv_no := old.inv_no; else chg := true; end if;
+    elsif old.status = 'draft' and (new.inv_date is distinct from old.inv_date or new.fiscal_year_id is distinct from old.fiscal_year_id or new.cost_center_id is distinct from old.cost_center_id or new.warehouse_id is distinct from old.warehouse_id) then chg := true;
+    end if;
+    if not chg then new.doc_code := old.doc_code; return new; end if;
+  end if;
+  if new.inv_no is not null and (new.inv_no <= 0 or new.inv_no > 999999999) then raise exception 'رقم الفاتورة لازم يكون بين 1 و 999999999'; end if;
+  perform pg_advisory_xact_lock(hashtext('inv|' || co || '|' || ty || '|' || new.seq_key));
+  if new.inv_no is null then
+    select coalesce(max(x.inv_no), 0) + 1 into new.inv_no from public.invoices x where x.company_id = co and x.inv_type = ty and x.seq_key = new.seq_key;
+    loop   -- بعد تغيير القاعدة: نتخطى أي رقم بيطلع شكله مكرر
+      new.doc_code := public.numbering_format(r, new.inv_no, new.inv_date, fy, spc);
+      exit when not exists (select 1 from public.invoices x where x.company_id = co and x.inv_type = ty and x.doc_code = new.doc_code and x.fiscal_year_id = new.fiscal_year_id and x.id <> new.id);
+      new.inv_no := new.inv_no + 1;
+    end loop;
+  else
+    if exists (select 1 from public.invoices x where x.company_id = co and x.inv_type = ty and x.seq_key = new.seq_key and x.inv_no = new.inv_no and x.id <> new.id) then
+      raise exception 'رقم الفاتورة % مستعمل من قبل بنفس التسلسل', new.inv_no;
+    end if;
+    new.doc_code := public.numbering_format(r, new.inv_no, new.inv_date, fy, spc);
+    if exists (select 1 from public.invoices x where x.company_id = co and x.inv_type = ty and x.doc_code = new.doc_code and x.fiscal_year_id = new.fiscal_year_id and x.id <> new.id) then
+      raise exception 'الرقم % موجود على مستند ثاني بنفس السنة', new.doc_code;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists aa_number_invoices on public.invoices;
+create trigger aa_number_invoices before insert or update on public.invoices
+  for each row execute function public.aa_number_invoices();
+create index if not exists inv_code_idx on public.invoices (company_id, inv_type, doc_code);
+
+create or replace function public.aa_number_stock() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; sp uuid; spc text; fy uuid; k text; co uuid; ty text; chg boolean := false; intl boolean := public.is_internal();
+begin
+  if tg_op = 'UPDATE' then co := old.company_id; ty := old.doc_type; else co := new.company_id; ty := new.doc_type; end if;
+  r := public.numbering_rule(co, 'stock_' || ty);
+  sp := case when r->>'split' = 'warehouse' then new.warehouse_id end;
+  if sp is not null then select code into spc from public.warehouses where id = sp and company_id = co; end if;
+  select id into fy from public.fiscal_years where company_id = co and new.doc_date between start_date and end_date order by start_date desc limit 1;
+  if fy is null and r->>'reset' <> 'none' and not public.is_internal() then raise exception 'ما في سنة مالية بتاريخ السند، والترقيم بيبدأ من جديد كل سنة/شهر'; end if;
+  k := public.numbering_key(r, new.doc_date, fy, sp);
+  if tg_op = 'INSERT' then
+    -- الاسترجاع من نسخة احتياطية: الرقم والتسلسل بيرجعوا مثل ما كانوا
+    if intl and new.doc_code is not null and new.doc_no is not null then
+      new.seq_key := coalesce(new.seq_key, k); return new;
+    end if;
+    if not intl and r->>'mode' = 'auto' then new.doc_no := null; end if;   -- التلقائي: الرقم من البرنامج بس
+    new.seq_key := k; chg := true;
+  else
+    new.seq_key := coalesce(old.seq_key, new.seq_key);
+    if new.doc_no is null then new.doc_no := old.doc_no; end if;
+    if old.doc_code is null then return new; end if;   -- تعبئة المستندات القديمة
+    if old.status = 'draft' and (new.doc_date is distinct from old.doc_date or new.warehouse_id is distinct from old.warehouse_id) and k is distinct from old.seq_key then
+      -- المسودة انتقلت لشهر/سنة/فرع ثاني: بتاخذ رقم من التسلسل الجديد
+      new.seq_key := k; if new.doc_no = old.doc_no or (not intl and r->>'mode' = 'auto') then new.doc_no := null; end if; chg := true;
+    elsif new.doc_no <> old.doc_no then
+      if not intl and r->>'mode' = 'auto' then new.doc_no := old.doc_no; else chg := true; end if;
+    elsif old.status = 'draft' and (new.doc_date is distinct from old.doc_date or new.warehouse_id is distinct from old.warehouse_id) then chg := true;
+    end if;
+    if not chg then new.doc_code := old.doc_code; return new; end if;
+  end if;
+  if new.doc_no is not null and (new.doc_no <= 0 or new.doc_no > 999999999) then raise exception 'رقم السند لازم يكون بين 1 و 999999999'; end if;
+  perform pg_advisory_xact_lock(hashtext('sd|' || co || '|' || ty || '|' || new.seq_key));
+  if new.doc_no is null then
+    select coalesce(max(x.doc_no), 0) + 1 into new.doc_no from public.stock_docs x where x.company_id = co and x.doc_type = ty and x.seq_key = new.seq_key;
+    loop   -- بعد تغيير القاعدة: نتخطى أي رقم بيطلع شكله مكرر
+      new.doc_code := public.numbering_format(r, new.doc_no, new.doc_date, fy, spc);
+      exit when not exists (select 1 from public.stock_docs x where x.company_id = co and x.doc_type = ty and x.doc_code = new.doc_code and extract(year from x.doc_date) = extract(year from new.doc_date) and x.id <> new.id);
+      new.doc_no := new.doc_no + 1;
+    end loop;
+  else
+    if exists (select 1 from public.stock_docs x where x.company_id = co and x.doc_type = ty and x.seq_key = new.seq_key and x.doc_no = new.doc_no and x.id <> new.id) then
+      raise exception 'رقم السند % مستعمل من قبل بنفس التسلسل', new.doc_no;
+    end if;
+    new.doc_code := public.numbering_format(r, new.doc_no, new.doc_date, fy, spc);
+    if exists (select 1 from public.stock_docs x where x.company_id = co and x.doc_type = ty and x.doc_code = new.doc_code and extract(year from x.doc_date) = extract(year from new.doc_date) and x.id <> new.id) then
+      raise exception 'الرقم % موجود على مستند ثاني بنفس السنة', new.doc_code;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists aa_number_stock on public.stock_docs;
+create trigger aa_number_stock before insert or update on public.stock_docs
+  for each row execute function public.aa_number_stock();
+create index if not exists sd_code_idx on public.stock_docs (company_id, doc_type, doc_code);
+
+-- الصلاحيات
+revoke execute on function public.numbering_rule(uuid, text), public.numbering_key(jsonb, date, uuid, uuid),
+  public.numbering_format(jsonb, int, date, uuid, text) from public, anon, authenticated;
+revoke execute on function public.aa_number_entries(), public.aa_number_invoices(), public.aa_number_stock() from public, anon, authenticated;
+-- دوال التقارير انعملت من جديد بالمراحل 3 و4 و13: صلاحية التنفيذ للمستخدمين المسجلين بس
+revoke execute on function public.rep_ledger(uuid, uuid, uuid, date, date), public.rep_journal(uuid, uuid, date, date, text),
+  public.rep_party_ledger(uuid, uuid, uuid, date, date), public.pending_posts(uuid), public.rep_bank_lines(uuid) from public, anon;
+grant execute on function public.rep_ledger(uuid, uuid, uuid, date, date), public.rep_journal(uuid, uuid, date, date, text),
+  public.rep_party_ledger(uuid, uuid, uuid, date, date), public.pending_posts(uuid), public.rep_bank_lines(uuid) to authenticated;
+
+-- ---------------------------------------------------------------------
+-- فئات المواد (الأصناف)
+-- ---------------------------------------------------------------------
+create table if not exists public.item_categories (
+  id         uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  code       text not null,
+  name       text not null,
+  is_active  boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (company_id, code)
+);
+alter table public.items add column if not exists category_id uuid references public.item_categories(id) on delete restrict;
+create index if not exists items_cat_idx on public.items (category_id) where category_id is not null;
+
+-- الصنف وفئته لازم يكونوا بنفس الشركة
+create or replace function public.items_category_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.category_id is not null and not exists (select 1 from public.item_categories c where c.id = new.category_id and c.company_id = new.company_id) then
+    raise exception 'الفئة مش لهالشركة';
+  end if;
+  return new;
+end $$;
+drop trigger if exists items_category_check on public.items;
+create trigger items_category_check before insert or update of category_id, company_id on public.items
+  for each row execute function public.items_category_check();
+revoke execute on function public.items_category_check() from public, anon, authenticated;
+
+create or replace function public.item_categories_before() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' then new.company_id := old.company_id; end if;
+  new.code := btrim(new.code); new.name := btrim(new.name);
+  if new.code = '' or new.name = '' then raise exception 'رمز الفئة واسمها مطلوبين'; end if;
+  return new;
+end $$;
+drop trigger if exists item_categories_before on public.item_categories;
+create trigger item_categories_before before insert or update on public.item_categories
+  for each row execute function public.item_categories_before();
+revoke execute on function public.item_categories_before() from public, anon, authenticated;
+
+alter table public.item_categories enable row level security;
+drop policy if exists icat_select on public.item_categories;
+create policy icat_select on public.item_categories for select to authenticated using (public.has_company(company_id));
+drop policy if exists icat_insert on public.item_categories;
+create policy icat_insert on public.item_categories for insert to authenticated with check (public.can(company_id, 'items', 'add'));
+drop policy if exists icat_update on public.item_categories;
+create policy icat_update on public.item_categories for update to authenticated
+  using (public.can(company_id, 'items', 'edit')) with check (public.can(company_id, 'items', 'edit'));
+drop policy if exists icat_delete on public.item_categories;
+create policy icat_delete on public.item_categories for delete to authenticated using (public.can(company_id, 'items', 'delete'));
+grant select, insert, update, delete on public.item_categories to authenticated;
+revoke all on public.item_categories from anon;

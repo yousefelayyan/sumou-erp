@@ -6,9 +6,10 @@
 -- =====================================================================
 
 -- كشف حساب: حركات حساب (أو حساب رئيسي مع كل فروعه) بفترة جوّا سنة مالية
+drop function if exists public.rep_ledger(uuid, uuid, uuid, date, date);
 create or replace function public.rep_ledger(p_company uuid, p_fy uuid, p_account uuid, p_from date, p_to date)
 returns table (entry_id uuid, entry_type text, entry_no int, entry_date date, description text,
-               line_description text, reference text, account_code text, account_name text, debit numeric, credit numeric)
+               line_description text, reference text, account_code text, account_name text, debit numeric, credit numeric, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.can(p_company, 'reports', 'view') then raise exception 'ما عندك صلاحية على التقارير'; end if;
@@ -19,7 +20,7 @@ begin
     select c.id from public.accounts c join tree t on c.parent_id = t.id
   )
   select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, l.description, e.reference,
-         a.code, a.name, l.debit, l.credit
+         a.code, a.name, l.debit, l.credit, e.doc_code
   from public.journal_lines l
   join public.journal_entries e on e.id = l.entry_id
   join public.accounts a on a.id = l.account_id
@@ -70,15 +71,16 @@ begin
 end $$;
 
 -- اليومية العامة: كل القيود المرحّلة بالفترة مع سطورها
+drop function if exists public.rep_journal(uuid, uuid, date, date, text);
 create or replace function public.rep_journal(p_company uuid, p_fy uuid, p_from date, p_to date, p_type text default null)
 returns table (entry_id uuid, entry_type text, entry_no int, entry_date date, description text, reference text, party_name text,
-               status text, line_no int, account_code text, account_name text, line_description text, debit numeric, credit numeric)
+               status text, line_no int, account_code text, account_name text, line_description text, debit numeric, credit numeric, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.can(p_company, 'reports', 'view') then raise exception 'ما عندك صلاحية على التقارير'; end if;
   return query
   select e.id, e.entry_type, e.entry_no, e.entry_date, e.description, e.reference, e.party_name, e.status,
-         l.line_no, a.code, a.name, l.description, l.debit, l.credit
+         l.line_no, a.code, a.name, l.description, l.debit, l.credit, e.doc_code
   from public.journal_entries e
   join public.journal_lines l on l.entry_id = e.id
   join public.accounts a on a.id = l.account_id

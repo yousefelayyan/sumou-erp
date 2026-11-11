@@ -72,7 +72,7 @@ begin
   perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, reversal_of)
   values (e.company_id, fy.id, e.entry_type, p_date,
-          coalesce(p_note, 'قيد عكسي للقيد رقم ' || e.entry_no || coalesce(' - ' || e.description, '')),
+          coalesce(p_note, 'قيد عكسي للقيد رقم ' || coalesce(e.doc_code, e.entry_no::text) || coalesce(' - ' || e.description, '')),
           e.reference, e.party_name, e.cash_account_id, 'draft', e.id)
   returning id into new_id;
   insert into public.journal_lines (entry_id, line_no, account_id, party_id, description, debit, credit, cost_center_id, currency, fx_rate, fx_amount)
@@ -230,20 +230,21 @@ begin
 end $$;
 
 -- قائمة المسودات بانتظار الترحيل (للمحاسب/المدير)
+drop function if exists public.pending_posts(uuid);
 create or replace function public.pending_posts(p_company uuid)
-returns table (kind text, id uuid, doc_type text, doc_no int, doc_date date, description text, amount numeric, created_by uuid, created_at timestamptz)
+returns table (kind text, id uuid, doc_type text, doc_no int, doc_date date, description text, amount numeric, created_by uuid, created_at timestamptz, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 begin
   if not public.has_company(p_company) then raise exception 'ما عندك صلاحية'; end if;
   return query
   select 'entry', e.id, e.entry_type, e.entry_no, e.entry_date, e.description,
-         (select coalesce(sum(jl.debit), 0) from public.journal_lines jl where jl.entry_id = e.id), e.created_by, e.created_at
+         (select coalesce(sum(jl.debit), 0) from public.journal_lines jl where jl.entry_id = e.id), e.created_by, e.created_at, e.doc_code
   from public.journal_entries e where e.company_id = p_company and e.status = 'draft' and public.can(p_company, public.entry_screen(e.entry_type), 'view')
   union all
-  select 'invoice', i.id, i.inv_type, i.inv_no, i.inv_date, coalesce(i.party_name, (select pp.name from public.parties pp where pp.id = i.party_id)), i.total, i.created_by, i.created_at
+  select 'invoice', i.id, i.inv_type, i.inv_no, i.inv_date, coalesce(i.party_name, (select pp.name from public.parties pp where pp.id = i.party_id)), i.total, i.created_by, i.created_at, i.doc_code
   from public.invoices i where i.company_id = p_company and i.status = 'draft' and public.can(p_company, public.invoice_screen(i.inv_type), 'view')
   union all
-  select 'stock', d.id, d.doc_type, d.doc_no, d.doc_date, d.notes, null::numeric, d.created_by, d.created_at
+  select 'stock', d.id, d.doc_type, d.doc_no, d.doc_date, d.notes, null::numeric, d.created_by, d.created_at, d.doc_code
   from public.stock_docs d where d.company_id = p_company and d.status = 'draft' and public.can(p_company, 'inventory', 'view')
   order by 9 desc;
 end $$;
@@ -709,8 +710,9 @@ drop trigger if exists bank_cleared_check on public.bank_cleared;
 create trigger bank_cleared_check before insert or update or delete on public.bank_cleared for each row execute function public.bank_cleared_check();
 
 -- حركات البنك لغاية تاريخ الكشف: اللي مش مسوّاة بتسوية سابقة مقفلة
+drop function if exists public.rep_bank_lines(uuid);
 create or replace function public.rep_bank_lines(p_recon uuid)
-returns table (line_id uuid, entry_type text, entry_no int, entry_date date, description text, reference text, debit numeric, credit numeric, cleared boolean)
+returns table (line_id uuid, entry_type text, entry_no int, entry_date date, description text, reference text, debit numeric, credit numeric, cleared boolean, doc_code text)
 language plpgsql stable security definer set search_path = public as $$
 declare rc public.bank_recons;
 begin
@@ -718,7 +720,7 @@ begin
   if not public.can(rc.company_id, 'bank_recon', 'view') then raise exception 'ما عندك صلاحية'; end if;
   return query
   select l.id, e.entry_type, e.entry_no, e.entry_date, coalesce(l.description, e.description), e.reference, l.debit, l.credit,
-         exists (select 1 from public.bank_cleared c where c.line_id = l.id and c.recon_id = p_recon)
+         exists (select 1 from public.bank_cleared c where c.line_id = l.id and c.recon_id = p_recon), e.doc_code
   from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
   where l.account_id = rc.account_id and e.company_id = rc.company_id and e.status in ('posted','reversed') and e.entry_type <> 'closing'
     and e.entry_date <= rc.statement_date

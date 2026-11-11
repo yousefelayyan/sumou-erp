@@ -2,6 +2,7 @@
 //  السمو ERP — المرحلة 5 و6: الفواتير وضريبة المبيعات
 //  حسابات الربط، الأصناف والخدمات، فواتير البيع والشراء والمرتجعات، تقرير الإقرار
 // =====================================================================
+import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
@@ -28,6 +29,48 @@ async function loadSettings() {
   await sb.rpc('ensure_company_settings', { p_company: S.company.id });
   const { data } = await sb.from('company_settings').select('*').eq('company_id', S.company.id).maybeSingle();
   return data || { default_tax_rate: 16 };
+}
+
+const itemRule = () => ruleSync('m_item');
+// فئات المواد: إضافة وتعديل وحذف
+function categoriesDialog(cats, items, ctx) {
+  const canAdd = can('items', 'add'), canEd = can('items', 'edit'), canDel = can('items', 'delete');
+  const used = (id) => items.filter(i => i.category_id === id).length;
+  const m = modal({ title: '🗂️ فئات المواد', body: `
+    <p class="muted" style="margin-top:0">الفئة بتجمّع الأصناف (مثلاً: مشروبات، قرطاسية). من «طريقة الترقيم» بتقدر تخلّي رقم الصنف يبدأ برمز فئته.</p>
+    <div class="table-wrap"><table class="t"><thead><tr><th style="width:110px">الرمز</th><th>اسم الفئة</th><th>عدد الأصناف</th><th>فعّالة</th><th></th></tr></thead><tbody id="crows"></tbody></table></div>
+    ${canAdd ? '<button class="btn sm" id="c-add" type="button" style="margin-top:8px">➕ فئة جديدة</button>' : ''}`,
+    foot: `<button class="btn" data-close>إغلاق</button>` });
+  let changed = false;
+  const draw = () => {
+    m.el.querySelector('#crows').innerHTML = cats.map(c => `<tr data-id="${c.id}"><td><input data-f="code" value="${esc(c.code)}" dir="ltr" ${canEd ? '' : 'disabled'}></td>
+      <td><input data-f="name" value="${esc(c.name)}" ${canEd ? '' : 'disabled'}></td><td>${used(c.id)}</td>
+      <td><input type="checkbox" data-f="is_active" ${c.is_active ? 'checked' : ''} ${canEd ? '' : 'disabled'}></td>
+      <td class="actions">${canEd ? '<button class="btn sm" data-save type="button">💾</button>' : ''} ${canDel && !used(c.id) ? '<button class="btn sm danger" data-del type="button">حذف</button>' : ''}</td></tr>`).join('')
+      || '<tr><td colspan="5" class="empty">ما في فئات لسا</td></tr>';
+  };
+  draw();
+  m.el.querySelector('#c-add')?.addEventListener('click', async () => {
+    const code = masterCode('m_item_category', cats.map(c => c.code)) ?? String(Math.max(0, ...cats.map(c => parseInt(c.code, 10) || 0)) + 1);
+    const { data, error } = await sb.from('item_categories').insert({ company_id: S.company.id, code, name: 'فئة جديدة' }).select().single();
+    if (error) return toast(arError(error), 'err');
+    cats.push(data); changed = true; draw(); m.el.querySelector(`[data-id="${data.id}"] [data-f=name]`)?.select();
+  });
+  m.el.querySelector('#crows').addEventListener('click', async (e) => {
+    const tr = e.target.closest('[data-id]'); if (!tr) return; const c = cats.find(x => x.id === tr.dataset.id);
+    if (e.target.closest('[data-save]')) {
+      const d = { code: tr.querySelector('[data-f=code]').value.trim(), name: tr.querySelector('[data-f=name]').value.trim(), is_active: tr.querySelector('[data-f=is_active]').checked };
+      if (!d.code || !d.name) return toast('الرمز والاسم مطلوبين', 'err');
+      const { error } = await sb.from('item_categories').update(d).eq('id', c.id); if (error) return toast(arError(error), 'err');
+      Object.assign(c, d); changed = true; await log('تعديل', 'item_categories', c.id, { name: d.name }); toast('تم الحفظ', 'ok');
+    }
+    if (e.target.closest('[data-del]')) {
+      const b = e.target.closest('[data-del]'); if (!b.dataset.sure) { b.dataset.sure = '1'; b.textContent = 'متأكد؟'; return; }
+      const { error } = await sb.from('item_categories').delete().eq('id', c.id); if (error) return toast(arError(error), 'err');
+      cats.splice(cats.indexOf(c), 1); changed = true; draw();
+    }
+  });
+  m.el.addEventListener('click', (e) => { if (changed && (e.target === m.el || e.target.closest('[data-close]'))) ctx.rerender(); });
 }
 
 export async function loadItems(force = false) {
@@ -90,30 +133,38 @@ async function viewSettings(v, ctx) {
 // ---------------------------------------------------------------------
 async function viewItems(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
-  const [items, accs, st] = await Promise.all([loadItems(true), loadAccounts(), loadSettings()]);
+  const [items, accs, st, , catR] = await Promise.all([loadItems(true), loadAccounts(), loadSettings(), loadNumbering(true),
+    sb.from('item_categories').select('*').eq('company_id', S.company.id).order('code')]);
+  const cats = catR.data || [], catById = Object.fromEntries(cats.map(c => [c.id, c]));
   v.innerHTML = `<div class="page-head"><h2>🏷️ الأصناف والخدمات</h2><span class="badge brand">${items.length}</span><div class="spacer"></div>
-      <input class="search" id="q" placeholder="بحث بالاسم أو الرقم أو الباركود…"><button class="btn sm" id="csv">⬇️ Excel</button>
+      <select class="search" id="fc" style="min-width:140px"><option value="">كل الفئات</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="-">بدون فئة</option></select>
+      <input class="search" id="q" placeholder="بحث بالاسم أو الرقم أو الباركود…"><button class="btn sm" id="cats">🗂️ فئات المواد</button><button class="btn sm" id="csv">⬇️ Excel</button>
       ${can('items', 'add') ? '<button class="btn primary" id="add">➕ صنف / خدمة</button>' : ''}</div>
-    <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>الاسم</th><th>النوع</th><th>الوحدة</th><th style="text-align:left">سعر البيع</th><th style="text-align:left">سعر الشراء</th><th>الضريبة</th><th>الحالة</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>`;
+    <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>الاسم</th><th>الفئة</th><th>النوع</th><th>الوحدة</th><th style="text-align:left">سعر البيع</th><th style="text-align:left">سعر الشراء</th><th>الضريبة</th><th>الحالة</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>`;
   const draw = () => {
-    const q = v.querySelector('#q').value.trim().toLowerCase();
-    v.querySelector('#rows').innerHTML = items.filter(i => !q || [i.code, i.name, i.barcode].some(x => (x || '').toLowerCase().includes(q))).map(i => `<tr>
-      <td>${esc(i.code)}</td><td><b>${esc(i.name)}</b></td><td>${i.item_type === 'service' ? 'خدمة' : 'سلعة'}</td><td>${esc(i.unit || '')}</td>
+    const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value;
+    v.querySelector('#rows').innerHTML = items.filter(i => (!fc || (fc === '-' ? !i.category_id : i.category_id === fc)) && (!q || [i.code, i.name, i.barcode].some(x => (x || '').toLowerCase().includes(q)))).map(i => `<tr>
+      <td>${esc(i.code)}</td><td><b>${esc(i.name)}</b></td><td>${esc(catById[i.category_id]?.name || '')}</td><td>${i.item_type === 'service' ? 'خدمة' : 'سلعة'}</td><td>${esc(i.unit || '')}</td>
       <td dir="ltr" style="text-align:left">${fmtNum(i.sale_price)}</td><td dir="ltr" style="text-align:left">${fmtNum(i.purchase_price)}</td><td>${num(i.tax_rate)}%</td>
       <td>${i.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
       <td class="actions">${can('items', 'edit') ? `<button class="btn sm" data-edit="${i.id}">تعديل</button>` : ''} ${can('items', 'delete') ? `<button class="btn sm danger" data-del="${i.id}">حذف</button>` : ''}</td></tr>`).join('')
-      || '<tr><td colspan="9" class="empty">ما في أصناف. الأصناف اختيارية، بتقدر تكتب بيان السطر بالفاتورة مباشرة.</td></tr>';
+      || '<tr><td colspan="10" class="empty">ما في أصناف. الأصناف اختيارية، بتقدر تكتب بيان السطر بالفاتورة مباشرة.</td></tr>';
   };
-  draw(); v.querySelector('#q').oninput = draw;
-  v.querySelector('#csv').onclick = () => downloadCSV('الأصناف.csv', [['الرقم', 'الاسم', 'النوع', 'الوحدة', 'الباركود', 'سعر البيع', 'سعر الشراء', 'الضريبة']].concat(items.map(i => [i.code, i.name, i.item_type === 'service' ? 'خدمة' : 'سلعة', i.unit, i.barcode, i.sale_price, i.purchase_price, i.tax_rate])));
+  draw(); v.querySelector('#q').oninput = draw; v.querySelector('#fc').onchange = draw;
+  v.querySelector('#cats').onclick = () => categoriesDialog(cats, items, ctx);
+  v.querySelector('#csv').onclick = () => downloadCSV('الأصناف.csv', [['الرقم', 'الاسم', 'الفئة', 'النوع', 'الوحدة', 'الباركود', 'سعر البيع', 'سعر الشراء', 'الضريبة']].concat(items.map(i => [i.code, i.name, catById[i.category_id]?.name || '', i.item_type === 'service' ? 'خدمة' : 'سلعة', i.unit, i.barcode, i.sale_price, i.purchase_price, i.tax_rate])));
   const open = (it) => {
     const isNew = !it;
-    it = it || { code: String((items.map(x => parseInt(x.code)).filter(n => !isNaN(n)).sort((a, b) => b - a)[0] || 0) + 1), name: '', item_type: 'goods', unit: 'حبة', sale_price: 0, purchase_price: 0, tax_rate: st.default_tax_rate ?? 16, is_active: true };
+    const suggest = (catId) => { const c = catById[catId], byCat = itemRule()?.by_category;
+      return masterCode('m_item', items.filter(x => !byCat || (x.category_id || null) === (catId || null)).map(x => x.code), byCat ? c?.code || null : null)
+        ?? String((items.map(x => parseInt(x.code)).filter(n => !isNaN(n)).sort((a, b) => b - a)[0] || 0) + 1); };
+    it = it || { code: suggest(null), category_id: null, name: '', item_type: 'goods', unit: 'حبة', sale_price: 0, purchase_price: 0, tax_rate: st.default_tax_rate ?? 16, is_active: true };
     const leaves = leafAccounts(accs);
     const accSel = (name, def) => `<select name="${name}"><option value="">— الافتراضي (${esc(accs.find(a => a.id === def)?.name || 'من حسابات الربط')}) —</option>${leaves.map(a => `<option value="${a.id}" ${it[name] === a.id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select>`;
     const m = modal({ title: isNew ? 'صنف / خدمة جديدة' : 'تعديل: ' + it.name, body: `<form id="i-form"><div class="grid cols-2">
       <div class="field"><label>الرقم *</label><input name="code" value="${esc(it.code)}" dir="ltr"></div>
       <div class="field"><label>الاسم *</label><input name="name" value="${esc(it.name)}"></div>
+      <div class="field"><label>الفئة</label><select name="category_id"><option value="">— بدون فئة —</option>${cats.filter(c => c.is_active || c.id === it.category_id).map(c => `<option value="${c.id}" ${c.id === it.category_id ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
       <div class="field"><label>النوع</label><select name="item_type"><option value="goods" ${it.item_type === 'goods' ? 'selected' : ''}>سلعة</option><option value="service" ${it.item_type === 'service' ? 'selected' : ''}>خدمة</option></select></div>
       <div class="field"><label>الوحدة</label><input name="unit" value="${esc(it.unit)}"></div>
       <div class="field"><label>سعر البيع</label><input name="sale_price" value="${it.sale_price || ''}" inputmode="decimal" dir="ltr"></div>
@@ -124,9 +175,12 @@ async function viewItems(v, ctx) {
       <div class="field"><label>حساب المشتريات</label>${accSel('purchase_account_id', st.purchase_account_id)}</div></div>
       <label class="check"><input type="checkbox" name="is_active" ${it.is_active ? 'checked' : ''}> فعّال</label></form>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+    if (isNew) { let lastSug = it.code; const codeEl = m.el.querySelector('[name=code]');
+      m.el.querySelector('[name=category_id]').onchange = (e) => { if (codeEl.value === lastSug) { lastSug = suggest(e.target.value || null); codeEl.value = lastSug; } }; }
     m.el.querySelector('[data-save]').onclick = async () => {
       const d = formData(m.el.querySelector('#i-form'));
       if (!d.code || !d.name) return toast('الرقم والاسم مطلوبين', 'err');
+      d.category_id = d.category_id || null;
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);
       if (isNew) d.company_id = S.company.id;
       const res = isNew ? await sb.from('items').insert(d) : await sb.from('items').update(d).eq('id', it.id);
@@ -170,8 +224,8 @@ function invoiceList(group) {
       <div class="card table-wrap"><table class="t"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th><th>${INV[types[0]].partyLabel}</th><th>الدفع</th><th>المرجع</th><th style="text-align:left">قبل الضريبة</th><th style="text-align:left">الضريبة</th><th style="text-align:left">الإجمالي</th><th>الحالة</th></tr></thead><tbody id="rows"></tbody></table></div>`;
     const draw = () => {
       const q = v.querySelector('#q').value.trim().toLowerCase(), ft = v.querySelector('#ft').value, fs = v.querySelector('#fs').value;
-      v.querySelector('#rows').innerHTML = data.filter(i => (!ft || i.inv_type === ft) && (!fs || i.status === fs) && (!q || [String(i.inv_no), pName[i.party_id], i.party_name, i.reference].some(x => (x || '').toLowerCase().includes(q))))
-        .map(i => `<tr class="click" data-open="${i.id}"><td>${i.inv_type.endsWith('return') ? `<span class="badge warn">${INV[i.inv_type].label}</span>` : INV[i.inv_type].label}</td><td><b>${i.inv_no}</b></td><td>${fmtDate(i.inv_date)}</td>
+      v.querySelector('#rows').innerHTML = data.filter(i => (!ft || i.inv_type === ft) && (!fs || i.status === fs) && (!q || [docNo(i), String(i.inv_no), pName[i.party_id], i.party_name, i.reference].some(x => (x || '').toLowerCase().includes(q))))
+        .map(i => `<tr class="click" data-open="${i.id}"><td>${i.inv_type.endsWith('return') ? `<span class="badge warn">${INV[i.inv_type].label}</span>` : INV[i.inv_type].label}</td><td><b dir="ltr">${esc(docNo(i))}</b></td><td>${fmtDate(i.inv_date)}</td>
           <td>${esc(pName[i.party_id] || i.party_name || '')}</td><td>${i.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td><td>${esc(i.reference || '')}</td>
           <td dir="ltr" style="text-align:left">${i.status === 'draft' ? '—' : fmtNum(i.subtotal)}</td><td dir="ltr" style="text-align:left">${i.status === 'draft' ? '—' : fmtNum(i.tax_total)}</td>
           <td dir="ltr" style="text-align:left"><b>${i.status === 'draft' ? '—' : fmtNum(i.total)}</b></td><td>${badge(i.status)}</td></tr>`).join('')
@@ -199,18 +253,20 @@ async function invoiceEditor(type, inv, ctx) {
   const isSale = T.group === 'sales';
   const readOnly = (inv && inv.status !== 'draft') || (inv ? !can(T.screen, 'edit') : !can(T.screen, 'add'));
   const ro = readOnly ? 'disabled' : '';
+  const manual = await isManual(type);
   const pre = !inv && returnPrefill ? returnPrefill : null; returnPrefill = null;
   const i0 = inv || { inv_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, payment_type: pre?.inv.payment_type || 'credit',
     prices_include_tax: pre?.inv.prices_include_tax || false, cash_account_id: pre?.inv.cash_account_id || st.cash_account_id, party_id: pre?.inv.party_id,
-    party_name: pre?.inv.party_name, reference: pre ? `مرتجع من ${INV[pre.inv.inv_type].label} ${pre.inv.inv_no}` : '', original_invoice_id: pre?.inv.id || null };
+    party_name: pre?.inv.party_name, reference: pre ? `مرتجع من ${INV[pre.inv.inv_type].label} ${docNo(pre.inv)}` : '', original_invoice_id: pre?.inv.id || null };
   if (pre) lines = pre.lines;
   const pById = Object.fromEntries(parties.map(p => [p.id, p])), itById = Object.fromEntries(items.map(i => [i.id, i]));
   let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
-  const m = modal({ title: inv ? `${T.label} رقم ${inv.inv_no}` : `${T.label} جديدة`, body: `
+  const m = modal({ title: inv ? `${T.label} رقم ${docNo(inv)}` : `${T.label} جديدة`, body: `
     ${inv ? `<div style="margin:-6px 0 12px">${badge(inv.status)} ${inv.status !== 'draft' ? '<span class="muted" style="font-size:13px">— الفاتورة المرحّلة ما بتنعدّل. للتصحيح ألغيها واعمل وحدة جديدة، أو اعمل مرتجع.</span>' : ''}</div>` : ''}
     <form id="inv-form"><div class="grid cols-3">
+      ${manualField(manual, inv?.inv_no, ro)}
       <div class="field"><label>التاريخ *</label><input type="date" name="inv_date" value="${esc(i0.inv_date)}" min="${S.fy.start_date}" max="${S.fy.end_date}" ${ro}></div>
       <div class="field"><label>طريقة الدفع</label><select name="payment_type" ${ro}><option value="credit" ${i0.payment_type === 'credit' ? 'selected' : ''}>آجل (على الحساب)</option><option value="cash" ${i0.payment_type === 'cash' ? 'selected' : ''}>نقدي</option></select></div>
       <div class="field"><label>تاريخ الاستحقاق</label><input type="date" name="due_date" value="${esc(i0.due_date)}" ${ro}></div>
@@ -300,7 +356,9 @@ async function invoiceEditor(type, inv, ctx) {
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
     }
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
-    const header = { inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
+    const mn = readManual(m.el.querySelector('#inv-form'), manual);
+    if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم الفاتورة (رقم صحيح أكبر من صفر)', 'err');
+    const header = { ...(mn.value ? { inv_no: mn.value } : {}), inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
       party_name: h.payment_type === 'cash' ? (h.party_name || p?.name || null) : null, cash_account_id: h.payment_type === 'cash' ? h.cash_account_id : null,
       reference: h.reference, prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
       subtotal: r3(out.reduce((s, l) => s + l.subtotal, 0)), tax_total: r3(out.reduce((s, l) => s + l.tax_amount, 0)), discount_total: r3(out.reduce((s, l) => s + l.discount, 0)) };
@@ -325,12 +383,12 @@ async function invoiceEditor(type, inv, ctx) {
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
   m.el.querySelector('[data-post]')?.addEventListener('click', () => save(true));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
-    if (!(await confirmBox(`حذف ${T.label} رقم ${inv.inv_no}؟`))) return;
+    if (!(await confirmBox(`حذف ${T.label} رقم ${docNo(inv)}؟`))) return;
     const { error } = await sb.from('invoices').delete().eq('id', inv.id); if (error) return toast(arError(error), 'err');
-    await log('حذف', T.screen, inv.id, { no: inv.inv_no }); toast('تم الحذف', 'ok'); m.close(); ctx.rerender();
+    await log('حذف', T.screen, inv.id, { no: docNo(inv) }); toast('تم الحذف', 'ok'); m.close(); ctx.rerender();
   });
   m.el.querySelector('[data-cancel]')?.addEventListener('click', async () => {
-    if (!(await confirmBox(`إلغاء ${T.label} رقم ${inv.inv_no}؟ رح ينعمل قيد عكسي بتاريخ اليوم.`))) return;
+    if (!(await confirmBox(`إلغاء ${T.label} رقم ${docNo(inv)}؟ رح ينعمل قيد عكسي بتاريخ اليوم.`))) return;
     const d = today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : inv.inv_date;
     const { error } = await sb.rpc('cancel_invoice', { p_id: inv.id, p_date: d }); if (error) return toast(arError(error), 'err');
     toast('تم إلغاء الفاتورة', 'ok'); m.close(); ctx.rerender();
@@ -342,7 +400,7 @@ async function invoiceEditor(type, inv, ctx) {
       .then(() => toast('عدّل الكميات المرتجعة، واحذف السطور اللي ما رجعت', ''));
   });
   m.el.querySelector('[data-print]')?.addEventListener('click', () => printInvoice(type, inv, lines, pById[inv.party_id], st));
-  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('invoice', inv.id, `${T.label} رقم ${inv.inv_no}`));
+  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('invoice', inv.id, `${T.label} رقم ${docNo(inv)}`));
 }
 let returnPrefill = null;
 
@@ -350,7 +408,7 @@ function printInvoice(type, inv, lines, party, st) {
   const T = INV[type], c = S.company;
   const stamp = inv.status === 'cancelled' ? '<h2 class="cancel-stamp">— فاتورة ملغاة —</h2>' : inv.status === 'draft' ? '<h3 class="draft-stamp">— مسودة غير مرحّلة —</h3>' : '';
   const full = () => `
-    <table class="meta"><tr><td><b>رقم الفاتورة:</b> ${inv.inv_no}</td><td><b>التاريخ:</b> ${fmtDate(inv.inv_date)}</td><td><b>طريقة الدفع:</b> ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
+    <table class="meta"><tr><td><b>رقم الفاتورة:</b> ${esc(docNo(inv))}</td><td><b>التاريخ:</b> ${fmtDate(inv.inv_date)}</td><td><b>طريقة الدفع:</b> ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
       <tr><td colspan="2"><b>${T.partyLabel}:</b> ${esc(party?.name || inv.party_name || '')} ${party?.tax_no ? ` — الرقم الضريبي: ${esc(party.tax_no)}` : ''}</td><td>${inv.due_date ? `<b>الاستحقاق:</b> ${fmtDate(inv.due_date)}` : ''}</td></tr>
       ${party?.address || party?.phone ? `<tr><td colspan="3">${esc([party.address, party.city, party.mobile || party.phone].filter(Boolean).join(' — '))}</td></tr>` : ''}
       ${inv.reference ? `<tr><td colspan="3"><b>المرجع:</b> ${esc(inv.reference)}</td></tr>` : ''}</table>
@@ -364,7 +422,7 @@ function printInvoice(type, inv, lines, party, st) {
     ${inv.notes ? `<p><b>ملاحظات:</b> ${esc(inv.notes)}</p>` : ''}${st.invoice_footer ? `<p style="color:#555">${esc(st.invoice_footer)}</p>` : ''}${stamp}`;
   // نسخة الورق الحراري (80 ملم)
   const slim = () => `
-    <table class="meta"><tr><td><b>رقم:</b> ${inv.inv_no} — ${fmtDate(inv.inv_date)} — ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
+    <table class="meta"><tr><td><b>رقم:</b> ${esc(docNo(inv))} — ${fmtDate(inv.inv_date)} — ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
       ${party?.name || inv.party_name ? `<tr><td><b>${T.partyLabel}:</b> ${esc(party?.name || inv.party_name)}</td></tr>` : ''}</table>
     <table class="pt" style="margin-top:6px"><thead><tr><th>الصنف</th><th>كمية</th><th>المبلغ</th></tr></thead><tbody>
       ${lines.map(l => `<tr><td>${esc(l.description || '')}<br><small>${fmtNum(l.unit_price)} × ${num(l.qty)}</small></td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody>

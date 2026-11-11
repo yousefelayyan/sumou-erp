@@ -279,7 +279,7 @@ begin
   perform set_config('sumou.internal', public.internal_token(), true);
   insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, reversal_of)
   values (e.company_id, fy.id, e.entry_type, p_date,
-          coalesce(p_note, 'قيد عكسي للقيد رقم ' || e.entry_no || coalesce(' - ' || e.description, '')),
+          coalesce(p_note, 'قيد عكسي للقيد رقم ' || coalesce(e.doc_code, e.entry_no::text) || coalesce(' - ' || e.description, '')),
           e.reference, e.party_name, e.cash_account_id, 'draft', e.id)
   returning id into new_id;
   insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit)

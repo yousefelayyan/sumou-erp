@@ -2,6 +2,7 @@
 //  السمو ERP — لوحة الأرقام، بانتظار الترحيل، القيود المتكررة،
 //  مراكز الكلفة، العملات، التسوية البنكية
 // =====================================================================
+import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, ENTRY_TYPES, downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
@@ -55,7 +56,7 @@ async function viewPending(v) {
   v.innerHTML = `<div class="page-head"><h2>⏳ بانتظار الترحيل</h2><span class="badge brand">${data.length}</span></div>
     <p class="muted">هون كل المسودات اللي دخلها الموظفين وما انرحّلت لسا. المحاسب أو المدير بيراجعها وبيرحّلها. (الموظف اللي ما إله صلاحية «ترحيل» بيقدر يحفظ مسودة بس.)</p>
     <div class="card table-wrap"><table class="t"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th><th>البيان</th><th>المبلغ</th><th>دخلها</th><th>وقت الإدخال</th><th></th></tr></thead><tbody>
-    ${data.map(r => `<tr><td>${esc(label(r))}</td><td><b>${r.doc_no ?? ''}</b></td><td>${fmtDate(r.doc_date)}</td><td>${esc(r.description || '')}</td>
+    ${data.map(r => `<tr><td>${esc(label(r))}</td><td><b dir="ltr">${esc(docNo(r))}</b></td><td>${fmtDate(r.doc_date)}</td><td>${esc(r.description || '')}</td>
       <td class="n">${r.amount == null ? '' : fmtNum(r.amount)}</td><td>${esc(who[r.created_by] || '')}</td><td class="muted" style="font-size:12px">${fmtDate(r.created_at)}</td>
       <td><a class="btn sm" href="${href(r)}">فتح الشاشة</a></td></tr>`).join('') || '<tr><td colspan="8" class="empty">ما في مسودات 👍</td></tr>'}</tbody></table></div>`;
 }
@@ -108,7 +109,7 @@ async function viewCostCenters(v, ctx) {
   if (!S.company) return noCo(v);
   const tab = q('tab') === 'cur' ? 'cur' : 'cc';
   const tbl = tab === 'cc' ? 'cost_centers' : 'currencies';
-  const { data, error } = await sb.from(tbl).select('*').eq('company_id', S.company.id).order('code');
+  const [{ data, error }] = await Promise.all([sb.from(tbl).select('*').eq('company_id', S.company.id).order('code'), loadNumbering(true)]);
   if (error) throw error;
   const ed = can('accounts', 'edit');
   v.innerHTML = `<div class="page-head"><h2>${tab === 'cc' ? '🎯 مراكز الكلفة' : '💱 العملات الأجنبية'}</h2><div class="spacer"></div>
@@ -119,7 +120,7 @@ async function viewCostCenters(v, ctx) {
     ${data.map(r => `<tr><td>${esc(r.code)}</td><td><b>${esc(r.name)}</b></td>${tab === 'cur' ? `<td class="n">${num(r.rate)}</td>` : ''}<td>${r.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
       <td class="actions">${ed ? `<button class="btn sm" data-ed="${r.id}">تعديل</button>` : ''}</td></tr>`).join('') || `<tr><td colspan="5" class="empty">ما في ${tab === 'cc' ? 'مراكز كلفة' : 'عملات'}</td></tr>`}</tbody></table></div>`;
   const open = (r) => {
-    const isNew = !r; r = r || { code: tab === 'cur' ? 'USD' : String(data.length + 1), name: tab === 'cur' ? 'دولار أمريكي' : '', rate: tab === 'cur' ? 0.709 : null, is_active: true };
+    const isNew = !r; r = r || { code: tab === 'cur' ? 'USD' : (masterCode('m_cost_center', data.map(x => x.code)) ?? String(data.length + 1)), name: tab === 'cur' ? 'دولار أمريكي' : '', rate: tab === 'cur' ? 0.709 : null, is_active: true };
     const m = modal({ title: isNew ? 'إضافة' : 'تعديل', size: 'sm', body: `<form id="f"><div class="field"><label>الرمز</label><input name="code" value="${esc(r.code)}" dir="ltr"></div>
       <div class="field"><label>الاسم</label><input name="name" value="${esc(r.name)}"></div>${tab === 'cur' ? `<div class="field"><label>سعر الصرف (كم دينار للوحدة)</label><input name="rate" value="${r.rate}" inputmode="decimal" dir="ltr"></div>` : ''}
       <label class="check"><input type="checkbox" name="is_active" ${r.is_active ? 'checked' : ''}> فعّال</label></form>`,
@@ -234,7 +235,7 @@ async function reconScreen(v, ctx, id) {
     const qq = (v.querySelector('#qq').value || '').trim();
     v.querySelector('#rows').innerHTML = lines.filter(l => !qq || `${l.description} ${l.reference} ${num(l.debit)} ${num(l.credit)}`.includes(qq)).map(l => `<tr style="${sel.has(l.line_id) ? 'background:#f0fdf4' : ''}">
       <td><input type="checkbox" data-l="${l.line_id}" ${sel.has(l.line_id) ? 'checked' : ''} ${ed ? '' : 'disabled'} style="width:18px;height:18px;accent-color:var(--brand)"></td>
-      <td>${fmtDate(l.entry_date)}</td><td>${esc(ENTRY_TYPES[l.entry_type]?.label || '')} ${l.entry_no ?? ''}</td><td>${esc(l.description || '')}</td><td>${esc(l.reference || '')}</td>
+      <td>${fmtDate(l.entry_date)}</td><td>${esc(ENTRY_TYPES[l.entry_type]?.label || '')} ${esc(docNo(l))}</td><td>${esc(l.description || '')}</td><td>${esc(l.reference || '')}</td>
       <td class="n">${num(l.debit) ? fmtNum(l.debit) : ''}</td><td class="n">${num(l.credit) ? fmtNum(l.credit) : ''}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">ما في حركات</td></tr>';
     sum();
   };

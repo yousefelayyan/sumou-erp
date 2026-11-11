@@ -2,6 +2,7 @@
 //  السمو ERP — المرحلة 2: المالية
 //  دليل الحسابات، الأرصدة الافتتاحية، سندات القيد والقبض والصرف
 // =====================================================================
+import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
@@ -73,7 +74,7 @@ const expanded = new Set();
 
 async function viewAccounts(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
-  const accs = await loadAccounts(true);
+  const [accs] = await Promise.all([loadAccounts(true), loadNumbering(true)]);
   const bal = await loadBalances();
   const canAdd = can('accounts', 'add'), canEdit = can('accounts', 'edit'), canDel = can('accounts', 'delete');
 
@@ -177,6 +178,8 @@ async function viewAccounts(v, ctx) {
 }
 
 function suggestCode(parent, accs) {
+  const mc = masterCode('m_account', accs.filter(a => (a.parent_id || null) === (parent?.id || null)).map(a => a.code), parent?.code || null);
+  if (mc !== null) return mc;
   if (!parent) {
     const roots = accs.filter(a => !a.parent_id).map(a => parseInt(a.code)).filter(n => !isNaN(n));
     return String((roots.length ? Math.max(...roots) : 0) + 1);
@@ -246,7 +249,7 @@ function voucherList(type) {
     if (!needCompanyFY(v)) return;
     const T = ENTRY_TYPES[type];
     const [{ data, error }, accs] = await Promise.all([
-      sb.from('journal_entries').select('*').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id).eq('entry_type', type).order('entry_no', { ascending: false }).limit(2000),
+      sb.from('journal_entries').select('*').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id).eq('entry_type', type).order('entry_date', { ascending: false }).order('entry_no', { ascending: false }).limit(2000),
       loadAccounts(),
     ]);
     if (error) throw error;
@@ -262,9 +265,9 @@ function voucherList(type) {
         <tbody id="rows"></tbody></table></div>`;
     const draw = () => {
       const q = v.querySelector('#q').value.trim().toLowerCase(), st = v.querySelector('#st').value;
-      const rows = data.filter(e => (!st || e.status === st) && (!q || [String(e.entry_no), e.description, e.reference, e.party_name].some(x => (x || '').toLowerCase().includes(q))));
+      const rows = data.filter(e => (!st || e.status === st) && (!q || [docNo(e), String(e.entry_no), e.description, e.reference, e.party_name].some(x => (x || '').toLowerCase().includes(q))));
       v.querySelector('#rows').innerHTML = rows.map(e => `<tr class="click" data-open="${e.id}">
-        <td><b>${e.entry_no}</b></td><td>${fmtDate(e.entry_date)}</td>
+        <td><b dir="ltr">${esc(docNo(e))}</b></td><td>${fmtDate(e.entry_date)}</td>
         ${type !== 'journal' ? `<td>${esc(e.party_name || '')}</td><td>${esc(accName[e.cash_account_id] || '')}</td>` : ''}
         <td>${esc(e.description || '')}</td><td>${esc(e.reference || '')}</td>
         <td dir="ltr" style="text-align:left">${e.status === 'draft' ? '<span class="muted">—</span>' : fmtNum(e.total)}</td><td>${statusBadge(e.status)}</td></tr>`).join('')
@@ -295,6 +298,7 @@ async function voucherEditor(type, entry, ctx) {
   }
   const isCash = type === 'receipt' || type === 'payment';
   const readOnly = entry && entry.status !== 'draft' || (entry ? !can(T.screen, 'edit') : !can(T.screen, 'add'));
+  const manual = await isManual(type);
   const byId = Object.fromEntries(accs.map(a => [a.id, a]));
   const e = entry || { entry_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, description: '', reference: '', party_name: '', cash_account_id: null };
 
@@ -311,11 +315,12 @@ async function voucherEditor(type, entry, ctx) {
   if (isCash && !entry) e.cash_account_id = (leafAccounts(accs).find(a => a.account_type === 'cash') || leafAccounts(accs).find(a => a.account_type === 'bank'))?.id || null;
   const cashAccs = leafAccounts(accs).sort((x, y) => (['cash', 'bank'].includes(y.account_type) ? 1 : 0) - (['cash', 'bank'].includes(x.account_type) ? 1 : 0) || x.code.localeCompare(y.code, 'en', { numeric: true }));
   const ro = readOnly ? 'disabled' : '';
-  const title = entry ? `${T.label} رقم ${entry.entry_no}` : `${T.label} جديد`;
+  const title = entry ? `${T.label} رقم ${docNo(entry)}` : `${T.label} جديد`;
   const m = modal({ title, body: `
     ${entry ? `<div style="margin:-6px 0 12px">${statusBadge(entry.status)} ${entry.reversal_of ? '<span class="badge brand">قيد عكسي</span>' : ''}
       ${entry.status !== 'draft' ? '<span class="muted" style="font-size:13px"> — القيد المرحّل ما بينعدّل. للتصحيح اعمل «قيد عكسي».</span>' : ''}</div>` : ''}
     <form id="v-form"><div class="grid ${isCash ? 'cols-3' : 'cols-3'}">
+      ${manualField(manual, entry?.entry_no, ro)}
       <div class="field"><label>التاريخ *</label><input type="date" name="entry_date" value="${esc(e.entry_date)}" min="${S.fy.start_date}" max="${S.fy.end_date}" ${ro}></div>
       ${isCash ? `<div class="field"><label>${type === 'receipt' ? 'استلمنا من' : 'صرفنا إلى'}</label><input name="party_name" value="${esc(e.party_name)}" ${ro}></div>
         <div class="field"><label>${type === 'receipt' ? 'إلى حساب (الصندوق/البنك) *' : 'من حساب (الصندوق/البنك) *'}</label><select name="cash_account_id" ${ro}>
@@ -435,6 +440,8 @@ async function voucherEditor(type, entry, ctx) {
     const h = formData(m.el.querySelector('#v-form'));
     if (!h.entry_date) return toast('التاريخ مطلوب', 'err');
     if (h.entry_date < S.fy.start_date || h.entry_date > S.fy.end_date) return toast('التاريخ لازم يكون جوّا السنة المالية الحالية', 'err');
+    const mn = readManual(m.el.querySelector('#v-form'), manual);
+    if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم المستند (رقم صحيح أكبر من صفر)', 'err');
     const out = [];
     for (const [i, r] of rows.entries()) {
       const empty = !r.acc && !r.party && !num(r.amount) && !num(r.debit) && !num(r.credit);
@@ -465,7 +472,8 @@ async function voucherEditor(type, entry, ctx) {
       if (post && Math.abs(d - c) > 0.0005) return toast('القيد مش متوازن، ما بينرحّل', 'err');
     }
     const header = { entry_date: h.entry_date, description: h.description, reference: h.reference,
-                     party_name: isCash ? h.party_name : null, cash_account_id: isCash ? h.cash_account_id : null };
+                     party_name: isCash ? h.party_name : null, cash_account_id: isCash ? h.cash_account_id : null,
+                     ...(mn.value ? { entry_no: mn.value } : {}) };
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {
       let id = entry?.id;
@@ -486,10 +494,10 @@ async function voucherEditor(type, entry, ctx) {
   };
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
   m.el.querySelector('[data-savepost]')?.addEventListener('click', () => save(true));
-  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('entry', entry.id, `${T.label} رقم ${entry.entry_no}`));
+  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('entry', entry.id, `${T.label} رقم ${docNo(entry)}`));
   m.el.querySelector('[data-recur]')?.addEventListener('click', () => recurringDialog(entry));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
-    if (!(await confirmBox(`حذف ${T.label} رقم ${entry.entry_no}؟`))) return;
+    if (!(await confirmBox(`حذف ${T.label} رقم ${docNo(entry)}؟`))) return;
     const { error } = await sb.from('journal_entries').delete().eq('id', entry.id);
     if (error) return toast(arError(error), 'err');
     await log('حذف', T.screen, entry.id, { no: entry.entry_no });
@@ -510,7 +518,7 @@ function printVoucher(type, e, lines, byId) {
   const isCash = type === 'receipt' || type === 'payment';
   const body = isCash ? lines.filter(l => l.line_no !== 1) : lines;
   const total = isCash ? body.reduce((s, l) => s + num(l.debit) + num(l.credit), 0) : lines.reduce((s, l) => s + num(l.debit), 0);
-  printDoc(`${T.label} رقم ${e.entry_no}`, `
+  printDoc(`${T.label} رقم ${docNo(e)}`, `
     <table class="meta"><tr><td><b>التاريخ:</b> ${fmtDate(e.entry_date)}</td><td><b>الحالة:</b> ${STATUS[e.status][0]}</td><td><b>المرجع:</b> ${esc(e.reference || '—')}</td></tr>
       ${isCash ? `<tr><td colspan="2"><b>${type === 'receipt' ? 'استلمنا من السيد/السادة' : 'صرفنا إلى السيد/السادة'}:</b> ${esc(e.party_name || '')}</td><td><b>${type === 'receipt' ? 'إلى حساب' : 'من حساب'}:</b> ${esc(byId[e.cash_account_id]?.name || '')}</td></tr>` : ''}
       <tr><td colspan="3"><b>البيان:</b> ${esc(e.description || '')}</td></tr></table>

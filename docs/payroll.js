@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — الموظفين والرواتب والضمان + الأصول الثابتة والاستهلاك
 // =====================================================================
+import { loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { printDoc, amountToWords } from './print.js';
@@ -17,7 +18,7 @@ const nextCode = (rows) => String(Math.max(0, ...rows.map(r => parseInt(r.code, 
 // ---------------------------------------------------------------------
 async function viewEmployees(v, ctx) {
   if (!S.company) return noCo(v);
-  const [{ data, error }, ccs] = await Promise.all([sb.from('employees').select('*').eq('company_id', S.company.id).order('code'), loadCC()]);
+  const [{ data, error }, ccs] = await Promise.all([sb.from('employees').select('*').eq('company_id', S.company.id).order('code'), loadCC(), loadNumbering(true)]);
   if (error) throw error;
   const act = data.filter(e => e.is_active);
   v.innerHTML = `<div class="page-head"><h2>👷 الموظفين</h2><span class="badge brand">${act.length} فعّال</span><div class="spacer"></div>
@@ -31,7 +32,7 @@ async function viewEmployees(v, ctx) {
     .concat(data.map(e => [e.code, e.name, e.national_id, e.ss_no, e.job_title, e.department, e.hire_date, e.basic_salary, e.allowances, e.ss_subject ? 'نعم' : 'لا', e.income_tax, e.bank_name, e.iban, e.mobile])));
   const open = (e) => {
     const isNew = !e, ro = can('payroll', 'edit') ? '' : 'disabled';
-    e = e || { code: nextCode(data), name: '', ss_subject: true, is_active: true, basic_salary: 0, allowances: 0, income_tax: 0, hire_date: today() };
+    e = e || { code: masterCode('m_employee', data.map(x => x.code)) ?? nextCode(data), name: '', ss_subject: true, is_active: true, basic_salary: 0, allowances: 0, income_tax: 0, hire_date: today() };
     const m = modal({ title: isNew ? 'موظف جديد' : `الموظف: ${e.name}`, body: `<form id="f"><div class="grid cols-3">
       <div class="field"><label>الرقم</label><input name="code" value="${esc(e.code)}" ${ro}></div><div class="field" style="grid-column:span 2"><label>الاسم الكامل *</label><input name="name" value="${esc(e.name)}" ${ro}></div>
       <div class="field"><label>الرقم الوطني</label><input name="national_id" value="${esc(e.national_id)}" dir="ltr" ${ro}></div><div class="field"><label>رقم الضمان</label><input name="ss_no" value="${esc(e.ss_no)}" dir="ltr" ${ro}></div>
@@ -158,7 +159,7 @@ async function payrollRun(v, ctx, id) {
 async function viewAssets(v, ctx) {
   if (!S.company) return noCo(v);
   const [{ data, error }, accs, ccs, runs] = await Promise.all([sb.from('fixed_assets').select('*').eq('company_id', S.company.id).order('code'), loadAccounts(), loadCC(),
-    sb.from('depreciation_runs').select('*').eq('company_id', S.company.id).order('created_at', { ascending: false })]);
+    sb.from('depreciation_runs').select('*').eq('company_id', S.company.id).order('created_at', { ascending: false }), loadNumbering(true)]);
   if (error) throw error;
   await sb.rpc('ensure_payroll_settings', { p_company: S.company.id });
   const accum = {}; await Promise.all(data.map(async a => { const r = await sb.rpc('asset_accum', { p_asset: a.id }); accum[a.id] = num(r.data); }));
@@ -200,7 +201,7 @@ async function viewAssets(v, ctx) {
   });
   const accSel = (name, val, filter) => `<select name="${name}"><option value="">— الافتراضي —</option>${leaves.filter(filter || (() => true)).map(a => `<option value="${a.id}" ${a.id === val ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select>`;
   const open = (a) => {
-    const isNew = !a; a = a || { code: nextCode(data), purchase_date: today(), dep_start: today(), cost: '', salvage: 0, life_months: 60, opening_accum: 0, status: 'active' };
+    const isNew = !a; a = a || { code: masterCode('m_asset', data.map(x => x.code)) ?? nextCode(data), purchase_date: today(), dep_start: today(), cost: '', salvage: 0, life_months: 60, opening_accum: 0, status: 'active' };
     const m = modal({ title: isNew ? 'أصل جديد' : `الأصل: ${a.name}`, body: `<form id="f"><div class="grid cols-3">
       <div class="field"><label>الرقم</label><input name="code" value="${esc(a.code)}"></div><div class="field" style="grid-column:span 2"><label>اسم الأصل *</label><input name="name" value="${esc(a.name)}"></div>
       <div class="field"><label>التصنيف</label><input name="category" value="${esc(a.category)}" placeholder="أجهزة، سيارات، أثاث…"></div><div class="field"><label>المكان</label><input name="location" value="${esc(a.location)}"></div><div class="field"><label>الرقم التسلسلي</label><input name="serial_no" value="${esc(a.serial_no)}" dir="ltr"></div>
