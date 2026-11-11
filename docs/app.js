@@ -8,6 +8,8 @@ import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
 import { INVOICE_ROUTES } from './invoices.js';
 import { OBLIGATION_ROUTES, obligationsSummary } from './obligations.js';
+import { CHEQUE_ROUTES } from './cheques.js';
+import { INVENTORY_ROUTES } from './inventory.js';
 
 const $app = document.getElementById('app');
 // ---------------------------------------------------------------------
@@ -114,11 +116,19 @@ const NAV = () => [
     { r: 'journal', i: '📒', l: 'سندات القيد', show: () => S.company && can('journal_entries', 'view') },
     { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
     { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
+    { r: 'cheques', i: '💳', l: 'محفظة الشيكات', show: () => S.company && can('cheques', 'view') },
   ]},
   { title: 'المبيعات والمشتريات', items: [
     { r: 'sales', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'purchases', i: '🛒', l: 'فواتير المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'items', i: '🏷️', l: 'الأصناف والخدمات', show: () => S.company && can('items', 'view') },
+  ]},
+  { title: 'المخزون', items: [
+    { r: 'stock', i: '📦', l: 'رصيد المخزون', show: () => S.company && can('inventory', 'view') },
+    { r: 'stock-docs?type=in', i: '📥', l: 'سندات الإدخال والإخراج', show: () => S.company && can('inventory', 'view') },
+    { r: 'stock-docs?type=count', i: '📋', l: 'الجرد والتسوية', show: () => S.company && can('inventory', 'view') },
+    { r: 'item-card', i: '🗂️', l: 'بطاقة صنف', show: () => S.company && can('inventory', 'view') },
+    { r: 'warehouses', i: '🏬', l: 'المستودعات', show: () => S.company && can('inventory', 'view') },
   ]},
   { title: 'العملاء والموردين', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
@@ -135,7 +145,6 @@ const NAV = () => [
     { r: 'rep-salestax', i: '🏛️', l: 'إقرار ضريبة المبيعات', show: () => S.company && can('reports', 'view') },
   ]},
   { title: 'قريباً', items: [
-    { soon: true, i: '📦', l: 'المخزون والجرد' }, { soon: true, i: '💳', l: 'محفظة الشيكات' },
  { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
   ]},
 ];
@@ -154,7 +163,7 @@ function renderShell() {
             return `<div class="nav-group"><div class="nav-title">${g.title}</div>
               ${items.map(it => it.soon
                 ? `<div class="soon"><span class="ico">${it.i}</span>${it.l}<small>قريباً</small></div>`
-                : `<a href="#/${it.r}" class="${route === it.r ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
+                : `<a href="#/${it.r}" class="${route === it.r.split('?')[0] ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
             </div>`;
           }).join('')}
         </nav>
@@ -205,7 +214,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -254,7 +263,7 @@ async function viewHome(v) {
         ${can('payment_vouchers', 'add') ? '<a class="btn" href="#/payments">📤 سند صرف</a>' : ''}
         ${can('reports', 'view') ? '<a class="btn" href="#/rep-trial">⚖️ ميزان المراجعة</a>' : ''}
       </div>
-      <p class="muted" style="margin:12px 0 0;font-size:13px">المراحل الجاية: محفظة الشيكات ← المخزون والجرد ← الفوترة الإلكترونية (جوفوترة) ← إغلاق السنة وتدوير الأرصدة.</p>
+      <p class="muted" style="margin:12px 0 0;font-size:13px">المرحلة الجاية: الفوترة الإلكترونية (جوفوترة).</p>
     </div>`;
   if (S.companies.some(c => can('obligations', 'view', c.id))) {
     obligationsSummary().then(({ late, soon }) => { const el = v.querySelector('#ob-sum'); if (!el || (!late && !soon)) return;
@@ -444,6 +453,8 @@ async function viewFiscalYears(v) {
         <tr><td>${esc(y.code)}</td><td>${esc(y.name || '')}</td><td>${fmtDate(y.start_date)}</td><td>${fmtDate(y.end_date)}</td>
         <td>${y.is_closed ? '<span class="badge bad">مغلقة</span>' : '<span class="badge ok">مفتوحة</span>'}</td>
         <td class="actions">
+          ${isAdmin() && !y.is_closed ? `<button class="btn sm primary" data-close-year="${y.id}">🔒 إغلاق وتدوير</button>` : ''}
+          ${isAdmin() && y.is_closed ? `<button class="btn sm" data-reopen="${y.id}">🔓 إعادة فتح</button>` : ''}
           ${can('fiscal_years', 'edit') && (!y.is_closed || isAdmin()) ? `<button class="btn sm" data-edit="${y.id}">تعديل</button>` : ''}
           ${can('fiscal_years', 'delete') && !y.is_closed ? `<button class="btn sm danger" data-del="${y.id}">حذف</button>` : ''}
         </td></tr>`).join('') || `<tr><td colspan="6" class="empty">ما في سنوات مالية لهالشركة</td></tr>`}</tbody></table></div>
@@ -477,6 +488,15 @@ async function viewFiscalYears(v) {
   v.querySelector('#add')?.addEventListener('click', () => open(null));
   v.querySelector('tbody').onclick = async (e) => {
     const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
+    const cy = e.target.closest('[data-close-year]'), ro = e.target.closest('[data-reopen]');
+    if (cy) return closeYearDialog(rows.find(x => x.id === cy.dataset.closeYear), rows);
+    if (ro) {
+      const y = rows.find(x => x.id === ro.dataset.reopen);
+      if (!(await confirmBox(`إعادة فتح «${y.name || y.code}»؟ رح ينحذف قيد الإقفال والأرصدة المدوّرة تلقائياً للسنة اللي بعدها (إذا موجودة). بعد التعديل بتقدر تغلقها من جديد.`))) return;
+      const { error } = await sb.rpc('reopen_fiscal_year', { p_fy: y.id });
+      if (error) return toast(arError(error), 'err');
+      toast('انفتحت السنة', 'ok'); await loadFiscalYears(); renderShell(); route_(); return;
+    }
     if (ed) open(rows.find(x => x.id === ed.dataset.edit));
     if (dl) {
       const y = rows.find(x => x.id === dl.dataset.del);
@@ -486,6 +506,41 @@ async function viewFiscalYears(v) {
       await log('حذف', 'fiscal_years', y.id, { code: y.code });
       toast('تم الحذف', 'ok'); await loadFiscalYears(); renderShell(); route_();
     }
+  };
+}
+
+// إغلاق السنة وتدوير الأرصدة
+async function closeYearDialog(y, years) {
+  const next = years.filter(n => n.start_date > y.end_date && !n.is_closed).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const { data: accs } = await sb.from('accounts').select('id,code,name,category,is_group').eq('company_id', S.company.id).eq('category', 'equity').eq('is_group', false).order('code');
+  const def = (accs || []).find(a => a.code === '3103') || (accs || [])[0];
+  const ns = new Date(y.end_date + 'T00:00:00Z'); ns.setUTCDate(ns.getUTCDate() + 1);
+  const ne = new Date(ns); ne.setUTCFullYear(ne.getUTCFullYear() + 1); ne.setUTCDate(ne.getUTCDate() - 1);
+  const nyYear = ns.getUTCFullYear(), nsIso = ns.toISOString().slice(0, 10), neIso = ne.toISOString().slice(0, 10);
+  const m = modal({ title: `إغلاق ${y.name || y.code} وتدوير الأرصدة`, body: `
+    <div class="notice info">رح يصير هيك:<br>1) قيد إقفال بتاريخ ${fmtDate(y.end_date)} بيصفّر الإيرادات والمصاريف، وبيحوّل صافي الربح أو الخسارة لحساب الأرباح المدورة.<br>
+      2) قيد افتتاحي مرحّل بالسنة الجديدة، فيه أرصدة الموجودات والمطلوبات وحقوق الملكية والعملاء والموردين.<br>3) السنة بتنقفل، وما حدا بيقدر يعدّل عليها إلا المدير.</div>
+    <form id="cy-form">
+      <div class="field"><label>السنة الجديدة</label><select name="next">${next.map(n => `<option value="${n.id}">${esc(n.name || n.code)} (${fmtDate(n.start_date)})</option>`).join('')}
+        <option value="__new">➕ إنشاء السنة المالية ${nyYear} تلقائياً</option></select></div>
+      <div class="field"><label>حساب الأرباح المدورة</label><select name="ret">${(accs || []).map(a => `<option value="${a.id}" ${a.id === def?.id ? 'selected' : ''}>${esc(a.code)} — ${esc(a.name)}</option>`).join('')}</select></div>
+    </form>
+    <p class="muted" style="font-size:13px">لازم ما يكون في سندات أو فواتير مسودة بالسنة. وإذا السنة الجديدة إلها أرصدة افتتاحية مدخلة يدوياً ومرحّلة، احذفها أو اعكسها أول.</p>`,
+    foot: `<button class="btn primary" data-go>🔒 إغلاق وتدوير</button><button class="btn" data-close>إلغاء</button>` });
+  if (!accs?.length) m.el.querySelector('[data-go]').disabled = true;
+  m.el.querySelector('[data-go]').onclick = async (e) => {
+    const d = formData(m.el.querySelector('#cy-form')); e.target.disabled = true;
+    let nextId = d.next;
+    if (nextId === '__new') {
+      const ins = await sb.from('fiscal_years').insert({ company_id: S.company.id, code: String(nyYear), name: 'السنة المالية ' + nyYear, start_date: nsIso, end_date: neIso }).select().single();
+      if (ins.error) { e.target.disabled = false; return toast(arError(ins.error), 'err'); }
+      nextId = ins.data.id;
+    }
+    const { data, error } = await sb.rpc('close_fiscal_year', { p_fy: y.id, p_next_fy: nextId, p_retained: d.ret });
+    if (error) { e.target.disabled = false; return toast(arError(error), 'err'); }
+    const p = Number(data?.profit || 0);
+    toast(`تم الإغلاق والتدوير. ${p >= 0 ? 'صافي الربح' : 'صافي الخسارة'}: ${Math.abs(p).toFixed(3)}`, 'ok');
+    m.close(); await loadFiscalYears(); renderShell(); route_();
   };
 }
 

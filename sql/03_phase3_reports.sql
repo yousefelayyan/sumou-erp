@@ -65,6 +65,7 @@ begin
   from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
   where e.company_id = p_company and e.fiscal_year_id = p_fy and e.status in ('posted','reversed')
     and e.entry_date <= p_to
+    and e.entry_type <> 'closing'      -- قيد الإقفال ما بيدخل بالميزان (القوائم بتحسب الربح لحالها)
   group by l.account_id;
 end $$;
 

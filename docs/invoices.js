@@ -56,7 +56,8 @@ async function viewSettings(v, ctx) {
       ${sel('sales_account_id', 'حساب المبيعات')}${sel('sales_return_account_id', 'حساب مردودات المبيعات')}
       ${sel('purchase_account_id', 'حساب المشتريات')}${sel('purchase_return_account_id', 'حساب مردودات المشتريات')}
       ${sel('output_tax_account_id', 'ضريبة المبيعات - مخرجات (على المبيعات)')}${sel('input_tax_account_id', 'ضريبة المبيعات - مدخلات (على المشتريات)')}
-      ${sel('cash_account_id', 'الصندوق الافتراضي للفواتير النقدية')}
+      ${sel('cash_account_id', 'الصندوق الافتراضي للفواتير النقدية')}<div></div>
+      ${sel('cheques_in_account_id', 'شيكات برسم التحصيل (الواردة)')}${sel('cheques_out_account_id', 'شيكات آجلة الدفع (الصادرة)')}
     </div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate); d.company_id = S.company.id; d.updated_at = new Date().toISOString();

@@ -8,13 +8,13 @@
 -- نوع قيد جديد للفواتير
 alter table public.journal_entries drop constraint if exists journal_entries_entry_type_check;
 alter table public.journal_entries add constraint journal_entries_entry_type_check
-  check (entry_type in ('journal','receipt','payment','opening','invoice'));
+  check (entry_type in ('journal','receipt','payment','opening','invoice','closing','cheque'));
 
 create or replace function public.entry_screen(t text) returns text
 language sql immutable as $$
   select case t when 'journal' then 'journal_entries' when 'receipt' then 'receipt_vouchers'
                 when 'payment' then 'payment_vouchers' when 'opening' then 'opening_balances'
-                when 'invoice' then 'journal_entries' end;
+                when 'invoice' then 'journal_entries' when 'closing' then 'journal_entries' when 'cheque' then 'journal_entries' end;
 $$;
 
 -- ---------------------------------------------------------------------
@@ -239,6 +239,31 @@ begin
     s_sub := s_sub + sub; s_tax := s_tax + tax; s_disc := s_disc + r.discount;
   end loop;
   if s_sub + s_tax <= 0 then raise exception 'الفاتورة بدون مبالغ'; end if;
+
+  -- المرتجع ما بيتجاوز الفاتورة الأصلية (بالكمية لكل صنف، وبالقيمة للسطور بدون صنف)
+  if i.original_invoice_id is not null then
+    for r in
+      select g.k, g.nm, g.oq, g.os,
+             coalesce((select sum(case when rl.item_id is not null then rl.qty else rl.subtotal end) from public.invoice_lines rl
+                       join public.invoices ri on ri.id = rl.invoice_id
+                       where ri.original_invoice_id = i.original_invoice_id and ri.status = 'posted' and ri.id <> i.id
+                         and coalesce(rl.item_id::text, '') = g.k), 0) as prev
+      from (select coalesce(o.item_id::text, '') as k, max(coalesce(it.name, 'السطور بدون صنف')) as nm,
+                   sum(o.qty) as oq, sum(o.subtotal) as os
+            from public.invoice_lines o left join public.items it on it.id = o.item_id
+            where o.invoice_id = i.original_invoice_id group by 1) g
+    loop
+      if ((select coalesce(sum(case when r.k <> '' then l.qty else l.subtotal end), 0) from public.invoice_lines l
+          where l.invoice_id = p_id and coalesce(l.item_id::text, '') = r.k) + r.prev
+         > (case when r.k <> '' then r.oq else r.os end) + 0.0005) then
+        raise exception 'المرتجع أكثر من الفاتورة الأصلية: «%»', r.nm;
+      end if;
+    end loop;
+    if exists (select 1 from public.invoice_lines l where l.invoice_id = p_id and l.item_id is not null
+               and not exists (select 1 from public.invoice_lines o where o.invoice_id = i.original_invoice_id and o.item_id = l.item_id)) then
+      raise exception 'في صنف بالمرتجع مش موجود بالفاتورة الأصلية';
+    end if;
+  end if;
   if s_tax > 0 and tax_acc is null then raise exception 'حدّد حساب ضريبة المبيعات بشاشة «حسابات الربط»'; end if;
 
   descr := case i.inv_type when 'sale' then 'فاتورة بيع' when 'sale_return' then 'مرتجع بيع' when 'purchase' then 'فاتورة شراء' else 'مرتجع شراء' end

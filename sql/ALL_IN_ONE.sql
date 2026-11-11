@@ -626,6 +626,7 @@ begin
   if e.status <> 'posted' then raise exception 'بس القيود المرحّلة بتنعكس'; end if;
   if e.entry_type = 'opening' then raise exception 'القيد الافتتاحي ما بينعكس. عدّل الأرصدة بقيد يومية'; end if;
   if e.entry_type = 'invoice' then raise exception 'قيد الفاتورة بينلغى من الفاتورة نفسها (زر إلغاء الفاتورة)'; end if;
+  if e.entry_type = 'closing' then raise exception 'قيد الإقفال بينلغى بإعادة فتح السنة'; end if;
   select * into fy from public.fiscal_years
    where company_id = e.company_id and p_date between start_date and end_date and not is_closed
    order by start_date desc limit 1;
@@ -918,6 +919,7 @@ begin
   from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
   where e.company_id = p_company and e.fiscal_year_id = p_fy and e.status in ('posted','reversed')
     and e.entry_date <= p_to
+    and e.entry_type <> 'closing'      -- قيد الإقفال ما بيدخل بالميزان (القوائم بتحسب الربح لحالها)
   group by l.account_id;
 end $$;
 
@@ -1083,6 +1085,7 @@ begin
   if e.status <> 'posted' then raise exception 'بس القيود المرحّلة بتنعكس'; end if;
   if e.entry_type = 'opening' then raise exception 'القيد الافتتاحي ما بينعكس. عدّل الأرصدة بقيد يومية'; end if;
   if e.entry_type = 'invoice' then raise exception 'قيد الفاتورة بينلغى من الفاتورة نفسها (زر إلغاء الفاتورة)'; end if;
+  if e.entry_type = 'closing' then raise exception 'قيد الإقفال بينلغى بإعادة فتح السنة'; end if;
   select * into fy from public.fiscal_years
    where company_id = e.company_id and p_date between start_date and end_date and not is_closed
    order by start_date desc limit 1;
@@ -1150,13 +1153,13 @@ update public.user_groups set permissions = permissions
 -- نوع قيد جديد للفواتير
 alter table public.journal_entries drop constraint if exists journal_entries_entry_type_check;
 alter table public.journal_entries add constraint journal_entries_entry_type_check
-  check (entry_type in ('journal','receipt','payment','opening','invoice'));
+  check (entry_type in ('journal','receipt','payment','opening','invoice','closing','cheque'));
 
 create or replace function public.entry_screen(t text) returns text
 language sql immutable as $$
   select case t when 'journal' then 'journal_entries' when 'receipt' then 'receipt_vouchers'
                 when 'payment' then 'payment_vouchers' when 'opening' then 'opening_balances'
-                when 'invoice' then 'journal_entries' end;
+                when 'invoice' then 'journal_entries' when 'closing' then 'journal_entries' when 'cheque' then 'journal_entries' end;
 $$;
 
 -- ---------------------------------------------------------------------
@@ -1381,6 +1384,31 @@ begin
     s_sub := s_sub + sub; s_tax := s_tax + tax; s_disc := s_disc + r.discount;
   end loop;
   if s_sub + s_tax <= 0 then raise exception 'الفاتورة بدون مبالغ'; end if;
+
+  -- المرتجع ما بيتجاوز الفاتورة الأصلية (بالكمية لكل صنف، وبالقيمة للسطور بدون صنف)
+  if i.original_invoice_id is not null then
+    for r in
+      select g.k, g.nm, g.oq, g.os,
+             coalesce((select sum(case when rl.item_id is not null then rl.qty else rl.subtotal end) from public.invoice_lines rl
+                       join public.invoices ri on ri.id = rl.invoice_id
+                       where ri.original_invoice_id = i.original_invoice_id and ri.status = 'posted' and ri.id <> i.id
+                         and coalesce(rl.item_id::text, '') = g.k), 0) as prev
+      from (select coalesce(o.item_id::text, '') as k, max(coalesce(it.name, 'السطور بدون صنف')) as nm,
+                   sum(o.qty) as oq, sum(o.subtotal) as os
+            from public.invoice_lines o left join public.items it on it.id = o.item_id
+            where o.invoice_id = i.original_invoice_id group by 1) g
+    loop
+      if ((select coalesce(sum(case when r.k <> '' then l.qty else l.subtotal end), 0) from public.invoice_lines l
+          where l.invoice_id = p_id and coalesce(l.item_id::text, '') = r.k) + r.prev
+         > (case when r.k <> '' then r.oq else r.os end) + 0.0005) then
+        raise exception 'المرتجع أكثر من الفاتورة الأصلية: «%»', r.nm;
+      end if;
+    end loop;
+    if exists (select 1 from public.invoice_lines l where l.invoice_id = p_id and l.item_id is not null
+               and not exists (select 1 from public.invoice_lines o where o.invoice_id = i.original_invoice_id and o.item_id = l.item_id)) then
+      raise exception 'في صنف بالمرتجع مش موجود بالفاتورة الأصلية';
+    end if;
+  end if;
   if s_tax > 0 and tax_acc is null then raise exception 'حدّد حساب ضريبة المبيعات بشاشة «حسابات الربط»'; end if;
 
   descr := case i.inv_type when 'sale' then 'فاتورة بيع' when 'sale_return' then 'مرتجع بيع' when 'purchase' then 'فاتورة شراء' else 'مرتجع شراء' end
@@ -1656,5 +1684,606 @@ update public.user_groups g set permissions = (
                                    and not (v ? 'post') then v || '{"post":true}'::jsonb else v end)
   from jsonb_each(g.permissions) as t(k, v))
 where g.name = 'محاسب' and g.permissions <> '{}'::jsonb;
+
+-- انتهى ✅
+
+
+-- #################### 08_year_end.sql ####################
+-- =====================================================================
+--  نظام السمو ERP — إغلاق السنة المالية وتدوير الأرصدة
+--  قيد إقفال الإيرادات والمصاريف للأرباح المدورة + قيد افتتاحي تلقائي للسنة الجديدة
+--  آمن للتشغيل أكثر من مرة.
+-- =====================================================================
+
+alter table public.journal_entries drop constraint if exists journal_entries_entry_type_check;
+alter table public.journal_entries add constraint journal_entries_entry_type_check
+  check (entry_type in ('journal','receipt','payment','opening','invoice','closing','cheque'));
+
+create or replace function public.entry_screen(t text) returns text
+language sql immutable as $$
+  select case t when 'journal' then 'journal_entries' when 'receipt' then 'receipt_vouchers'
+                when 'payment' then 'payment_vouchers' when 'opening' then 'opening_balances'
+                when 'invoice' then 'journal_entries' when 'closing' then 'journal_entries' when 'cheque' then 'journal_entries' end;
+$$;
+
+-- منع إنشاء قيد إقفال من برّا (بس من دالة الإغلاق)
+create or replace function public.entries_type_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.entry_type = 'closing' and not public.is_internal() then raise exception 'قيد الإقفال بينعمل من زر «إغلاق السنة» بس'; end if;
+  return new;
+end $$;
+drop trigger if exists entries_type_guard on public.journal_entries;
+create trigger entries_type_guard before insert or update on public.journal_entries
+  for each row execute function public.entries_type_guard();
+
+-- ---------------------------------------------------------------------
+--  إغلاق السنة
+-- ---------------------------------------------------------------------
+create or replace function public.close_fiscal_year(p_fy uuid, p_next_fy uuid, p_retained uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare fy public.fiscal_years; nfy public.fiscal_years; ra public.accounts; drafts int; cid uuid; nid uuid; oid uuid;
+  ln int := 0; net numeric := 0; r record; old_open public.journal_entries; d numeric;
+begin
+  if not public.is_admin() then raise exception 'إغلاق السنة لمدير النظام بس'; end if;
+  select * into fy from public.fiscal_years where id = p_fy;
+  select * into nfy from public.fiscal_years where id = p_next_fy;
+  if fy.id is null or nfy.id is null or nfy.company_id <> fy.company_id then raise exception 'اختار السنة الجديدة لنفس الشركة'; end if;
+  if fy.is_closed then raise exception 'السنة مغلقة من قبل'; end if;
+  if nfy.is_closed then raise exception 'السنة الجديدة مغلقة'; end if;
+  if nfy.start_date <= fy.end_date then raise exception 'السنة الجديدة لازم تبلّش بعد نهاية السنة اللي بتنغلق'; end if;
+  select * into ra from public.accounts where id = p_retained;
+  if ra.id is null or ra.company_id <> fy.company_id or ra.is_group or ra.category <> 'equity' then
+    raise exception 'حساب الأرباح المدورة لازم يكون حساب فرعي من حقوق الملكية';
+  end if;
+  select count(*) into drafts from public.journal_entries where fiscal_year_id = p_fy and status = 'draft';
+  if drafts > 0 then raise exception 'في % قيد/سند مسودة بهالسنة. رحّلهم أو احذفهم قبل الإغلاق', drafts; end if;
+  if to_regclass('public.invoices') is not null then
+    select count(*) into drafts from public.invoices where fiscal_year_id = p_fy and status = 'draft';
+    if drafts > 0 then raise exception 'في % فاتورة مسودة بهالسنة. رحّلها أو احذفها قبل الإغلاق', drafts; end if;
+  end if;
+
+  -- القيد الافتتاحي بالسنة الجديدة: إذا انعمل تلقائياً من قبل بنستبدله، وإذا يدوي ومرحّل بنوقف
+  select * into old_open from public.journal_entries where fiscal_year_id = p_next_fy and entry_type = 'opening' and status <> 'reversed' order by created_at desc limit 1;
+  if old_open.id is not null and old_open.status = 'posted' and coalesce(old_open.reference, '') <> 'AUTO-CLOSE' then
+    raise exception 'السنة الجديدة إلها أرصدة افتتاحية مرحّلة (مدخلة يدوياً). احذفها أو اعكسها قبل التدوير';
+  end if;
+
+  perform set_config('sumou.internal', public.internal_token(), true);
+  if old_open.id is not null then delete from public.journal_entries where id = old_open.id; end if;
+
+  -- 1) قيد الإقفال: تصفير الإيرادات والمصاريف على الأرباح المدورة
+  insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, status)
+  values (fy.company_id, p_fy, 'closing', fy.end_date, 'قيد إقفال ' || coalesce(fy.name, fy.code), 'AUTO-CLOSE', 'draft')
+  returning id into cid;
+  for r in
+    select l.account_id, l.party_id, sum(l.debit - l.credit) as bal
+    from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.accounts a on a.id = l.account_id
+    where e.fiscal_year_id = p_fy and e.status in ('posted','reversed') and e.id <> cid and a.category in ('revenue','expenses')
+    group by l.account_id, l.party_id having abs(sum(l.debit - l.credit)) > 0.0005
+  loop
+    ln := ln + 1; net := net + r.bal;
+    insert into public.journal_lines (entry_id, line_no, account_id, party_id, description, debit, credit)
+    values (cid, ln, r.account_id, r.party_id, 'إقفال', case when r.bal < 0 then -r.bal else 0 end, case when r.bal > 0 then r.bal else 0 end);
+  end loop;
+  if ln > 0 and abs(net) > 0.0005 then
+    ln := ln + 1;   -- net موجب = مصاريف أكثر = خسارة
+    insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit)
+    values (cid, ln, p_retained, case when net > 0 then 'خسارة السنة' else 'ربح السنة' end,
+            case when net > 0 then net else 0 end, case when net < 0 then -net else 0 end);
+  end if;
+  if ln = 0 then delete from public.journal_entries where id = cid; cid := null;
+  else
+    select coalesce(sum(debit), 0) into d from public.journal_lines where entry_id = cid;
+    update public.journal_entries set status = 'posted', total = d, posted_by = auth.uid(), posted_at = now() where id = cid;
+  end if;
+
+  -- 2) القيد الافتتاحي للسنة الجديدة: أرصدة الموجودات والمطلوبات وحقوق الملكية (مع العملاء والموردين)
+  insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, status)
+  values (fy.company_id, p_next_fy, 'opening', nfy.start_date, 'أرصدة مدوّرة من ' || coalesce(fy.name, fy.code), 'AUTO-CLOSE', 'draft')
+  returning id into oid;
+  ln := 0;
+  for r in
+    select l.account_id, l.party_id, sum(l.debit - l.credit) as bal
+    from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.accounts a on a.id = l.account_id
+    where e.fiscal_year_id = p_fy and e.status in ('posted','reversed') and a.category in ('assets','liabilities','equity')
+    group by l.account_id, l.party_id having abs(sum(l.debit - l.credit)) > 0.0005
+    order by 1
+  loop
+    ln := ln + 1;
+    insert into public.journal_lines (entry_id, line_no, account_id, party_id, description, debit, credit)
+    values (oid, ln, r.account_id, r.party_id, 'رصيد مدوّر', case when r.bal > 0 then r.bal else 0 end, case when r.bal < 0 then -r.bal else 0 end);
+  end loop;
+  if ln = 0 then delete from public.journal_entries where id = oid; oid := null;
+  else
+    select coalesce(sum(debit), 0) into d from public.journal_lines where entry_id = oid;
+    if abs(d - (select coalesce(sum(credit), 0) from public.journal_lines where entry_id = oid)) > 0.0005 then
+      raise exception 'الأرصدة المدوّرة مش متوازنة. راجع ميزان المراجعة للسنة';
+    end if;
+    update public.journal_entries set status = 'posted', total = d, posted_by = auth.uid(), posted_at = now() where id = oid;
+  end if;
+
+  update public.fiscal_years set is_closed = true where id = p_fy;
+  perform set_config('sumou.internal', '', true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), fy.company_id, 'إغلاق السنة', 'fiscal_years', p_fy::text, jsonb_build_object('next', p_next_fy, 'net', -net));
+  return jsonb_build_object('closing_entry', cid, 'opening_entry', oid, 'profit', -net);
+end $$;
+
+-- إعادة فتح سنة: بيحذف قيد الإقفال والأرصدة المدوّرة التلقائية بالسنة اللي بعدها
+create or replace function public.reopen_fiscal_year(p_fy uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare fy public.fiscal_years;
+begin
+  if not public.is_admin() then raise exception 'إعادة فتح السنة لمدير النظام بس'; end if;
+  select * into fy from public.fiscal_years where id = p_fy;
+  if fy.id is null then raise exception 'السنة غير موجودة'; end if;
+  perform set_config('sumou.internal', public.internal_token(), true);
+  delete from public.journal_entries where fiscal_year_id = p_fy and entry_type = 'closing';
+  delete from public.journal_entries e using public.fiscal_years n
+   where e.fiscal_year_id = n.id and n.company_id = fy.company_id and n.start_date > fy.end_date
+     and e.entry_type = 'opening' and e.reference = 'AUTO-CLOSE' and e.description = 'أرصدة مدوّرة من ' || coalesce(fy.name, fy.code);
+  update public.fiscal_years set is_closed = false where id = p_fy;
+  perform set_config('sumou.internal', '', true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id)
+  values (auth.uid(), fy.company_id, 'إعادة فتح السنة', 'fiscal_years', p_fy::text);
+end $$;
+
+grant execute on function public.close_fiscal_year(uuid, uuid, uuid), public.reopen_fiscal_year(uuid) to authenticated;
+
+-- انتهى ✅
+
+
+-- #################### 09_cheques.sql ####################
+-- =====================================================================
+--  نظام السمو ERP — محفظة الشيكات
+--  شيكات واردة (من العملاء) وصادرة (للموردين)، وكل حركة بتعمل قيد مرحّل تلقائياً
+--  آمن للتشغيل أكثر من مرة.
+-- =====================================================================
+
+alter table public.company_settings add column if not exists cheques_in_account_id  uuid references public.accounts(id) on delete set null;  -- شيكات برسم التحصيل
+alter table public.company_settings add column if not exists cheques_out_account_id uuid references public.accounts(id) on delete set null;  -- شيكات آجلة الدفع
+
+create table if not exists public.cheques (
+  id            uuid primary key default gen_random_uuid(),
+  company_id    uuid not null references public.companies(id) on delete cascade,
+  direction     text not null check (direction in ('in','out')),
+  cheque_no     text not null,
+  bank_name     text,
+  branch        text,
+  issue_date    date not null default current_date,
+  due_date      date not null,
+  amount        numeric(18,3) not null check (amount > 0),
+  party_id      uuid references public.parties(id) on delete restrict,
+  account_id    uuid references public.accounts(id) on delete restrict,   -- الحساب المقابل إذا بدون عميل/مورد
+  drawer_name   text,             -- اسم الساحب/المستفيد
+  bank_account_id uuid references public.accounts(id) on delete set null,  -- البنك اللي انصرف/انحصّل عليه
+  status        text not null default 'portfolio'
+                check (status in ('portfolio','collected','returned','issued','paid','cancelled')),
+  notes         text,
+  created_by    uuid default auth.uid(),
+  created_at    timestamptz not null default now()
+);
+create index if not exists cheques_due_idx on public.cheques (company_id, status, due_date);
+
+create table if not exists public.cheque_events (
+  id         uuid primary key default gen_random_uuid(),
+  cheque_id  uuid not null references public.cheques(id) on delete cascade,
+  action     text not null,
+  event_date date not null,
+  entry_id   uuid references public.journal_entries(id) on delete set null,
+  note       text,
+  created_by uuid default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+-- الشيك ما بيتعدّل مبلغه أو طرفه بعد ما ينسجّل (حالته بتتغير بس من الدالة)
+create or replace function public.cheques_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.is_internal() then return case when tg_op = 'DELETE' then old else new end; end if;
+  if tg_op = 'INSERT' then raise exception 'الشيك بينسجّل من شاشة الشيكات'; end if;
+  if tg_op = 'DELETE' then raise exception 'الشيك المسجّل ما بينحذف. ألغيه أو رجّعه'; end if;
+  if new.amount <> old.amount or new.party_id is distinct from old.party_id or new.account_id is distinct from old.account_id
+     or new.status <> old.status or new.direction <> old.direction or new.company_id <> old.company_id or new.bank_account_id is distinct from old.bank_account_id then
+    raise exception 'ما بيصير تعديل المبلغ أو الطرف أو الحالة مباشرة';
+  end if;
+  return new;
+end $$;
+drop trigger if exists cheques_guard on public.cheques;
+create trigger cheques_guard before insert or update or delete on public.cheques
+  for each row execute function public.cheques_guard();
+
+-- قيد داخلي من سطرين
+create or replace function public.post_two_line(p_company uuid, p_date date, p_desc text, p_ref text,
+  p_dr uuid, p_dr_party uuid, p_cr uuid, p_cr_party uuid, p_amount numeric) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare fy public.fiscal_years; eid uuid;
+begin
+  select * into fy from public.fiscal_years where company_id = p_company and p_date between start_date and end_date and not is_closed order by start_date desc limit 1;
+  if fy.id is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ %', p_date; end if;
+  if p_dr is null or p_cr is null then raise exception 'حدّد حسابات الشيكات والبنك بشاشة «حسابات الربط»'; end if;
+  insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, status)
+  values (p_company, fy.id, 'cheque', p_date, p_desc, p_ref, 'draft') returning id into eid;
+  insert into public.journal_lines (entry_id, line_no, account_id, party_id, description, debit, credit)
+  values (eid, 1, p_dr, p_dr_party, p_desc, p_amount, 0), (eid, 2, p_cr, p_cr_party, p_desc, 0, p_amount);
+  update public.journal_entries set status = 'posted', total = p_amount, posted_by = auth.uid(), posted_at = now() where id = eid;
+  return eid;
+end $$;
+revoke execute on function public.post_two_line(uuid, date, text, text, uuid, uuid, uuid, uuid, numeric) from public, anon, authenticated;
+
+-- تسجيل شيك جديد (وارد: من حـ/ شيكات برسم التحصيل إلى حـ/ العميل — صادر: من حـ/ المورد إلى حـ/ شيكات آجلة)
+create or replace function public.register_cheque(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare st public.company_settings; cid uuid; pa public.parties; other uuid; ch uuid; eid uuid; dir text; amt numeric; d date; descr text;
+begin
+  cid := (p ->> 'company_id')::uuid; dir := p ->> 'direction'; amt := (p ->> 'amount')::numeric;
+  d := coalesce((p ->> 'issue_date')::date, current_date);
+  if not public.can(cid, 'cheques', 'add') then raise exception 'ما عندك صلاحية'; end if;
+  if dir not in ('in','out') then raise exception 'نوع الشيك غلط'; end if;
+  if amt is null or amt <= 0 then raise exception 'المبلغ لازم يكون أكبر من صفر'; end if;
+  perform public.ensure_company_settings(cid);
+  update public.company_settings s set
+    cheques_in_account_id  = coalesce(s.cheques_in_account_id,  (select id from public.accounts where company_id = cid and code = '1104' and not is_group)),
+    cheques_out_account_id = coalesce(s.cheques_out_account_id, (select id from public.accounts where company_id = cid and code = '2102' and not is_group))
+  where s.company_id = cid;
+  select * into st from public.company_settings where company_id = cid;
+  if nullif(p ->> 'party_id', '') is not null then
+    select * into pa from public.parties where id = (p ->> 'party_id')::uuid and company_id = cid;
+    if pa.id is null then raise exception 'العميل/المورد مش لهالشركة'; end if;
+    other := pa.account_id;
+  else
+    other := nullif(p ->> 'account_id', '')::uuid;
+    if other is null or not exists (select 1 from public.accounts where id = other and company_id = cid and not is_group) then
+      raise exception 'اختار العميل/المورد أو الحساب المقابل';
+    end if;
+  end if;
+  descr := case dir when 'in' then 'شيك وارد رقم ' else 'شيك صادر رقم ' end || (p ->> 'cheque_no') || coalesce(' - ' || coalesce(pa.name, p ->> 'drawer_name'), '');
+
+  perform set_config('sumou.internal', public.internal_token(), true);
+  insert into public.cheques (company_id, direction, cheque_no, bank_name, branch, issue_date, due_date, amount, party_id, account_id, drawer_name, status, notes)
+  values (cid, dir, p ->> 'cheque_no', p ->> 'bank_name', p ->> 'branch', d, (p ->> 'due_date')::date, amt, pa.id,
+          case when pa.id is null then other end, coalesce(p ->> 'drawer_name', pa.name), case dir when 'in' then 'portfolio' else 'issued' end, p ->> 'notes')
+  returning id into ch;
+  if dir = 'in' then eid := public.post_two_line(cid, d, descr, p ->> 'cheque_no', st.cheques_in_account_id, null, other, pa.id, amt);
+  else eid := public.post_two_line(cid, d, descr, p ->> 'cheque_no', other, pa.id, st.cheques_out_account_id, null, amt); end if;
+  insert into public.cheque_events (cheque_id, action, event_date, entry_id) values (ch, case dir when 'in' then 'استلام' else 'إصدار' end, d, eid);
+  perform set_config('sumou.internal', '', true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details) values (auth.uid(), cid, 'إضافة', 'cheques', ch::text, jsonb_build_object('no', p ->> 'cheque_no', 'amount', amt));
+  return ch;
+end $$;
+
+-- حركات الشيك: collect (تحصيل) / return (راجع) / pay (صرف من البنك) / cancel (إلغاء صادر)
+create or replace function public.cheque_action(p_id uuid, p_action text, p_date date, p_bank uuid default null, p_note text default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare c public.cheques; st public.company_settings; other uuid; eid uuid; descr text; newst text; pa public.parties;
+begin
+  select * into c from public.cheques where id = p_id for update;
+  if c.id is null then raise exception 'الشيك غير موجود'; end if;
+  if not public.can(c.company_id, 'cheques', 'post') then raise exception 'ما عندك صلاحية على حركات الشيكات'; end if;
+  select * into st from public.company_settings where company_id = c.company_id;
+  if c.party_id is not null then select * into pa from public.parties where id = c.party_id; other := pa.account_id; else other := c.account_id; end if;
+  if p_bank is not null and not exists (select 1 from public.accounts where id = p_bank and company_id = c.company_id and not is_group) then raise exception 'حساب البنك غلط'; end if;
+  descr := case p_action when 'collect' then 'تحصيل' when 'return' then 'إرجاع' when 'pay' then 'صرف' else 'إلغاء' end
+           || ' شيك رقم ' || c.cheque_no || coalesce(' - ' || c.drawer_name, '');
+  perform set_config('sumou.internal', public.internal_token(), true);
+  if c.direction = 'in' and c.status = 'portfolio' and p_action = 'collect' then
+    if p_bank is null then raise exception 'اختار البنك اللي انحصّل عليه الشيك'; end if;
+    eid := public.post_two_line(c.company_id, p_date, descr, c.cheque_no, p_bank, null, st.cheques_in_account_id, null, c.amount); newst := 'collected';
+  elsif c.direction = 'in' and c.status in ('portfolio','collected') and p_action = 'return' then
+    -- الشيك الراجع: العميل بيرجع مديون. إذا كان محصّل، بنعكس من البنك
+    eid := public.post_two_line(c.company_id, p_date, descr, c.cheque_no, other, c.party_id,
+             case when c.status = 'collected' then coalesce(p_bank, c.bank_account_id) else st.cheques_in_account_id end, null, c.amount);
+    newst := 'returned';
+  elsif c.direction = 'out' and c.status = 'issued' and p_action = 'pay' then
+    if p_bank is null then raise exception 'اختار البنك اللي انصرف منه الشيك'; end if;
+    eid := public.post_two_line(c.company_id, p_date, descr, c.cheque_no, st.cheques_out_account_id, null, p_bank, null, c.amount); newst := 'paid';
+  elsif c.direction = 'out' and c.status = 'issued' and p_action in ('cancel','return') then
+    eid := public.post_two_line(c.company_id, p_date, descr, c.cheque_no, st.cheques_out_account_id, null, other, c.party_id, c.amount); newst := 'cancelled';
+  else
+    raise exception 'الحركة مش مسموحة لشيك حالته الحالية';
+  end if;
+  update public.cheques set status = newst, bank_account_id = coalesce(p_bank, bank_account_id) where id = p_id;
+  insert into public.cheque_events (cheque_id, action, event_date, entry_id, note) values (p_id, descr, p_date, eid, p_note);
+  perform set_config('sumou.internal', '', true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details) values (auth.uid(), c.company_id, descr, 'cheques', p_id::text, jsonb_build_object('amount', c.amount));
+end $$;
+
+alter table public.cheques enable row level security;
+alter table public.cheque_events enable row level security;
+drop policy if exists ch_select on public.cheques;
+create policy ch_select on public.cheques for select to authenticated using (public.can(company_id, 'cheques', 'view'));
+drop policy if exists ch_update on public.cheques;
+create policy ch_update on public.cheques for update to authenticated
+  using (public.can(company_id, 'cheques', 'edit')) with check (public.can(company_id, 'cheques', 'edit'));
+drop policy if exists che_select on public.cheque_events;
+create policy che_select on public.cheque_events for select to authenticated
+  using (exists (select 1 from public.cheques c where c.id = cheque_id and public.can(c.company_id, 'cheques', 'view')));
+
+grant select, update on public.cheques to authenticated;
+grant select on public.cheque_events to authenticated;
+grant execute on function public.register_cheque(jsonb), public.cheque_action(uuid, text, date, uuid, text) to authenticated;
+
+update public.user_groups set permissions = permissions || '{"cheques":{"view":true,"add":true,"edit":true,"print":true,"post":true}}'::jsonb
+ where name = 'محاسب' and not (permissions ? 'cheques');
+update public.user_groups set permissions = permissions || '{"cheques":{"view":true,"add":true}}'::jsonb
+ where name = 'مدخل بيانات' and not (permissions ? 'cheques');
+update public.user_groups set permissions = permissions || '{"cheques":{"view":true,"print":true}}'::jsonb
+ where name = 'مشاهد' and not (permissions ? 'cheques');
+
+-- انتهى ✅
+
+
+-- #################### 10_inventory.sql ####################
+-- =====================================================================
+--  نظام السمو ERP — المخزون والجرد (كميات)
+--  مستودعات، حركات تلقائية من الفواتير المرحّلة، سندات إدخال/إخراج/تحويل/جرد،
+--  رصيد الأصناف ومتوسط الكلفة. (المحاسبة على المخزون بطريقة الجرد الدوري:
+--  المشتريات بتنقيّد مصروف، وقيمة المخزون آخر المدة من تقرير الجرد.)
+--  آمن للتشغيل أكثر من مرة.
+-- =====================================================================
+
+create table if not exists public.warehouses (
+  id         uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  code       text not null,
+  name       text not null,
+  is_active  boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (company_id, code)
+);
+
+alter table public.items add column if not exists track_stock boolean not null default true;
+alter table public.invoices add column if not exists warehouse_id uuid references public.warehouses(id) on delete set null;
+
+create table if not exists public.stock_docs (
+  id              uuid primary key default gen_random_uuid(),
+  company_id      uuid not null references public.companies(id) on delete cascade,
+  doc_type        text not null check (doc_type in ('in','out','transfer','count')),
+  doc_no          int,
+  doc_date        date not null default current_date,
+  warehouse_id    uuid not null references public.warehouses(id) on delete restrict,
+  to_warehouse_id uuid references public.warehouses(id) on delete restrict,
+  status          text not null default 'draft' check (status in ('draft','posted')),
+  notes           text,
+  created_by      uuid default auth.uid(),
+  created_at      timestamptz not null default now(),
+  unique (company_id, doc_type, doc_no)
+);
+
+create table if not exists public.stock_doc_lines (
+  id         uuid primary key default gen_random_uuid(),
+  doc_id     uuid not null references public.stock_docs(id) on delete cascade,
+  line_no    int not null default 1,
+  item_id    uuid not null references public.items(id) on delete restrict,
+  qty        numeric(18,3) not null default 0,        -- للإدخال/الإخراج/التحويل
+  counted_qty numeric(18,3),                          -- للجرد: الكمية الفعلية
+  unit_cost  numeric(18,3) not null default 0,
+  note       text
+);
+
+create table if not exists public.stock_moves (
+  id           uuid primary key default gen_random_uuid(),
+  company_id   uuid not null references public.companies(id) on delete cascade,
+  item_id      uuid not null references public.items(id) on delete restrict,
+  warehouse_id uuid not null references public.warehouses(id) on delete restrict,
+  move_date    date not null,
+  qty          numeric(18,3) not null,              -- موجب = داخل، سالب = خارج
+  unit_cost    numeric(18,3) not null default 0,
+  source_type  text not null,                       -- invoice, stock_doc
+  source_id    uuid not null,
+  description  text,
+  created_at   timestamptz not null default now()
+);
+create index if not exists stock_moves_item_idx on public.stock_moves (company_id, item_id, warehouse_id, move_date);
+
+-- مستودع رئيسي تلقائي لكل شركة
+create or replace function public.default_warehouse(p_company uuid) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare w uuid;
+begin
+  if not public.has_company(p_company) then raise exception 'ما عندك صلاحية'; end if;
+  select id into w from public.warehouses where company_id = p_company and is_active order by code limit 1;
+  if w is null then
+    insert into public.warehouses (company_id, code, name) values (p_company, '1', 'المستودع الرئيسي') returning id into w;
+  end if;
+  return w;
+end $$;
+
+-- حركات المخزون من الفاتورة لما تترحّل أو تنلغى
+create or replace function public.invoice_stock_moves() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare w uuid; sgn int;
+begin
+  if not (old.status = 'draft' and new.status = 'posted') and not (old.status = 'posted' and new.status = 'cancelled') then return null; end if;
+  sgn := case when new.inv_type in ('purchase','sale_return') then 1 else -1 end;
+  if new.status = 'cancelled' then
+    insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
+    select company_id, item_id, warehouse_id, current_date, -qty, unit_cost, 'invoice_cancel', source_id, 'إلغاء: ' || coalesce(description, '')
+    from public.stock_moves where source_type = 'invoice' and source_id = new.id;
+    return null;
+  end if;
+  w := coalesce(new.warehouse_id, public.default_warehouse(new.company_id));
+  insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
+  select new.company_id, l.item_id, w, new.inv_date, sgn * l.qty,
+         case when l.qty > 0 then round(l.subtotal / l.qty, 3) else 0 end, 'invoice', new.id,
+         case new.inv_type when 'sale' then 'فاتورة بيع ' when 'sale_return' then 'مرتجع بيع ' when 'purchase' then 'فاتورة شراء ' else 'مرتجع شراء ' end || new.inv_no
+  from public.invoice_lines l join public.items it on it.id = l.item_id
+  where l.invoice_id = new.id and it.item_type = 'goods' and it.track_stock;
+  return null;
+end $$;
+drop trigger if exists invoice_stock_moves on public.invoices;
+create trigger invoice_stock_moves after update of status on public.invoices
+  for each row execute function public.invoice_stock_moves();
+
+-- ترقيم وحماية سندات المخزون
+create or replace function public.stock_docs_before() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'DELETE' then
+    if old.status = 'posted' then raise exception 'السند مرحّل، ما بينحذف'; end if; return old;
+  end if;
+  if not public.is_internal() then
+    if tg_op = 'UPDATE' and old.status = 'posted' then raise exception 'السند مرحّل، ما بينعدّل'; end if;
+    if new.status <> 'draft' then raise exception 'الترحيل من زر «ترحيل» بس'; end if;
+  end if;
+  if not exists (select 1 from public.warehouses where id = new.warehouse_id and company_id = new.company_id) then raise exception 'المستودع مش لهالشركة'; end if;
+  if new.doc_type = 'transfer' then
+    if new.to_warehouse_id is null or new.to_warehouse_id = new.warehouse_id
+       or not exists (select 1 from public.warehouses where id = new.to_warehouse_id and company_id = new.company_id) then
+      raise exception 'اختار مستودع التحويل (غير المستودع الأصلي)';
+    end if;
+  end if;
+  if tg_op = 'INSERT' and new.doc_no is null then
+    select coalesce(max(doc_no), 0) + 1 into new.doc_no from public.stock_docs where company_id = new.company_id and doc_type = new.doc_type;
+  end if;
+  if tg_op = 'UPDATE' then new.company_id := old.company_id; new.doc_type := old.doc_type; end if;
+  return new;
+end $$;
+drop trigger if exists stock_docs_before on public.stock_docs;
+create trigger stock_docs_before before insert or update or delete on public.stock_docs
+  for each row execute function public.stock_docs_before();
+
+create or replace function public.stock_lines_before() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare d public.stock_docs;
+begin
+  if tg_op in ('UPDATE','DELETE') then
+    select * into d from public.stock_docs where id = old.doc_id;
+    if d.status = 'posted' and not public.is_internal() then raise exception 'السند مرحّل'; end if;
+  end if;
+  if tg_op = 'DELETE' then return old; end if;
+  select * into d from public.stock_docs where id = new.doc_id;
+  if d.status = 'posted' and not public.is_internal() then raise exception 'السند مرحّل'; end if;
+  if not exists (select 1 from public.items where id = new.item_id and company_id = d.company_id) then raise exception 'الصنف مش لهالشركة'; end if;
+  return new;
+end $$;
+drop trigger if exists stock_lines_before on public.stock_doc_lines;
+create trigger stock_lines_before before insert or update or delete on public.stock_doc_lines
+  for each row execute function public.stock_lines_before();
+
+-- رصيد صنف بمستودع لتاريخ
+create or replace function public.stock_qty(p_item uuid, p_wh uuid, p_date date) returns numeric
+language sql stable security definer set search_path = public as $$
+  select coalesce(sum(m.qty), 0) from public.stock_moves m
+  where m.item_id = p_item and m.warehouse_id = p_wh and m.move_date <= p_date and public.has_company(m.company_id);
+$$;
+
+-- ترحيل سند مخزون
+create or replace function public.post_stock_doc(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare d public.stock_docs; r record; n int; diff numeric; descr text;
+begin
+  select * into d from public.stock_docs where id = p_id for update;
+  if d.id is null then raise exception 'السند غير موجود'; end if;
+  if not public.can(d.company_id, 'inventory', 'post') then raise exception 'ما عندك صلاحية ترحيل سندات المخزون'; end if;
+  if d.status <> 'draft' then raise exception 'السند مرحّل من قبل'; end if;
+  select count(*) into n from public.stock_doc_lines where doc_id = p_id;
+  if n = 0 then raise exception 'السند بدون أصناف'; end if;
+  descr := case d.doc_type when 'in' then 'سند إدخال ' when 'out' then 'سند إخراج ' when 'transfer' then 'سند تحويل ' else 'جرد ' end || d.doc_no;
+  for r in select * from public.stock_doc_lines where doc_id = p_id loop
+    if d.doc_type = 'in' then
+      if r.qty <= 0 then raise exception 'الكمية لازم تكون أكبر من صفر'; end if;
+      insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
+      values (d.company_id, r.item_id, d.warehouse_id, d.doc_date, r.qty, r.unit_cost, 'stock_doc', p_id, descr);
+    elsif d.doc_type = 'out' then
+      if r.qty <= 0 then raise exception 'الكمية لازم تكون أكبر من صفر'; end if;
+      insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
+      values (d.company_id, r.item_id, d.warehouse_id, d.doc_date, -r.qty, r.unit_cost, 'stock_doc', p_id, descr);
+    elsif d.doc_type = 'transfer' then
+      if r.qty <= 0 then raise exception 'الكمية لازم تكون أكبر من صفر'; end if;
+      insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
+      values (d.company_id, r.item_id, d.warehouse_id, d.doc_date, -r.qty, r.unit_cost, 'stock_doc', p_id, descr),
+             (d.company_id, r.item_id, d.to_warehouse_id, d.doc_date, r.qty, r.unit_cost, 'stock_doc', p_id, descr);
+    else   -- جرد: الفرق بين الفعلي والدفتري
+      if r.counted_qty is null then continue; end if;
+      diff := r.counted_qty - public.stock_qty(r.item_id, d.warehouse_id, d.doc_date);
+      if abs(diff) > 0.0005 then
+        insert into public.stock_moves (company_id, item_id, warehouse_id, move_date, qty, unit_cost, source_type, source_id, description)
+        values (d.company_id, r.item_id, d.warehouse_id, d.doc_date, diff, r.unit_cost, 'stock_doc', p_id, descr || ' (تسوية)');
+      end if;
+      perform set_config('sumou.internal', public.internal_token(), true);
+      update public.stock_doc_lines set qty = diff where id = r.id;
+    end if;
+  end loop;
+  perform set_config('sumou.internal', public.internal_token(), true);
+  update public.stock_docs set status = 'posted' where id = p_id;
+  perform set_config('sumou.internal', '', true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), d.company_id, 'ترحيل', 'inventory', p_id::text, jsonb_build_object('doc', descr));
+end $$;
+
+-- رصيد المخزون: الكمية ومتوسط كلفة الوارد والقيمة
+create or replace function public.rep_stock_balance(p_company uuid, p_date date, p_wh uuid default null)
+returns table (item_id uuid, warehouse_id uuid, qty numeric, avg_cost numeric, value numeric)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.can(p_company, 'inventory', 'view') then raise exception 'ما عندك صلاحية على المخزون'; end if;
+  return query
+  with m as (select sm.* from public.stock_moves sm where sm.company_id = p_company and sm.move_date <= p_date and (p_wh is null or sm.warehouse_id = p_wh)),
+  c as (select m2.item_id, case when sum(m2.qty) filter (where m2.qty > 0 and m2.unit_cost > 0) > 0
+                             then sum(m2.qty * m2.unit_cost) filter (where m2.qty > 0 and m2.unit_cost > 0) / sum(m2.qty) filter (where m2.qty > 0 and m2.unit_cost > 0)
+                             else 0 end as ac
+        from public.stock_moves m2 where m2.company_id = p_company and m2.move_date <= p_date group by m2.item_id)
+  select m.item_id, m.warehouse_id, sum(m.qty), round(coalesce(max(c.ac), 0), 3), round(sum(m.qty) * coalesce(max(c.ac), 0), 3)
+  from m left join c on c.item_id = m.item_id
+  group by m.item_id, m.warehouse_id having abs(sum(m.qty)) > 0.0005;
+end $$;
+
+-- بطاقة صنف
+create or replace function public.rep_item_card(p_company uuid, p_item uuid, p_from date, p_to date, p_wh uuid default null)
+returns table (move_date date, warehouse_id uuid, qty numeric, unit_cost numeric, description text, opening numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare ob numeric;
+begin
+  if not public.can(p_company, 'inventory', 'view') then raise exception 'ما عندك صلاحية على المخزون'; end if;
+  select coalesce(sum(m.qty), 0) into ob from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.move_date < p_from and (p_wh is null or m.warehouse_id = p_wh);
+  return query select null::date, null::uuid, 0::numeric, null::numeric, 'رصيد أول المدة'::text, ob;
+  return query
+  select m.move_date, m.warehouse_id, m.qty, m.unit_cost, m.description, ob
+  from public.stock_moves m where m.company_id = p_company and m.item_id = p_item and m.move_date between p_from and p_to and (p_wh is null or m.warehouse_id = p_wh)
+  order by m.move_date, m.created_at;
+end $$;
+
+alter table public.warehouses enable row level security;
+alter table public.stock_docs enable row level security;
+alter table public.stock_doc_lines enable row level security;
+alter table public.stock_moves enable row level security;
+
+drop policy if exists wh_select on public.warehouses;
+create policy wh_select on public.warehouses for select to authenticated using (public.has_company(company_id));
+drop policy if exists wh_write on public.warehouses;
+create policy wh_write on public.warehouses for all to authenticated
+  using (public.can(company_id, 'inventory', 'edit')) with check (public.can(company_id, 'inventory', 'edit'));
+
+drop policy if exists sd_select on public.stock_docs;
+create policy sd_select on public.stock_docs for select to authenticated using (public.can(company_id, 'inventory', 'view'));
+drop policy if exists sd_insert on public.stock_docs;
+create policy sd_insert on public.stock_docs for insert to authenticated with check (public.can(company_id, 'inventory', 'add'));
+drop policy if exists sd_update on public.stock_docs;
+create policy sd_update on public.stock_docs for update to authenticated
+  using (public.can(company_id, 'inventory', 'edit')) with check (public.can(company_id, 'inventory', 'edit'));
+drop policy if exists sd_delete on public.stock_docs;
+create policy sd_delete on public.stock_docs for delete to authenticated using (public.can(company_id, 'inventory', 'delete'));
+
+drop policy if exists sdl_all on public.stock_doc_lines;
+create policy sdl_all on public.stock_doc_lines for all to authenticated
+  using (exists (select 1 from public.stock_docs d where d.id = doc_id and public.can(d.company_id, 'inventory', 'view')))
+  with check (exists (select 1 from public.stock_docs d where d.id = doc_id and (public.can(d.company_id, 'inventory', 'add') or public.can(d.company_id, 'inventory', 'edit'))));
+
+drop policy if exists sm_select on public.stock_moves;
+create policy sm_select on public.stock_moves for select to authenticated using (public.can(company_id, 'inventory', 'view'));
+
+grant select, insert, update, delete on public.warehouses, public.stock_docs, public.stock_doc_lines to authenticated;
+grant select on public.stock_moves to authenticated;
+grant execute on function public.post_stock_doc(uuid), public.rep_stock_balance(uuid, date, uuid), public.rep_item_card(uuid, uuid, date, date, uuid),
+  public.default_warehouse(uuid), public.stock_qty(uuid, uuid, date) to authenticated;
+
+update public.user_groups set permissions = permissions || '{"inventory":{"view":true,"add":true,"edit":true,"print":true,"post":true}}'::jsonb
+ where name = 'محاسب' and not (permissions ? 'inventory');
+update public.user_groups set permissions = permissions || '{"inventory":{"view":true,"add":true,"edit":true}}'::jsonb
+ where name = 'مدخل بيانات' and not (permissions ? 'inventory');
+update public.user_groups set permissions = permissions || '{"inventory":{"view":true,"print":true}}'::jsonb
+ where name = 'مشاهد' and not (permissions ? 'inventory');
 
 -- انتهى ✅
