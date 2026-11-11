@@ -129,10 +129,12 @@ const NAV = () => [
     { r: 'bank-recon', i: '🏦', l: 'التسوية البنكية', show: () => S.company && can('bank_recon', 'view') },
     { r: 'cost-centers', i: '🎯', l: 'مراكز الكلفة والعملات', show: () => S.company && can('accounts', 'view') },
   ]},
-  { title: 'الموظفين والأصول', items: [
+  { title: 'الموظفين والرواتب', items: [
     { r: 'employees', i: '👷', l: 'الموظفين', show: () => S.company && can('payroll', 'view') },
     { r: 'payroll', i: '💵', l: 'الرواتب والضمان', show: () => S.company && can('payroll', 'view') },
-    { r: 'assets', i: '🏢', l: 'الأصول الثابتة', show: () => S.company && can('fixed_assets', 'view') },
+  ]},
+  { title: 'الأصول الثابتة', items: [
+    { r: 'assets', i: '🏢', l: 'الأصول الثابتة والاستهلاك', show: () => S.company && can('fixed_assets', 'view') },
   ]},
   { title: 'المبيعات والمشتريات', items: [
     { r: 'sales', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
@@ -172,7 +174,7 @@ const NAV = () => [
   ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والأصول': '👷', 'المبيعات والمشتريات': '🧾', 'المخزون': '📦', 'العملاء والموردين': '🤝', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المبيعات والمشتريات': '🧾', 'المخزون': '📦', 'العملاء والموردين': '🤝', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
