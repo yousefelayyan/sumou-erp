@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>برامجي</title>
+<meta name="theme-color" content="#5b2a86">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="برامجي">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --brand:#5b2a86; --brand2:#7b3fb3; --gold:#f4c542; --bg:#f5f3f8; --card:#fff; --text:#1f2430; --muted:#6b7280; --line:#e7e3ee; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Tajawal', system-ui, sans-serif; }
+  header { background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #fff; padding: calc(18px + env(safe-area-inset-top)) 18px 22px; border-radius: 0 0 26px 26px; }
+  .top { display: flex; align-items: center; gap: 10px; max-width: 980px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 26px; font-weight: 800; }
+  .date { opacity: .85; font-size: 14px; margin-top: 2px; }
+  .sp { flex: 1; }
+  .hbtn { background: rgba(255,255,255,.16); color: #fff; border: 0; border-radius: 12px; padding: 9px 13px; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .hbtn.on { background: var(--gold); color: #3b2200; }
+  .search { max-width: 980px; margin: 14px auto 0; }
+  .search input { width: 100%; border: 0; border-radius: 14px; padding: 13px 16px; font: inherit; font-size: 17px; outline: none; }
+  main { max-width: 980px; margin: 0 auto; padding: 8px 14px calc(30px + env(safe-area-inset-bottom)); }
+  h2 { font-size: 17px; margin: 22px 4px 10px; color: var(--brand); display: flex; align-items: center; gap: 8px; }
+  h2 .gx { margin-inline-start: auto; font-size: 13px; color: var(--muted); font-weight: 500; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  @media (max-width: 420px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  .tile { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center;
+          background: var(--card); border-radius: 20px; padding: 18px 10px 14px; min-height: 128px; text-decoration: none; color: var(--text);
+          box-shadow: 0 2px 10px rgba(60,30,90,.07); border: 1px solid var(--line); transition: transform .08s; cursor: pointer; user-select: none; }
+  .tile:active { transform: scale(.96); }
+  .tile .ic { font-size: 40px; line-height: 1; }
+  .tile .nm { font-weight: 700; font-size: 16px; line-height: 1.35; }
+  .tile .ds { font-size: 12px; color: var(--muted); }
+  .tile.empty { border: 2px dashed #cbbfe0; background: #faf8fd; }
+  .tile.empty .ds { color: var(--brand); font-weight: 700; }
+  .tile.add { border: 2px dashed #cbbfe0; background: transparent; color: var(--brand); box-shadow: none; }
+  .edit .tile:not(.add) { animation: wob .35s ease-in-out infinite alternate; }
+  @keyframes wob { from { transform: rotate(-1deg); } to { transform: rotate(1deg); } }
+  .tools { position: absolute; top: 6px; inset-inline: 6px; display: none; justify-content: space-between; }
+  .edit .tools { display: flex; }
+  .tools button { width: 30px; height: 30px; border-radius: 50%; border: 0; background: #efe9f7; color: var(--brand); font-size: 15px; cursor: pointer; }
+  .empty-msg { text-align: center; color: var(--muted); padding: 30px 0; }
+  .note { font-size: 13px; color: var(--muted); text-align: center; margin-top: 26px; }
+  .note a { color: var(--brand); cursor: pointer; text-decoration: underline; }
+  /* نافذة */
+  .ov { position: fixed; inset: 0; background: rgba(20,10,30,.45); display: none; align-items: flex-end; justify-content: center; z-index: 10; }
+  .ov.show { display: flex; }
+  .sheet { background: #fff; width: 100%; max-width: 520px; border-radius: 22px 22px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom)); }
+  @media (min-width: 640px) { .ov { align-items: center; } .sheet { border-radius: 22px; } }
+  .sheet h3 { margin: 0 0 12px; }
+  .f { display: flex; flex-direction: column; gap: 5px; margin-bottom: 11px; }
+  .f label { font-size: 14px; color: var(--muted); font-weight: 700; }
+  .f input, .f select, .f textarea { border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; font: inherit; font-size: 16px; background: #fff; }
+  .row { display: flex; gap: 10px; }
+  .row .f { flex: 1; min-width: 0; }
+  .f select, .f input { width: 100%; }
+  .emojis { display: flex; flex-wrap: wrap; gap: 6px; }
+  .emojis button { font-size: 22px; background: #f6f3fa; border: 1px solid transparent; border-radius: 10px; width: 40px; height: 40px; cursor: pointer; }
+  .emojis button.sel { border-color: var(--brand); background: #ece2f7; }
+  .acts { display: flex; gap: 8px; margin-top: 6px; }
+  .btn { border: 0; border-radius: 12px; padding: 12px 16px; font: inherit; font-weight: 700; font-size: 16px; cursor: pointer; background: #efe9f7; color: var(--brand); }
+  .btn.pri { background: var(--brand); color: #fff; flex: 1; }
+  .btn.del { background: #fdecec; color: #b42318; }
+  .toast { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: #1f2430; color: #fff; padding: 10px 18px; border-radius: 12px; font-size: 15px; display: none; z-index: 20; }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div><h1>📱 برامجي</h1><div class="date" id="date"></div></div>
+    <div class="sp"></div>
+    <button class="hbtn" id="editBtn">✏️ ترتيب</button>
+  </div>
+  <div class="search"><input id="q" type="search" placeholder="🔍 ابحث عن برنامج أو موقع…" autocomplete="off"></div>
+</header>
+<main id="main"></main>
+
+<div class="ov" id="ov"><div class="sheet">
+  <h3 id="sh-title">برنامج</h3>
+  <div class="f"><label>الاسم</label><input id="e-name" placeholder="مثلاً: مبيعات زوز شوب"></div>
+  <div class="f"><label>الرابط</label><input id="e-url" dir="ltr" inputmode="url" autocapitalize="none" placeholder="https://…"></div>
+  <div class="row">
+    <div class="f"><label>وصف قصير (اختياري)</label><input id="e-desc"></div>
+    <div class="f"><label>المجموعة</label><select id="e-group"></select></div>
+  </div>
+  <div class="f"><label>الرمز</label><div class="emojis" id="e-emojis"></div></div>
+  <div class="acts">
+    <button class="btn pri" id="e-save">💾 حفظ</button>
+    <button class="btn del" id="e-del">حذف</button>
+    <button class="btn" id="e-cancel">إلغاء</button>
+  </div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// القائمة الافتراضية — بتتحدّث لحالها على كل الأجهزة لحد ما تعدّل عليها
+const DEFAULTS = {
+  version: 1,
+  groups: ['برامجي', 'زوز شوب', 'مواقع الشغل'],
+  apps: [
+    { id: 'erp',  g: 'برامجي', ic: '🧮', name: 'السمو ERP', desc: 'البرنامج المحاسبي للمكتب', url: 'https://yousefelayyan.github.io/sumou-erp/' },
+    { id: 'jcpa', g: 'برامجي', ic: '🎓', name: 'منصة المحاسب القانوني', desc: 'JCPA', url: 'https://alsumou-jcpa.pages.dev' },
+    { id: 'fms',  g: 'برامجي', ic: '🏛️', name: 'الإدارة المالية للجامعة', desc: 'الرسوم والتحصيل', url: 'https://university-fms.vercel.app' },
+    { id: 'att',  g: 'برامجي', ic: '🗓️', name: 'الحضور والغياب', desc: 'طلاب الكلية', url: 'https://yousefelayyan.github.io/attendance/' },
+    { id: 'zs',   g: 'زوز شوب', ic: '🛍️', name: 'مبيعات زوز شوب', desc: '', url: '' },
+    { id: 'zo',   g: 'زوز شوب', ic: '📦', name: 'طلبات زوز شوب', desc: '', url: '' },
+    { id: 'meta', g: 'زوز شوب', ic: '📣', name: 'ميتا بزنس سويت', desc: 'فيسبوك وإنستغرام', url: 'https://business.facebook.com' },
+    { id: 'yt',   g: 'زوز شوب', ic: '▶️', name: 'استوديو يوتيوب', desc: 'قناة المحل', url: 'https://studio.youtube.com' },
+    { id: 'wa',   g: 'زوز شوب', ic: '💬', name: 'واتساب ويب', desc: '', url: 'https://web.whatsapp.com' },
+    { id: 'gb',   g: 'زوز شوب', ic: '📍', name: 'ملف جوجل للمحل', desc: 'المراجعات والصور', url: 'https://business.google.com' },
+    { id: 'istd', g: 'مواقع الشغل', ic: '🧾', name: 'ضريبة الدخل والمبيعات', desc: 'الإقرارات', url: 'https://www.istd.gov.jo' },
+    { id: 'jof',  g: 'مواقع الشغل', ic: '🧾', name: 'الفوترة الوطنية', desc: 'جوفوترة', url: 'https://portal.jofotara.gov.jo/ar/login' },
+    { id: 'ssc',  g: 'مواقع الشغل', ic: '🛡️', name: 'الضمان الاجتماعي', desc: '', url: 'https://www.ssc.gov.jo' },
+    { id: 'db',   g: 'مواقع الشغل', ic: '🗄️', name: 'قاعدة بيانات البرنامج', desc: 'Supabase', url: 'https://supabase.com/dashboard/project/zobmukdrkmzzkpcykguc' },
+  ],
+};
+const EMOJIS = ['🧮','🎓','🏛️','🗓️','🛍️','📦','📣','▶️','💬','📍','🧾','🛡️','🗄️','📊','💼','🏦','📚','📝','📁','🛒','🧸','📸','📧','📅','⚙️','🔗','🌐','💳','🏢','👥'];
+const KEY = 'my-apps.v1';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let data = load(), editing = false, cur = null, pickedIc = '🔗';
+
+function load() {
+  try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && Array.isArray(s.apps)) return s; } catch (e) {}
+  return JSON.parse(JSON.stringify(DEFAULTS));
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {} }
+function toast(t) { const el = $('#toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => el.style.display = 'none', 2200); }
+const host = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } };
+
+function render() {
+  const q = $('#q').value.trim().toLowerCase();
+  const m = $('#main'); m.className = editing ? 'edit' : '';
+  let html = '';
+  for (const g of data.groups) {
+    const list = data.apps.filter(a => a.g === g && (!q || (a.name + ' ' + a.desc + ' ' + a.url).toLowerCase().includes(q)));
+    if (!list.length && (q || !editing)) continue;
+    html += `<h2>${esc(g)} ${editing ? `<span class="gx">رتّب بالأسهم</span>` : ''}</h2><div class="grid">`;
+    html += list.map(a => {
+      const empty = !a.url;
+      const inner = `<div class="tools"><button data-mv="${a.id}" data-d="-1" title="لقدّام">→</button><button data-mv="${a.id}" data-d="1" title="لورا">←</button></div>
+        <div class="ic">${esc(a.ic || '🔗')}</div><div class="nm">${esc(a.name)}</div>
+        <div class="ds">${empty ? 'اضغط لإضافة الرابط' : esc(a.desc || host(a.url))}</div>`;
+      return (empty || editing)
+        ? `<div class="tile ${empty ? 'empty' : ''}" data-ed="${a.id}">${inner}</div>`
+        : `<a class="tile" href="${esc(a.url)}">${inner}</a>`;
+    }).join('');
+    if (editing && !q) html += `<div class="tile add" data-add="${esc(g)}"><div class="ic">➕</div><div class="nm">إضافة هون</div></div>`;
+    html += `</div>`;
+  }
+  if (!html) html = `<div class="empty-msg">ما في نتائج</div>`;
+  html += `<p class="note">${editing ? 'اضغط على أي برنامج لتعدّله أو تحذفه، وبالأسهم بترتّبهم. · <a id="reset">رجّع القائمة الأصلية</a>' : 'لتضيف برنامج أو تعدّل رابط: اضغط «✏️ ترتيب» فوق.'}</p>`;
+  m.innerHTML = html;
+}
+
+function openEditor(a, group) {
+  cur = a;
+  $('#sh-title').textContent = a ? 'تعديل' : 'برنامج جديد';
+  $('#e-name').value = a?.name || ''; $('#e-url').value = a?.url || ''; $('#e-desc').value = a?.desc || '';
+  $('#e-group').innerHTML = data.groups.map(g => `<option ${g === (a?.g || group) ? 'selected' : ''}>${esc(g)}</option>`).join('');
+  pickedIc = a?.ic || '🔗';
+  $('#e-emojis').innerHTML = EMOJIS.map(e => `<button type="button" class="${e === pickedIc ? 'sel' : ''}">${e}</button>`).join('');
+  $('#e-del').style.display = a ? '' : 'none';
+  $('#ov').classList.add('show');
+  setTimeout(() => (a && !a.url ? $('#e-url') : $('#e-name')).focus(), 50);
+}
+const closeEditor = () => $('#ov').classList.remove('show');
+
+$('#e-emojis').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; pickedIc = b.textContent;
+  [...$('#e-emojis').children].forEach(x => x.classList.toggle('sel', x === b)); };
+$('#e-save').onclick = () => {
+  const name = $('#e-name').value.trim(); let url = $('#e-url').value.trim();
+  if (!name) return toast('اكتب اسم البرنامج');
+  if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+  const v = { name, url, desc: $('#e-desc').value.trim(), g: $('#e-group').value, ic: pickedIc };
+  if (cur) Object.assign(cur, v); else data.apps.push({ id: 'a' + Date.now(), ...v });
+  save(); closeEditor(); render(); toast('انحفظ ✓');
+};
+$('#e-del').onclick = () => { if (!cur) return; data.apps = data.apps.filter(x => x !== cur); save(); closeEditor(); render(); toast('انحذف'); };
+$('#e-cancel').onclick = closeEditor;
+$('#ov').onclick = (e) => { if (e.target.id === 'ov') closeEditor(); };
+
+$('#main').onclick = (e) => {
+  const mv = e.target.closest('[data-mv]');
+  if (mv) { e.preventDefault(); e.stopPropagation();
+    const i = data.apps.findIndex(a => a.id === mv.dataset.mv), a = data.apps[i], d = +mv.dataset.d;
+    let j = i + d; while (j >= 0 && j < data.apps.length && data.apps[j].g !== a.g) j += d;
+    if (j >= 0 && j < data.apps.length) { [data.apps[i], data.apps[j]] = [data.apps[j], data.apps[i]]; save(); render(); }
+    return; }
+  const ed = e.target.closest('[data-ed]'); if (ed) return openEditor(data.apps.find(a => a.id === ed.dataset.ed));
+  const ad = e.target.closest('[data-add]'); if (ad) return openEditor(null, ad.dataset.add);
+  if (e.target.id === 'reset') { if (confirm('ترجع القائمة الأصلية؟ تعديلاتك بتنمسح.')) { try { localStorage.removeItem(KEY); } catch (x) {} data = load(); render(); } }
+};
+$('#editBtn').onclick = () => { editing = !editing; $('#editBtn').classList.toggle('on', editing); $('#editBtn').textContent = editing ? '✅ خلصت' : '✏️ ترتيب'; render(); };
+$('#q').oninput = render;
+$('#date').textContent = new Date().toLocaleDateString('ar-JO', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+render();
+</script>
+</body>
+</html>
