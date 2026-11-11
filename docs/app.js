@@ -104,7 +104,8 @@ function renderPending() {
 // ---------------------------------------------------------------------
 const NAV = () => [
   { title: 'الرئيسية', items: [{ r: 'home', i: '🏠', l: 'لوحة التحكم' },
-    { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) }] },
+    { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) },
+    { href: './pdf/', i: '📕', l: 'السمو PDF' }] },
   { title: 'ملف', items: [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
@@ -181,6 +182,7 @@ function renderShell() {
             return `<div class="nav-group"><div class="nav-title">${g.title}</div>
               ${items.map(it => it.soon
                 ? `<div class="soon"><span class="ico">${it.i}</span>${it.l}<small>قريباً</small></div>`
+                : it.href ? `<a href="${it.href}" target="_blank" rel="noopener"><span class="ico">${it.i}</span>${it.l} ↗</a>`
                 : `<a href="#/${it.r}" class="${route === it.r.split('?')[0] ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
             </div>`;
           }).join('')}
@@ -198,6 +200,7 @@ function renderShell() {
               ${S.fiscalYears.map(y => `<option value="${y.id}" ${y.id === S.fy?.id ? 'selected' : ''}>${esc(y.name || y.code)}${y.is_closed ? ' (مغلقة)' : ''}</option>`).join('') || '<option>—</option>'}
             </select></div>
           <div class="spacer"></div>
+          <a class="btn sm" href="./pdf/" target="_blank" rel="noopener" title="السمو PDF — قارئ ومحرّر الملفات">📕 السمو PDF</a>
           <div class="user-chip"><span>${esc(S.profile.full_name || S.profile.email)}</span><div class="avatar">${esc(initials)}</div></div>
           <button class="btn sm" id="logout">خروج</button>
         </header>
