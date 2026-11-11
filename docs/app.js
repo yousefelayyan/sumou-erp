@@ -23,8 +23,8 @@ function renderAuth(mode = 'login') {
       <p class="auth-sub">${titles[mode]}</p>
       <form id="auth-form">
         ${mode === 'signup' ? `<div class="field"><label>الاسم الكامل</label><input name="full_name" required></div>` : ''}
-        <div class="field"><label>الإيميل</label><input name="email" type="email" dir="ltr" required autocomplete="email"></div>
-        ${mode !== 'reset' ? `<div class="field"><label>كلمة السر</label><input name="password" type="password" dir="ltr" required minlength="6" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></div>` : ''}
+        <div class="field"><label>${mode === 'login' ? 'اسم المستخدم أو الإيميل' : 'الإيميل'}</label><input name="email" type="${mode === 'login' ? 'text' : 'email'}" dir="ltr" required autocomplete="username" autocapitalize="none"></div>
+        ${mode !== 'reset' ? `<div class="field"><label>كلمة السر</label><input name="password" type="password" dir="ltr" required minlength="${mode === 'login' ? 4 : 6}" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></div>` : ''}
         <button class="btn primary block" type="submit">${mode === 'login' ? 'دخول' : mode === 'signup' ? 'إنشاء الحساب' : 'إرسال رابط تغيير كلمة السر'}</button>
       </form>
       <div class="auth-switch">
@@ -40,7 +40,7 @@ function renderAuth(mode = 'login') {
     const f = formData(form);
     try {
       if (mode === 'login') {
-        const { error } = await sb.auth.signInWithPassword({ email: f.email, password: f.password });
+        const { error } = await sb.auth.signInWithPassword({ email: f.email.includes('@') ? f.email.trim() : f.email.trim().toLowerCase() + '@sumou.local', password: f.password });
         if (error) throw error;
       } else if (mode === 'signup') {
         const { data, error } = await sb.auth.signUp({ email: f.email, password: f.password,
@@ -557,66 +557,92 @@ async function viewUsers(v) {
   if (p.error) throw p.error;
   const users = p.data, links = uc.data || [], comps = c.data || [];
   const pending = users.filter(u => !u.is_active).length;
+  const login = (u) => u.username || u.email;
   v.innerHTML = `
-    <div class="page-head"><h2>المستخدمين</h2><span class="badge brand">${users.length}</span>
-      ${pending ? `<span class="badge warn">${pending} بانتظار الموافقة</span>` : ''}<div class="spacer"></div></div>
-    <div class="notice info">لإضافة موظف: خلّيه يفتح النظام ويضغط <b>«إنشاء حساب جديد»</b>. حسابه بيظهر هون بانتظار موافقتك، وبعدها بتفعّله وبتعطيه الشركات والمجموعة.</div>
+    <div class="page-head"><h2>👥 المستخدمين</h2><span class="badge brand">${users.length}</span>
+      ${pending ? `<span class="badge warn">${pending} بانتظار الموافقة</span>` : ''}<div class="spacer"></div>
+      <button class="btn primary" id="u-add">➕ مستخدم جديد</button></div>
     <div class="card table-wrap"><table class="t">
-      <thead><tr><th>الاسم</th><th>الإيميل</th><th>النوع</th><th>الشركات</th><th>الحالة</th><th></th></tr></thead>
+      <thead><tr><th>الاسم</th><th>اسم الدخول</th><th>النوع</th><th>الشاشات</th><th>الشركات</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${users.map(u => {
         const mine = links.filter(l => l.user_id === u.id);
-        return `<tr><td><b>${esc(u.full_name || '')}</b></td><td dir="ltr" style="text-align:right">${esc(u.email)}</td>
+        const np = Object.values(u.permissions || {}).filter(Boolean).length;
+        return `<tr><td><b>${esc(u.full_name || '')}</b></td><td dir="ltr" style="text-align:right">${esc(login(u))}</td>
           <td>${u.is_admin ? '<span class="badge brand">مدير النظام</span>' : 'موظف'}</td>
+          <td>${u.is_admin ? '<span class="muted">الكل</span>' : (np ? np + ' شاشة' : '<span class="muted">—</span>')}</td>
           <td>${u.is_admin ? '<span class="muted">كل الشركات</span>' : (mine.length ? mine.length + ' شركة' : '<span class="muted">—</span>')}</td>
-          <td>${u.is_active ? '<span class="badge ok">مفعّل</span>' : '<span class="badge warn">بانتظار الموافقة</span>'}</td>
-          <td class="actions"><button class="btn sm" data-edit="${u.id}">إدارة</button></td></tr>`;
+          <td>${u.is_active ? '<span class="badge ok">مفعّل</span>' : '<span class="badge warn">موقوف</span>'}</td>
+          <td class="actions"><button class="btn sm" data-edit="${u.id}" title="تعديل">✏️ تعديل</button></td></tr>`;
       }).join('')}</tbody></table></div>`;
+  v.querySelector('#u-add').onclick = () => userEditor(null, links, comps);
   v.querySelector('tbody').onclick = (e) => {
     const b = e.target.closest('[data-edit]'); if (!b) return;
-    const u = users.find(x => x.id === b.dataset.edit);
-    const self = u.id === S.session.user.id;
-    const mine = Object.fromEntries(links.filter(l => l.user_id === u.id).map(l => [l.company_id, l.group_id]));
-    const gOpts = (sel) => `<option value="">— بدون مجموعة —</option>` + S.groups.map(g => `<option value="${g.id}" ${g.id === sel ? 'selected' : ''}>${esc(g.name)}</option>`).join('');
-    const m = modal({ title: 'إدارة المستخدم: ' + (u.full_name || u.email), body: `
-      <form id="u-form">
-        <div class="grid cols-2">
-          <div class="field"><label>الاسم الكامل</label><input name="full_name" value="${esc(u.full_name)}"></div>
-          <div class="field"><label>الهاتف</label><input name="phone" value="${esc(u.phone)}" dir="ltr"></div>
-        </div>
-        <label class="check"><input type="checkbox" name="is_active" ${u.is_active ? 'checked' : ''} ${self ? 'disabled' : ''}> الحساب مفعّل</label>
-        <label class="check"><input type="checkbox" name="is_admin" ${u.is_admin ? 'checked' : ''} ${self ? 'disabled' : ''}> مدير النظام (صلاحيات كاملة على كل الشركات)</label>
-      </form>
-      <h4 style="margin:18px 0 8px">الشركات المسموحة والمجموعة بكل شركة</h4>
-      <div class="table-wrap"><table class="t" id="uc-table">
-        <thead><tr><th style="width:40px"></th><th>الشركة</th><th>المجموعة</th></tr></thead>
-        <tbody>${comps.map(c => `<tr>
-          <td><input type="checkbox" data-c="${c.id}" ${c.id in mine ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--brand)"></td>
-          <td>${esc(c.name)} <span class="muted">(${esc(c.code)})</span></td>
-          <td><select data-g="${c.id}" class="search" style="min-width:160px">${gOpts(mine[c.id])}</select></td></tr>`).join('')
-          || '<tr><td colspan="3" class="empty">ما في شركات</td></tr>'}</tbody></table></div>`,
-      foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>
-             ${!self ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف المستخدم</button>` : ''}` });
-    m.el.querySelector('[data-save]').onclick = async () => {
-      const d = formData(m.el.querySelector('#u-form'));
-      if (self) { delete d.is_active; delete d.is_admin; }
-      const up = await sb.from('profiles').update(d).eq('id', u.id);
-      if (up.error) return toast(arError(up.error), 'err');
-      const wanted = [...m.el.querySelectorAll('[data-c]')].filter(x => x.checked)
-        .map(x => ({ user_id: u.id, company_id: x.dataset.c, group_id: m.el.querySelector(`[data-g="${x.dataset.c}"]`).value || null }));
-      const del = await sb.from('user_companies').delete().eq('user_id', u.id);
-      if (del.error) return toast(arError(del.error), 'err');
-      if (wanted.length) { const ins = await sb.from('user_companies').insert(wanted); if (ins.error) return toast(arError(ins.error), 'err'); }
-      await log('تعديل', 'users', u.id, { email: u.email, active: d.is_active, admin: d.is_admin, companies: wanted.length });
-      toast('تم الحفظ', 'ok'); m.close(); route_();
-    };
-    m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
-      if (!(await confirmBox(`حذف المستخدم ${u.email} من النظام؟ (الأفضل توقف الحساب بدل الحذف)`))) return;
-      const { error } = await sb.from('profiles').delete().eq('id', u.id);
-      if (error) return toast(arError(error), 'err');
-      await log('حذف', 'users', u.id, { email: u.email });
-      toast('تم الحذف', 'ok'); m.close(); route_();
-    });
+    userEditor(users.find(x => x.id === b.dataset.edit), links, comps);
   };
+}
+
+function userEditor(u, links, comps) {
+  const isNew = !u, self = !!u && u.id === S.session.user.id;
+  const perms = u?.permissions || {};
+  const myComps = new Set(u ? links.filter(l => l.user_id === u.id).map(l => l.company_id) : comps.map(c => c.id));
+  const groups = [...new Set(SCREENS.map(s => s.group))];
+  const box = 'style="width:20px;height:20px;accent-color:var(--brand);cursor:pointer;flex:none"';
+  const row = (attr, label, on) => `<label class="perm-row" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);cursor:pointer">
+      <span>${label}</span><input type="checkbox" ${attr} ${on ? 'checked' : ''} ${box}></label>`;
+  const m = modal({ title: isNew ? '➕ مستخدم جديد' : '✏️ تعديل المستخدم: ' + esc(u.full_name || u.username || u.email), body: `
+    <form id="u-form" autocomplete="off"><div class="grid cols-3">
+      <div class="field"><label>اسم المستخدم (للدخول) *</label><input name="username" dir="ltr" autocapitalize="none" value="${esc(u?.username || '')}" placeholder="hala"></div>
+      <div class="field"><label>الاسم الكامل</label><input name="full_name" value="${esc(u?.full_name || '')}"></div>
+      <div class="field"><label>كلمة السر ${isNew ? '*' : ''}</label><input name="password" dir="ltr" autocomplete="new-password" placeholder="${isNew ? '' : 'اتركها فاضية إذا ما بدك تغيّرها'}"></div>
+    </div>
+    ${!isNew && !u.username ? `<p class="muted" style="margin:0 0 8px;font-size:13px">هالحساب بيدخل بالإيميل: <span dir="ltr">${esc(u.email)}</span>. إذا كتبت اسم مستخدم بيصير يقدر يدخل فيه كمان.</p>` : ''}
+    <div style="display:flex;gap:18px;flex-wrap:wrap">
+      <label class="check"><input type="checkbox" name="is_active" ${isNew || u.is_active ? 'checked' : ''} ${self ? 'disabled' : ''}> الحساب مفعّل</label>
+      <label class="check"><input type="checkbox" name="is_admin" ${u?.is_admin ? 'checked' : ''} ${self ? 'disabled' : ''}> مدير النظام (كل الصلاحيات)</label>
+    </div></form>
+    <div id="perm-area">
+    <div style="display:flex;align-items:center;margin:16px 0 6px"><h3 style="margin:0">🔐 الصلاحيات</h3><div class="spacer" style="flex:1"></div>
+      <button class="btn sm" type="button" data-all="1">تحديد الكل</button> <button class="btn sm" type="button" data-all="0">إلغاء الكل</button></div>
+    <div class="grid cols-2" style="gap:12px">
+      ${groups.map(g => `<div class="card" style="padding:0;overflow:hidden">
+        <div style="padding:8px 12px;background:var(--brand-soft, #f1ebf8);font-weight:700">${esc(g)}</div>
+        ${SCREENS.filter(s => s.group === g).map(s => row(`data-p="${s.key}"`, esc(s.label), !!perms[s.key])).join('')}</div>`).join('')}
+    </div>
+    <h3 style="margin:16px 0 6px">🏢 الشركات اللي بيشتغل عليها</h3>
+    <div class="card" style="padding:0;overflow:hidden">${comps.map(c => row(`data-c="${c.id}"`, `${esc(c.name)} <span class="muted">(${esc(c.code)})</span>`, myComps.has(c.id))).join('') || '<p class="muted" style="padding:10px">ما في شركات</p>'}</div>
+    </div>`,
+    foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>
+      ${!isNew && !self ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف المستخدم</button>` : ''}` });
+  m.el.querySelector('.modal').style.maxWidth = '860px';
+  const f = m.el.querySelector('#u-form');
+  // كلمة السر الافتراضية = اسم المستخدم
+  if (isNew) { let touched = false; f.password.oninput = () => touched = true; f.username.oninput = () => { if (!touched) f.password.value = f.username.value.trim().toLowerCase(); }; }
+  const adminToggle = () => { m.el.querySelector('#perm-area').style.opacity = f.is_admin.checked ? .45 : 1; };
+  f.is_admin.onchange = adminToggle; adminToggle();
+  m.el.querySelectorAll('[data-all]').forEach(b => b.onclick = () => m.el.querySelectorAll('[data-p]').forEach(x => x.checked = b.dataset.all === '1'));
+  m.el.querySelector('[data-save]').onclick = async (e) => {
+    const d = formData(f);
+    const username = (d.username || '').trim().toLowerCase();
+    if (isNew && !username) return toast('اكتب اسم المستخدم', 'err');
+    if (username && !/^[a-z0-9._-]{2,30}$/.test(username)) return toast('اسم المستخدم لازم يكون أحرف إنجليزي أو أرقام بدون فراغات', 'err');
+    if (isNew && (d.password || '').length < 4) return toast('كلمة السر لازم تكون 4 أحرف على الأقل', 'err');
+    const permissions = Object.fromEntries([...m.el.querySelectorAll('[data-p]')].filter(x => x.checked).map(x => [x.dataset.p, true]));
+    const companies = [...m.el.querySelectorAll('[data-c]')].filter(x => x.checked).map(x => x.dataset.c);
+    e.target.disabled = true;
+    const r = isNew
+      ? await sb.rpc('admin_create_user', { p_username: username, p_full_name: d.full_name, p_password: d.password, p_permissions: permissions, p_companies: companies, p_is_admin: !!d.is_admin })
+      : await sb.rpc('admin_update_user', { p_id: u.id, p_username: username || null, p_full_name: d.full_name, p_password: d.password || null, p_permissions: permissions, p_companies: companies, p_is_admin: !!d.is_admin, p_is_active: !!d.is_active });
+    if (r.error) { e.target.disabled = false; return toast(arError(r.error), 'err'); }
+    toast(isNew ? `تم إنشاء المستخدم «${username}» — بيدخل باسم المستخدم وكلمة السر` : 'تم الحفظ', 'ok');
+    if (self) await loadProfile();
+    m.close(); route_();
+  };
+  m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
+    if (!(await confirmBox(`حذف المستخدم «${u.username || u.email}» نهائياً؟ (الأفضل توقف الحساب بدل الحذف)`))) return;
+    const { error } = await sb.rpc('admin_delete_user', { p_id: u.id });
+    if (error) return toast(arError(error), 'err');
+    toast('تم الحذف', 'ok'); m.close(); route_();
+  });
 }
 
 // ---------------------------------------------------------------------
