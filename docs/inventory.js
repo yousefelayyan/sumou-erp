@@ -5,6 +5,7 @@ import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirm
 import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadItems } from './invoices.js';
 import { printDoc } from './print.js';
+import { openAttachments } from './attach.js';
 
 const DOC = {
   in:       { label: 'سند إدخال', icon: '📥' },
@@ -152,6 +153,7 @@ async function docEditor(type, doc, whs, ctx) {
     foot: `${!readOnly ? '<button class="btn primary" data-save>💾 حفظ مسودة</button>' : ''}
       ${!readOnly && can('inventory', 'post') ? '<button class="btn primary" data-post>✅ حفظ وترحيل</button>' : ''}
       ${doc && can('inventory', 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
+      ${doc ? '<button class="btn" data-attach>📎 مرفقات</button>' : ''}
       ${doc?.status === 'draft' && can('inventory', 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '900px';
@@ -199,6 +201,7 @@ async function docEditor(type, doc, whs, ctx) {
     if (!(await confirmBox(`حذف ${D.label} رقم ${doc.doc_no}؟`))) return;
     const { error } = await sb.from('stock_docs').delete().eq('id', doc.id); if (error) return toast(arError(error), 'err'); toast('تم الحذف', 'ok'); m.close(); ctx.rerender();
   });
+  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('stock_doc', doc.id, `${D.label} رقم ${doc.doc_no}`));
   m.el.querySelector('[data-print]')?.addEventListener('click', () => {
     const wn = Object.fromEntries(whs.map(x => [x.id, x.name]));
     printDoc(`${D.label} رقم ${doc.doc_no}`, `<table class="meta"><tr><td><b>التاريخ:</b> ${fmtDate(doc.doc_date)}</td><td><b>المستودع:</b> ${esc(wn[doc.warehouse_id] || '')}</td>${type === 'transfer' ? `<td><b>إلى:</b> ${esc(wn[doc.to_warehouse_id] || '')}</td>` : ''}</tr>

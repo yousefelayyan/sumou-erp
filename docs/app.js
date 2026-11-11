@@ -10,6 +10,10 @@ import { INVOICE_ROUTES } from './invoices.js';
 import { OBLIGATION_ROUTES, obligationsSummary } from './obligations.js';
 import { CHEQUE_ROUTES } from './cheques.js';
 import { INVENTORY_ROUTES } from './inventory.js';
+import { PRINTSET_ROUTES } from './printset.js';
+import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
+import { PAYROLL_ROUTES } from './payroll.js';
+import { TOOLS_ROUTES, autoBackup } from './tools.js';
 
 const $app = document.getElementById('app');
 // ---------------------------------------------------------------------
@@ -105,6 +109,9 @@ const NAV = () => [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
     { r: 'settings', i: '🔗', l: 'حسابات الربط والضريبة', show: () => S.company && can('companies', 'edit') },
+    { r: 'print-settings', i: '🖨️', l: 'نماذج الطباعة', show: () => S.company && can('companies', 'edit') },
+    { r: 'import', i: '📥', l: 'الاستيراد من إكسل', show: () => S.company && ['customers', 'suppliers', 'items', 'accounts', 'opening_balances', 'payroll'].some(x => can(x, 'add') || can(x, 'edit')) },
+    { r: 'backup', i: '💾', l: 'النسخ الاحتياطي', show: isAdmin },
     { r: 'companies', i: '🗂️', l: 'الشركات', show: isAdmin },
     { r: 'users', i: '👥', l: 'المستخدمين', show: isAdmin },
     { r: 'groups', i: '🔐', l: 'المجموعات والصلاحيات', show: isAdmin },
@@ -117,6 +124,15 @@ const NAV = () => [
     { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
     { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
     { r: 'cheques', i: '💳', l: 'محفظة الشيكات', show: () => S.company && can('cheques', 'view') },
+    { r: 'pending', i: '⏳', l: 'بانتظار الترحيل', show: () => S.company },
+    { r: 'recurring', i: '🔁', l: 'القيود المتكررة', show: () => S.company && can('journal_entries', 'view') },
+    { r: 'bank-recon', i: '🏦', l: 'التسوية البنكية', show: () => S.company && can('bank_recon', 'view') },
+    { r: 'cost-centers', i: '🎯', l: 'مراكز الكلفة والعملات', show: () => S.company && can('accounts', 'view') },
+  ]},
+  { title: 'الموظفين والأصول', items: [
+    { r: 'employees', i: '👷', l: 'الموظفين', show: () => S.company && can('payroll', 'view') },
+    { r: 'payroll', i: '💵', l: 'الرواتب والضمان', show: () => S.company && can('payroll', 'view') },
+    { r: 'assets', i: '🏢', l: 'الأصول الثابتة', show: () => S.company && can('fixed_assets', 'view') },
   ]},
   { title: 'المبيعات والمشتريات', items: [
     { r: 'sales', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
@@ -143,6 +159,8 @@ const NAV = () => [
     { r: 'rep-party', i: '👤', l: 'كشف حساب عميل/مورد', show: () => S.company && can('reports', 'view') },
     { r: 'rep-aging', i: '⏳', l: 'أعمار الذمم', show: () => S.company && can('reports', 'view') },
     { r: 'rep-salestax', i: '🏛️', l: 'إقرار ضريبة المبيعات', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-cc', i: '🎯', l: 'تقرير مراكز الكلفة', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-fx', i: '💱', l: 'أرصدة العملات', show: () => S.company && can('reports', 'view') },
   ]},
   { title: 'قريباً', items: [
  { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
@@ -214,7 +232,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -251,7 +269,7 @@ async function viewHome(v) {
         <span class="muted">${c.subject_to_sales_tax ? (c.sales_tax_period === 'monthly' ? 'إقرار شهري' : 'إقرار كل شهرين') : ''}</span></div>
       <div class="card stat"><span class="k">عدد الشركات المتاحة</span><span class="v">${S.companies.filter(x => x.is_active).length}</span></div>
     </div>
-    <div id="ob-sum"></div>
+    <div id="ob-sum"></div><div id="dash"></div>
     ${!S.fy && can('fiscal_years', 'add') ? `<div class="notice" style="margin-top:14px">هالشركة ما إلها سنة مالية. <a href="#/fiscal-years">أضف سنة مالية</a> قبل ما تبلّش القيود.</div>` : ''}
     <div class="card" style="margin-top:14px">
       <h3 style="margin-top:0">ابدأ من هون</h3>
@@ -263,8 +281,8 @@ async function viewHome(v) {
         ${can('payment_vouchers', 'add') ? '<a class="btn" href="#/payments">📤 سند صرف</a>' : ''}
         ${can('reports', 'view') ? '<a class="btn" href="#/rep-trial">⚖️ ميزان المراجعة</a>' : ''}
       </div>
-      <p class="muted" style="margin:12px 0 0;font-size:13px">المرحلة الجاية: الفوترة الإلكترونية (جوفوترة).</p>
     </div>`;
+  dashboardPanel(v.querySelector('#dash')).catch(() => {});
   if (S.companies.some(c => can('obligations', 'view', c.id))) {
     obligationsSummary().then(({ late, soon }) => { const el = v.querySelector('#ob-sum'); if (!el || (!late && !soon)) return;
       el.innerHTML = `<a href="#/obligations" class="notice ${late ? '' : 'info'}" style="display:block;margin-top:14px;text-decoration:none">🔔 متابعة الإقرارات: ${late ? `<b>${late} متأخرة</b>` : ''}${late && soon ? ' و' : ''}${soon ? `<b>${soon}</b> خلال 14 يوم` : ''} — اضغط للتفاصيل</a>`; }).catch(() => {});
@@ -762,6 +780,7 @@ async function boot() {
     if (!S.profile.is_active) return renderPending();
     await loadContext();
     renderShell(); route_();
+    setTimeout(() => autoBackup().catch(() => {}), 4000);
   } catch (err) {
     $app.innerHTML = `<div class="auth-wrap"><div class="auth-card"><div class="notice">${esc(arError(err))}</div>
       <button class="btn block" onclick="location.reload()">إعادة المحاولة</button></div></div>`;

@@ -5,6 +5,7 @@ import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirm
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords } from './print.js';
+import { openAttachments } from './attach.js';
 
 const ST = {
   portfolio: ['بالمحفظة', 'warn'], collected: ['محصّل', 'ok'], returned: ['راجع', 'bad'],
@@ -90,8 +91,8 @@ async function viewCheques(v, ctx) {
     const b = e.target.closest('[data-act]'), h = e.target.closest('[data-hist]');
     if (h) {
       const { data: ev } = await sb.from('cheque_events').select('*').eq('cheque_id', h.dataset.hist).order('created_at');
-      return void modal({ title: 'سجل الشيك', size: 'sm', body: `<table class="t">${(ev || []).map(x => `<tr><td>${fmtDate(x.event_date)}</td><td>${esc(x.action)}</td><td class="muted">${esc(x.note || '')}</td></tr>`).join('') || '<tr><td class="empty">ما في حركات</td></tr>'}</table>`,
-        foot: `${can('cheques', 'print') ? '<button class="btn" data-pr>🖨️ طباعة إشعار</button>' : ''}<button class="btn" data-close>إغلاق</button>` }).el.querySelector('[data-pr]')?.addEventListener('click', () => {
+      const hm = modal({ title: 'سجل الشيك', size: 'sm', body: `<table class="t">${(ev || []).map(x => `<tr><td>${fmtDate(x.event_date)}</td><td>${esc(x.action)}</td><td class="muted">${esc(x.note || '')}</td></tr>`).join('') || '<tr><td class="empty">ما في حركات</td></tr>'}</table>`,
+        foot: `<button class="btn" data-att>📎 مرفقات</button>${can('cheques', 'print') ? '<button class="btn" data-pr>🖨️ طباعة إشعار</button>' : ''}<button class="btn" data-close>إغلاق</button>` }).el; hm.querySelector('[data-att]').onclick = () => openAttachments('cheque', h.dataset.hist, 'شيك'); hm.querySelector('[data-pr]')?.addEventListener('click', () => {
           const c = data.find(x => x.id === h.dataset.hist);
           printDoc(`${dir === 'in' ? 'إشعار استلام شيك' : 'إشعار تسليم شيك'} رقم ${c.cheque_no}`, `<table class="meta">
             <tr><td><b>${dir === 'in' ? 'استلمنا من' : 'سلّمنا إلى'}:</b> ${esc(pName[c.party_id] || c.drawer_name || '')}</td><td><b>تاريخ الاستلام:</b> ${fmtDate(c.issue_date || c.created_at)}</td></tr>

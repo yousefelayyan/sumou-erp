@@ -4,6 +4,8 @@
 // =====================================================================
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { printDoc, amountToWords } from './print.js';
+import { openAttachments } from './attach.js';
+import { recurringDialog } from './extras.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 
 export const CATEGORIES = { assets: 'الموجودات', liabilities: 'المطلوبات', equity: 'حقوق الملكية', revenue: 'الإيرادات', expenses: 'المصاريف' };
@@ -15,6 +17,8 @@ export const ENTRY_TYPES = {
   opening: { label: 'قيد افتتاحي', plural: 'الأرصدة الافتتاحية', screen: 'opening_balances', route: 'opening', icon: '🧮' },
   invoice: { label: 'قيد فاتورة', plural: 'قيود الفواتير', screen: 'journal_entries', route: 'sales', icon: '🧾' },
   cheque: { label: 'قيد شيك', plural: 'قيود الشيكات', screen: 'journal_entries', route: 'cheques', icon: '💳' },
+  payroll: { label: 'قيد رواتب', plural: 'قيود الرواتب', screen: 'journal_entries', route: 'payroll', icon: '💵' },
+  depreciation: { label: 'قيد استهلاك', plural: 'قيود الاستهلاك', screen: 'journal_entries', route: 'assets', icon: '📉' },
   stock: { label: 'قيد مخزون', plural: 'قيود المخزون', screen: 'journal_entries', route: 'stock', icon: '📦' },
   closing: { label: 'قيد إقفال', plural: 'قيود الإقفال', screen: 'journal_entries', route: 'fiscal-years', icon: '🔒' },
 };
@@ -278,8 +282,10 @@ function voucherList(type) {
 // ---------------------------------------------------------------------
 async function voucherEditor(type, entry, ctx) {
   const T = ENTRY_TYPES[type];
-  const [accs, parties] = await Promise.all([loadAccounts(), loadParties()]);
+  const [accs, parties, ccR, curR] = await Promise.all([loadAccounts(), loadParties(),
+    sb.from('cost_centers').select('*').eq('company_id', S.company.id).order('code'), sb.from('currencies').select('*').eq('company_id', S.company.id).order('code')]);
   if (!leafAccounts(accs).length) return toast('لازم يكون في حسابات فرعية بدليل الحسابات أول', 'err');
+  const ccs = ccR.data || [], curs = (curR.data || []).filter(c => c.is_active);
   const pById = Object.fromEntries(parties.map(p => [p.id, p]));
   let lines = [];
   if (entry) {
@@ -296,9 +302,9 @@ async function voucherEditor(type, entry, ctx) {
   let rows;
   if (isCash) {
     rows = lines.filter(l => !(l.line_no === 1 && l.account_id === e.cash_account_id))
-      .map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', amount: num(type === 'receipt' ? l.credit : l.debit) }));
+      .map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', amount: num(type === 'receipt' ? l.credit : l.debit), cc: l.cost_center_id || '', cur: l.currency || '', fxa: l.fx_amount ?? '', fxr: l.fx_rate ?? '' }));
   } else {
-    rows = lines.map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', debit: num(l.debit), credit: num(l.credit) }));
+    rows = lines.map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', debit: num(l.debit), credit: num(l.credit), cc: l.cost_center_id || '', cur: l.currency || '', fxa: l.fx_amount ?? '', fxr: l.fx_rate ?? '' }));
   }
   while (rows.length < (isCash ? 1 : 2)) rows.push(isCash ? { acc: '', desc: '', amount: 0 } : { acc: '', desc: '', debit: 0, credit: 0 });
 
@@ -319,22 +325,25 @@ async function voucherEditor(type, entry, ctx) {
     </div></form>
     ${accountDatalist(accs)}${partyDatalist(parties)}
     <div class="table-wrap"><table class="t lines" id="lines">
-      <thead><tr><th style="width:36px">#</th><th style="min-width:230px">الحساب</th><th style="min-width:170px">العميل / المورد</th><th>البيان</th>
+      <thead><tr><th style="width:36px">#</th><th style="min-width:230px">الحساب</th><th style="min-width:170px">العميل / المورد</th><th style="min-width:140px">البيان</th>
+        ${ccs.length ? '<th style="width:140px">مركز الكلفة</th>' : ''}${curs.length ? '<th style="min-width:90px">العملة</th><th style="min-width:100px">بالعملة</th><th style="min-width:80px">السعر</th>' : ''}
         ${isCash ? '<th style="width:150px">المبلغ</th>' : '<th style="width:140px">مدين</th><th style="width:140px">دائن</th>'}<th style="width:40px"></th></tr></thead>
       <tbody></tbody>
-      <tfoot><tr><td></td><td>${!readOnly ? '<button class="btn sm" id="add-line" type="button">➕ سطر</button>' : ''}</td><td></td><td style="text-align:left"><b>المجموع</b></td>
+      <tfoot><tr><td></td><td>${!readOnly ? '<button class="btn sm" id="add-line" type="button">➕ سطر</button>' : ''}</td><td></td><td style="text-align:left" colspan="${1 + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}"><b>المجموع</b></td>
         ${isCash ? '<td><b id="t-amt" dir="ltr"></b></td>' : '<td><b id="t-dr" dir="ltr"></b></td><td><b id="t-cr" dir="ltr"></b></td>'}<td></td></tr>
-        ${!isCash ? '<tr><td></td><td></td><td></td><td style="text-align:left">الفرق</td><td colspan="2"><b id="t-diff" dir="ltr"></b></td><td></td></tr>' : ''}
-        <tr><td></td><td colspan="${isCash ? 5 : 6}" class="muted" id="t-words" style="font-size:13px"></td></tr></tfoot>
+        ${!isCash ? `<tr><td></td><td></td><td></td><td style="text-align:left" colspan="${1 + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}">الفرق</td><td colspan="2"><b id="t-diff" dir="ltr"></b></td><td></td></tr>` : ''}
+        <tr><td></td><td colspan="${(isCash ? 5 : 6) + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}" class="muted" id="t-words" style="font-size:13px"></td></tr></tfoot>
     </table></div>`,
     foot: `
       ${!readOnly ? `<button class="btn primary" data-save>💾 حفظ مسودة</button>` : ''}
       ${!readOnly && can(T.screen, 'post') ? `<button class="btn primary" data-savepost>✅ حفظ وترحيل</button>` : ''}
       ${entry?.status === 'posted' && can(T.screen, 'post') && !entry.reversal_of ? `<button class="btn" data-reverse>↩️ قيد عكسي</button>` : ''}
       ${entry && can(T.screen, 'print') ? `<button class="btn" data-print>🖨️ طباعة</button>` : ''}
+      ${entry ? `<button class="btn" data-attach>📎 مرفقات</button>` : ''}
+      ${entry && ['journal', 'receipt', 'payment'].includes(type) && can('journal_entries', 'add') ? `<button class="btn" data-recur>🔁 تكرار شهري</button>` : ''}
       ${entry?.status === 'draft' && can(T.screen, 'delete') ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>` : ''}
       <button class="btn" data-close>إغلاق</button>` });
-  m.el.querySelector('.modal').style.maxWidth = '1000px';
+  m.el.querySelector('.modal').style.maxWidth = ccs.length || curs.length ? '1320px' : '1000px';
   const tb = m.el.querySelector('#lines tbody');
 
   const drawRows = () => {
@@ -343,6 +352,10 @@ async function voucherEditor(type, entry, ctx) {
       <td><input list="acc-list" data-i="${i}" data-k="acc" value="${esc(r.acc)}" placeholder="رقم أو اسم الحساب…" ${ro} class="cell"></td>
       <td><input list="party-list" data-i="${i}" data-k="party" value="${esc(r.party || '')}" placeholder="اختياري" ${ro} class="cell"></td>
       <td><input data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro} class="cell"></td>
+      ${ccs.length ? `<td><select data-i="${i}" data-k="cc" class="cell" ${ro}><option value=""></option>${ccs.map(c => `<option value="${c.id}" ${c.id === r.cc ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></td>` : ''}
+      ${curs.length ? `<td><select data-i="${i}" data-k="cur" class="cell" ${ro}><option value="">دينار</option>${curs.map(c => `<option value="${esc(c.code)}" ${c.code === r.cur ? 'selected' : ''}>${esc(c.code)}</option>`).join('')}</select></td>
+        <td><input data-i="${i}" data-k="fxa" value="${r.fxa ?? ''}" inputmode="decimal" dir="ltr" class="cell n" ${ro || (r.cur ? '' : 'disabled')}></td>
+        <td><input data-i="${i}" data-k="fxr" value="${r.fxr ?? ''}" inputmode="decimal" dir="ltr" class="cell n" ${ro || (r.cur ? '' : 'disabled')}></td>` : ''}
       ${isCash ? `<td><input data-i="${i}" data-k="amount" value="${r.amount || ''}" inputmode="decimal" dir="ltr" ${ro} class="cell n"></td>`
                : `<td><input data-i="${i}" data-k="debit" value="${r.debit || ''}" inputmode="decimal" dir="ltr" ${ro} class="cell n"></td>
                   <td><input data-i="${i}" data-k="credit" value="${r.credit || ''}" inputmode="decimal" dir="ltr" ${ro} class="cell n"></td>`}
@@ -370,10 +383,17 @@ async function voucherEditor(type, entry, ctx) {
     r[t.dataset.k] = t.dataset.k === 'acc' || t.dataset.k === 'desc' ? t.value : t.value;
     if (t.dataset.k === 'debit' && num(t.value)) { r.credit = 0; const o = tb.querySelector(`[data-i="${t.dataset.i}"][data-k="credit"]`); if (o) o.value = ''; }
     if (t.dataset.k === 'credit' && num(t.value)) { r.debit = 0; const o = tb.querySelector(`[data-i="${t.dataset.i}"][data-k="debit"]`); if (o) o.value = ''; }
+    if ((t.dataset.k === 'fxa' || t.dataset.k === 'fxr') && r.cur) {   // المبلغ بالدينار = بالعملة × السعر
+      const v = Math.round(num(r.fxa) * num(r.fxr) * 1000) / 1000, i = t.dataset.i;
+      const k = isCash ? 'amount' : (num(r.credit) && !num(r.debit) ? 'credit' : 'debit');
+      r[k] = v; const o = tb.querySelector(`[data-i="${i}"][data-k="${k}"]`); if (o) o.value = v || '';
+    }
     totals();
   });
   tb.addEventListener('change', (ev) => {
     const t = ev.target;
+    if (t.dataset.k === 'cc') { rows[+t.dataset.i].cc = t.value; return; }
+    if (t.dataset.k === 'cur') { const r = rows[+t.dataset.i]; r.cur = t.value; if (t.value) { r.fxr = curs.find(c => c.code === t.value)?.rate || r.fxr; } else { r.fxa = ''; r.fxr = ''; } drawRows(); return; }
     if (t.dataset.k === 'party') {
       const p = resolveParty(parties, t.value), r = rows[+t.dataset.i];
       t.classList.toggle('bad', !!t.value && !p);
@@ -406,6 +426,7 @@ async function voucherEditor(type, entry, ctx) {
   };
   m.el.querySelector('#add-line')?.addEventListener('click', () => addLine());
 
+  const extra = (r) => ({ cost_center_id: r.cc || null, currency: r.cur || null, fx_rate: r.cur && num(r.fxr) ? num(r.fxr) : null, fx_amount: r.cur && num(r.fxa) ? num(r.fxa) : null });
   const save = async (post) => {
     const h = formData(m.el.querySelector('#v-form'));
     if (!h.entry_date) return toast('التاريخ مطلوب', 'err');
@@ -421,10 +442,10 @@ async function voucherEditor(type, entry, ctx) {
       const party_id = pt?.id || null;
       if (isCash) {
         if (!num(r.amount)) return toast(`السطر ${i + 1}: المبلغ مطلوب`, 'err');
-        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: type === 'payment' ? num(r.amount) : 0, credit: type === 'receipt' ? num(r.amount) : 0 });
+        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: type === 'payment' ? num(r.amount) : 0, credit: type === 'receipt' ? num(r.amount) : 0, ...extra(r) });
       } else {
         if (!num(r.debit) && !num(r.credit)) return toast(`السطر ${i + 1}: اكتب مبلغ مدين أو دائن`, 'err');
-        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: num(r.debit), credit: num(r.credit) });
+        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: num(r.debit), credit: num(r.credit), ...extra(r) });
       }
     }
     if (isCash) {
@@ -460,6 +481,8 @@ async function voucherEditor(type, entry, ctx) {
   };
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
   m.el.querySelector('[data-savepost]')?.addEventListener('click', () => save(true));
+  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('entry', entry.id, `${T.label} رقم ${entry.entry_no}`));
+  m.el.querySelector('[data-recur]')?.addEventListener('click', () => recurringDialog(entry));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (!(await confirmBox(`حذف ${T.label} رقم ${entry.entry_no}؟`))) return;
     const { error } = await sb.from('journal_entries').delete().eq('id', entry.id);

@@ -6,6 +6,7 @@ import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirm
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords } from './print.js';
+import { openAttachments } from './attach.js';
 
 export const INV = {
   sale:            { label: 'فاتورة بيع',   group: 'sales',     screen: 'sales_invoices',    partyType: 'customer', partyLabel: 'العميل' },
@@ -44,6 +45,8 @@ const resolveItem = (items, t) => { t = (t || '').trim(); if (!t) return null; c
 async function viewSettings(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
   const [accs, st] = await Promise.all([loadAccounts(), loadSettings()]);
+  await sb.rpc('ensure_payroll_settings', { p_company: S.company.id }).then(() => null, () => null);
+  Object.assign(st, (await sb.from('company_settings').select('*').eq('company_id', S.company.id).maybeSingle()).data || {});
   const editable = can('companies', 'edit');
   const leaves = leafAccounts(accs);
   const sel = (name, hint) => `<div class="field"><label>${hint}</label><select name="${name}" ${editable ? '' : 'disabled'}><option value="">— غير محدد —</option>
@@ -62,9 +65,20 @@ async function viewSettings(v, ctx) {
     <h3 style="margin:16px 0 6px">📦 طريقة قيد المخزون</h3>
     <label class="check"><input type="checkbox" name="perpetual_inventory" ${st.perpetual_inventory ? 'checked' : ''} ${editable ? '' : 'disabled'}> <b>جرد مستمر</b>: كلفة البضاعة المباعة بتنقيّد لحالها مع كل فاتورة بيع، والمشتريات بتروح لحساب المخزون</label>
     <p class="muted" style="font-size:13px;margin:4px 0 8px">إذا مش مأشّر (جرد دوري): المشتريات بتنقيّد مصروف، وقيمة المخزون آخر السنة بتاخذها من تقرير رصيد المخزون. الأفضل تختار الطريقة أول السنة وما تغيّرها بنصّها.</p>
-    <div class="grid cols-2">${sel('inventory_account_id', 'حساب المخزون')}${sel('cogs_account_id', 'حساب كلفة البضاعة المباعة (وفروقات الجرد)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
+    <div class="grid cols-2">${sel('inventory_account_id', 'حساب المخزون')}${sel('cogs_account_id', 'حساب كلفة البضاعة المباعة (وفروقات الجرد)')}</div>
+    <h3 style="margin:16px 0 6px">💵 الرواتب والضمان</h3>
+    <div class="grid cols-3">
+      <div class="field"><label>ضمان الموظف %</label><input name="ss_employee_rate" value="${st.ss_employee_rate ?? 7.5}" inputmode="decimal" dir="ltr" ${editable ? '' : 'disabled'}></div>
+      <div class="field"><label>ضمان المنشأة %</label><input name="ss_employer_rate" value="${st.ss_employer_rate ?? 14.25}" inputmode="decimal" dir="ltr" ${editable ? '' : 'disabled'}></div>
+      <div class="field"><label>سقف الأجر الخاضع (0 = بدون)</label><input name="ss_ceiling" value="${st.ss_ceiling ?? 0}" inputmode="decimal" dir="ltr" ${editable ? '' : 'disabled'}></div></div>
+    <div class="grid cols-2">${sel('salaries_account_id', 'مصروف الرواتب والأجور')}${sel('ss_expense_account_id', 'مصروف حصة المنشأة بالضمان')}
+      ${sel('ss_payable_account_id', 'أمانات الضمان الاجتماعي')}${sel('wht_payable_account_id', 'أمانات ضريبة الدخل')}
+      ${sel('salaries_payable_account_id', 'رواتب مستحقة (الصافي)')}${sel('advances_account_id', 'سلف وذمم الموظفين')}</div>
+    <h3 style="margin:16px 0 6px">🏢 الأصول الثابتة</h3>
+    <div class="grid cols-2">${sel('depreciation_account_id', 'مصروف الاستهلاك (الافتراضي)')}${sel('accum_dep_account_id', 'مجمع الاستهلاك (الافتراضي)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
-    const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
+    const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
+    ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
     const { error } = await sb.from('company_settings').upsert(d);
     if (error) return toast(arError(error), 'err');
     await log('تعديل', 'settings', S.company.id); toast('تم الحفظ', 'ok');
@@ -174,8 +188,10 @@ function invoiceList(group) {
 // ---------------------------------------------------------------------
 async function invoiceEditor(type, inv, ctx) {
   const T = INV[type];
-  const [accs, parties, items, st, whr] = await Promise.all([loadAccounts(), loadParties(), loadItems(), loadSettings(),
-    sb.from('warehouses').select('id,code,name,is_active').eq('company_id', S.company.id).order('code')]);
+  const [accs, parties, items, st, whr, ccr] = await Promise.all([loadAccounts(), loadParties(), loadItems(), loadSettings(),
+    sb.from('warehouses').select('id,code,name,is_active').eq('company_id', S.company.id).order('code'),
+    sb.from('cost_centers').select('id,code,name,is_active').eq('company_id', S.company.id).order('code')]);
+  const ccs = (ccr.data || []).filter(c => c.is_active || c.id === inv?.cost_center_id);
   const whs = (whr.data || []).filter(w => w.is_active || w.id === inv?.warehouse_id);
   let lines = [];
   if (inv) { const r = await sb.from('invoice_lines').select('*').eq('invoice_id', inv.id).order('line_no'); lines = r.data || []; }
@@ -202,6 +218,7 @@ async function invoiceEditor(type, inv, ctx) {
       <div class="field" id="pn-box"><label>الاسم (للنقدي بدون بطاقة)</label><input name="party_name" value="${esc(i0.party_name)}" ${ro}></div>
       <div class="field" id="cash-box"><label>الصندوق / البنك</label><select name="cash_account_id" ${ro}><option value="">— اختار —</option>${cashAccs.map(a => `<option value="${a.id}" ${a.id === i0.cash_account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>
       <div class="field"><label>${isSale ? 'رقم الطلب / المرجع' : 'رقم فاتورة المورد'}</label><input name="reference" value="${esc(i0.reference)}" ${ro}></div>
+      ${ccs.length ? `<div class="field"><label>مركز الكلفة</label><select name="cost_center_id" ${ro}><option value="">—</option>${ccs.map(c => `<option value="${c.id}" ${c.id === i0.cost_center_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : ''}
       ${whs.length > 1 ? `<div class="field"><label>المستودع</label><select name="warehouse_id" ${ro}>${whs.map(w => `<option value="${w.id}" ${w.id === (i0.warehouse_id || pre?.inv.warehouse_id) ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
       <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" name="prices_include_tax" ${i0.prices_include_tax ? 'checked' : ''} ${ro}> الأسعار شاملة الضريبة</label></div>
     </div></form>
@@ -217,6 +234,7 @@ async function invoiceEditor(type, inv, ctx) {
       ${inv?.status === 'posted' && can(T.screen, 'post') ? '<button class="btn danger" data-cancel>⛔ إلغاء الفاتورة</button>' : ''}
       ${inv?.status === 'posted' && !type.endsWith('return') && can(T.screen, 'add') ? `<button class="btn" data-return>↩️ ${type === 'sale' ? 'مرتجع بيع' : 'مرتجع شراء'} منها</button>` : ''}
       ${inv && can(T.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
+      ${inv ? '<button class="btn" data-attach>📎 مرفقات</button>' : ''}
       ${inv?.status === 'draft' && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '1100px';
@@ -284,7 +302,7 @@ async function invoiceEditor(type, inv, ctx) {
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
     const header = { inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
       party_name: h.payment_type === 'cash' ? (h.party_name || p?.name || null) : null, cash_account_id: h.payment_type === 'cash' ? h.cash_account_id : null,
-      reference: h.reference, prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}),
+      reference: h.reference, prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
       subtotal: r3(out.reduce((s, l) => s + l.subtotal, 0)), tax_total: r3(out.reduce((s, l) => s + l.tax_amount, 0)), discount_total: r3(out.reduce((s, l) => s + l.discount, 0)) };
     header.total = r3(header.subtotal + header.tax_total);
     if (p && isSale && type === 'sale' && p.credit_limit > 0 && h.payment_type === 'credit') {
@@ -324,6 +342,7 @@ async function invoiceEditor(type, inv, ctx) {
       .then(() => toast('عدّل الكميات المرتجعة، واحذف السطور اللي ما رجعت', ''));
   });
   m.el.querySelector('[data-print]')?.addEventListener('click', () => printInvoice(type, inv, lines, pById[inv.party_id], st));
+  m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('invoice', inv.id, `${T.label} رقم ${inv.inv_no}`));
 }
 let returnPrefill = null;
 
