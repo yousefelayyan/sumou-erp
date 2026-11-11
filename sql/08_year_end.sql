@@ -6,13 +6,13 @@
 
 alter table public.journal_entries drop constraint if exists journal_entries_entry_type_check;
 alter table public.journal_entries add constraint journal_entries_entry_type_check
-  check (entry_type in ('journal','receipt','payment','opening','invoice','closing','cheque','stock'));
+  check (entry_type in ('journal','receipt','payment','opening','invoice','closing','cheque','stock','payroll','depreciation'));
 
 create or replace function public.entry_screen(t text) returns text
 language sql immutable as $$
   select case t when 'journal' then 'journal_entries' when 'receipt' then 'receipt_vouchers'
                 when 'payment' then 'payment_vouchers' when 'opening' then 'opening_balances'
-                when 'invoice' then 'journal_entries' when 'closing' then 'journal_entries' when 'cheque' then 'journal_entries' when 'stock' then 'journal_entries' end;
+                when 'invoice' then 'journal_entries' when 'closing' then 'journal_entries' when 'cheque' then 'journal_entries' when 'stock' then 'journal_entries' when 'payroll' then 'journal_entries' when 'depreciation' then 'journal_entries' end;
 $$;
 
 -- منع إنشاء قيد إقفال من برّا (بس من دالة الإغلاق)
@@ -21,6 +21,7 @@ language plpgsql security definer set search_path = public as $$
 begin
   if new.entry_type = 'closing' and not public.is_internal() then raise exception 'قيد الإقفال بينعمل من زر «إغلاق السنة» بس'; end if;
   if new.entry_type = 'stock' and not public.is_internal() then raise exception 'قيد المخزون بينعمل من سند المخزون بس'; end if;
+  if new.entry_type in ('payroll','depreciation') and not public.is_internal() then raise exception 'هالقيد بينعمل من شاشته (الرواتب أو الأصول) بس'; end if;
   return new;
 end $$;
 drop trigger if exists entries_type_guard on public.journal_entries;

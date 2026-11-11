@@ -329,7 +329,8 @@ let returnPrefill = null;
 
 function printInvoice(type, inv, lines, party, st) {
   const T = INV[type], c = S.company;
-  const html = `
+  const stamp = inv.status === 'cancelled' ? '<h2 class="cancel-stamp">— فاتورة ملغاة —</h2>' : inv.status === 'draft' ? '<h3 class="draft-stamp">— مسودة غير مرحّلة —</h3>' : '';
+  const full = () => `
     <table class="meta"><tr><td><b>رقم الفاتورة:</b> ${inv.inv_no}</td><td><b>التاريخ:</b> ${fmtDate(inv.inv_date)}</td><td><b>طريقة الدفع:</b> ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
       <tr><td colspan="2"><b>${T.partyLabel}:</b> ${esc(party?.name || inv.party_name || '')} ${party?.tax_no ? ` — الرقم الضريبي: ${esc(party.tax_no)}` : ''}</td><td>${inv.due_date ? `<b>الاستحقاق:</b> ${fmtDate(inv.due_date)}` : ''}</td></tr>
       ${party?.address || party?.phone ? `<tr><td colspan="3">${esc([party.address, party.city, party.mobile || party.phone].filter(Boolean).join(' — '))}</td></tr>` : ''}
@@ -341,10 +342,18 @@ function printInvoice(type, inv, lines, party, st) {
       ${num(inv.discount_total) ? `<tr><td>الخصومات</td><td class="n">${fmtNum(inv.discount_total)}</td></tr>` : ''}
       <tr><td>ضريبة المبيعات</td><td class="n">${fmtNum(inv.tax_total)}</td></tr><tr class="tot"><td>الإجمالي (دينار)</td><td class="n">${fmtNum(inv.total)}</td></tr></table>
     <div class="amount-box">${amountToWords(inv.total)}</div>
-    ${inv.notes ? `<p><b>ملاحظات:</b> ${esc(inv.notes)}</p>` : ''}${st.invoice_footer ? `<p style="color:#555">${esc(st.invoice_footer)}</p>` : ''}
-    ${inv.status === 'cancelled' ? '<h2 style="color:#b91c1c;text-align:center">— فاتورة ملغاة —</h2>' : inv.status === 'draft' ? '<h3 style="color:#b45309;text-align:center">— مسودة غير مرحّلة —</h3>' : ''}
-    <div class="signs"><div>المستلِم</div><div>المحاسب</div></div>`;
-  printDoc(`${T.label}${c.subject_to_sales_tax && type === 'sale' ? ' ضريبية' : ''}`, html);
+    ${inv.notes ? `<p><b>ملاحظات:</b> ${esc(inv.notes)}</p>` : ''}${st.invoice_footer ? `<p style="color:#555">${esc(st.invoice_footer)}</p>` : ''}${stamp}`;
+  // نسخة الورق الحراري (80 ملم)
+  const slim = () => `
+    <table class="meta"><tr><td><b>رقم:</b> ${inv.inv_no} — ${fmtDate(inv.inv_date)} — ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
+      ${party?.name || inv.party_name ? `<tr><td><b>${T.partyLabel}:</b> ${esc(party?.name || inv.party_name)}</td></tr>` : ''}</table>
+    <table class="pt" style="margin-top:6px"><thead><tr><th>الصنف</th><th>كمية</th><th>المبلغ</th></tr></thead><tbody>
+      ${lines.map(l => `<tr><td>${esc(l.description || '')}<br><small>${fmtNum(l.unit_price)} × ${num(l.qty)}</small></td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="2">قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr><tr><td colspan="2">الضريبة</td><td class="n">${fmtNum(inv.tax_total)}</td></tr>
+      <tr class="tot"><td colspan="2">الإجمالي</td><td class="n">${fmtNum(inv.total)}</td></tr></tfoot></table>
+    ${st.invoice_footer ? `<p style="text-align:center">${esc(st.invoice_footer)}</p>` : ''}${stamp}`;
+  printDoc((cfg) => (type === 'sale' && cfg.invoice_title) ? cfg.invoice_title : `${T.label}${c.subject_to_sales_tax && type === 'sale' ? ' ضريبية' : ''}`,
+    (cfg, { thermal }) => thermal ? slim() : full(), { kind: 'invoice' });
 }
 
 // ---------------------------------------------------------------------

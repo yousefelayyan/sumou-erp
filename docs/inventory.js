@@ -205,7 +205,7 @@ async function docEditor(type, doc, whs, ctx) {
       ${doc.notes ? `<tr><td colspan="3"><b>ملاحظات:</b> ${esc(doc.notes)}</td></tr>` : ''}</table>
       <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الصنف</th><th>${isCount ? 'الفعلي' : 'الكمية'}</th>${isCount ? '<th>التسوية</th>' : ''}<th>الكلفة</th></tr></thead><tbody>
       ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itemLabel(byId[l.item_id]))}</td><td class="n">${fmtNum(isCount ? l.counted_qty : l.qty)}</td>${isCount ? `<td class="n">${fmtNum(l.qty)}</td>` : ''}<td class="n">${fmtNum(l.unit_cost)}</td></tr>`).join('')}</tbody></table>
-      <div class="signs"><div>أمين المستودع</div><div>المحاسب</div></div>`);
+`, { kind: 'stock' });
   });
 }
 

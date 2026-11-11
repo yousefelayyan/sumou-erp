@@ -154,7 +154,7 @@ async function viewPartyLedger(v) {
       <div class="field"><label>من تاريخ</label><input type="date" id="f-from" value="${S.fy.start_date}"></div>
       <div class="field"><label>إلى تاريخ</label><input type="date" id="f-to" value="${S.fy.end_date}"></div>
       <div class="field" style="justify-content:flex-end"><button class="btn primary" id="f-run">عرض التقرير</button></div>
-      <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px"><button class="btn" id="f-print">🖨️ طباعة</button><button class="btn" id="f-csv">⬇️ Excel</button></div>
+      <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px"><button class="btn" id="f-print">🖨️ طباعة</button><button class="btn" id="f-csv">⬇️ Excel</button><button class="btn" id="f-wa" style="background:#25d366;color:#fff;border-color:#25d366">💬 واتساب</button></div>
     </div><div id="out"><div class="empty">اختار عميل أو مورد واضغط «عرض التقرير»</div></div>`;
   let last = null;
   const run = async () => {
@@ -187,6 +187,19 @@ async function viewPartyLedger(v) {
   v.querySelector('#f-csv').onclick = () => { if (!last) return; let b = last.ob;
     downloadCSV(`كشف حساب ${last.p.name}.csv`, [['التاريخ', 'السند', 'البيان', 'المرجع', 'مدين', 'دائن', 'الرصيد'], [last.from, 'رصيد أول المدة', '', '', '', '', b.toFixed(3)]]
       .concat(last.mv.map(m => { b += num(m.debit) - num(m.credit); return [m.entry_date, `${ENTRY_TYPES[m.entry_type].label} ${m.entry_no}`, m.line_description || m.description || '', m.reference || '', num(m.debit).toFixed(3), num(m.credit).toFixed(3), b.toFixed(3)]; }))); };
+  v.querySelector('#f-wa').onclick = () => {
+    if (!last) return toast('اعرض الكشف أول', 'err');
+    const p = last.p; let b = last.ob, td = 0, tc = 0;
+    last.mv.forEach(m => { b += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit); });
+    const side = (x) => Math.abs(x) < 0.0005 ? '' : x > 0 ? (p.party_type === 'customer' ? ' مدين (مستحق عليكم)' : ' مدين') : (p.party_type === 'supplier' ? ' دائن (مستحق لكم)' : ' دائن');
+    const recent = last.mv.slice(-10).map(m => `▫️ ${fmtDate(m.entry_date)} — ${ENTRY_TYPES[m.entry_type].label} ${m.entry_no}: ${num(m.debit) ? fmtNum(m.debit) + ' مدين' : fmtNum(m.credit) + ' دائن'}`).join('\n');
+    const txt = `*${S.company.name}*\nكشف حساب: ${p.name}\nمن ${fmtDate(last.from)} إلى ${fmtDate(last.to)}\n\nرصيد أول المدة: ${fmtNum(Math.abs(last.ob))}\nمجموع المدين: ${fmtNum(td)}\nمجموع الدائن: ${fmtNum(tc)}\n*الرصيد النهائي: ${fmtNum(Math.abs(b))} دينار${side(b)}*`
+      + (recent ? `\n\nآخر الحركات:\n${recent}` : '') + `\n\nللاستفسار يرجى التواصل معنا. شكراً لكم.`;
+    let ph = String(p.mobile || p.phone || '').replace(/\D/g, '');
+    if (ph.startsWith('00')) ph = ph.slice(2); else if (ph.startsWith('0')) ph = '962' + ph.slice(1); else if (ph.length === 9 && ph.startsWith('7')) ph = '962' + ph;
+    window.open(`https://wa.me/${ph}?text=${encodeURIComponent(txt)}`, '_blank');
+    if (!ph) toast('ما في رقم موبايل للطرف — اختار الرقم من الواتساب', '');
+  };
   if (pre) run();
 }
 

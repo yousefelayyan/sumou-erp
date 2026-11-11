@@ -490,8 +490,7 @@ function printVoucher(type, e, lines, byId) {
     <table class="pt"><thead><tr><th>#</th><th>رقم الحساب</th><th>اسم الحساب</th><th>البيان</th>${isCash ? '<th>المبلغ</th>' : '<th>مدين</th><th>دائن</th>'}</tr></thead><tbody>
       ${body.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(byId[l.account_id]?.code)}</td><td>${esc(byId[l.account_id]?.name)}${l.party_id && S.parties ? ' — ' + esc(S.parties.find(p => p.id === l.party_id)?.name || '') : ''}</td><td>${esc(l.description || '')}</td>
         ${isCash ? `<td class="n">${fmtNum(num(l.debit) + num(l.credit))}</td>` : `<td class="n">${num(l.debit) ? fmtNum(l.debit) : ''}</td><td class="n">${num(l.credit) ? fmtNum(l.credit) : ''}</td>`}</tr>`).join('')}
-      </tbody><tfoot><tr><td colspan="4"><b>المجموع</b> — ${amountToWords(total)}</td>${isCash ? `<td class="n"><b>${fmtNum(total)}</b></td>` : `<td class="n"><b>${fmtNum(total)}</b></td><td class="n"><b>${fmtNum(lines.reduce((s, l) => s + num(l.credit), 0))}</b></td>`}</tr></tfoot></table>
-    <div class="signs"><div>المحاسب</div><div>المدير المالي</div><div>${type === 'receipt' ? 'المستلِم' : type === 'payment' ? 'المستلِم' : 'المدقق'}</div></div>`);
+      </tbody><tfoot><tr><td colspan="4"><b>المجموع</b> — ${amountToWords(total)}</td>${isCash ? `<td class="n"><b>${fmtNum(total)}</b></td>` : `<td class="n"><b>${fmtNum(total)}</b></td><td class="n"><b>${fmtNum(lines.reduce((s, l) => s + num(l.credit), 0))}</b></td>`}</tr></tfoot></table>`, { kind: type === 'receipt' ? 'receipt' : type === 'payment' ? 'payment' : 'journal' });
 }
 
 // ---------------------------------------------------------------------

@@ -1,47 +1,129 @@
 // =====================================================================
 //  السمو ERP — الطباعة والتفقيط
 // =====================================================================
-import { S, esc, fmtDateTime } from './core.js';
+import { S, sb, esc, fmtDateTime } from './core.js';
 
-// يفتح نافذة طباعة فيها ترويسة الشركة + المحتوى
-export function printDoc(title, html, { subtitle = '', landscape = false } = {}) {
-  const c = S.company || {};
-  const w = window.open('', '_blank');
-  if (!w) { alert('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهالموقع.'); return; }
-  w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
-  <style>
-    @page { size: A4 ${landscape ? 'landscape' : 'portrait'}; margin: 12mm; }
-    body { font-family: 'Tajawal', sans-serif; color: #111; font-size: 12.5px; margin: 0; }
-    .head { display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #5b2a86; padding-bottom: 10px; margin-bottom: 12px; }
-    .head img { max-height: 64px; max-width: 120px; }
-    .head .co { flex: 1 } .head .co h1 { margin: 0; font-size: 19px; color: #5b2a86 } .head .co div { color: #555; font-size: 12px }
-    .head .meta2 { text-align: left; font-size: 11px; color: #555 }
-    h2.title { text-align: center; margin: 6px 0 2px; font-size: 18px } .sub { text-align: center; color: #555; margin-bottom: 12px }
+// ---------------------------------------------------------------------
+//  إعدادات نماذج الطباعة لكل شركة (company_settings.print_settings)
+// ---------------------------------------------------------------------
+export const PRINT_DEFAULTS = {
+  template: 'classic',          // classic | modern | simple
+  color: '#5b2a86',
+  paper: 'A4',                  // A4 | A5
+  invoice_paper: 'A4',          // A4 | A5 | 80mm
+  font: 12.5,
+  watermark: true,
+  show_tax_numbers: true,
+  show_printed_by: true,
+  header_note: '',
+  footer_text: '',
+  invoice_title: '',
+  sig: {
+    invoice: 'المستلِم، المحاسب',
+    receipt: 'المحاسب، المدير المالي، المستلِم',
+    payment: 'المحاسب، المدير المالي، المستلِم',
+    journal: 'المحاسب، المدير المالي، المدقق',
+    cheque: 'المستلِم، المحاسب',
+    stock: 'أمين المستودع، المحاسب',
+    payroll: 'المحاسب، المدير العام',
+  },
+};
+export const SIG_KINDS = { invoice: 'الفواتير', receipt: 'سند القبض', payment: 'سند الصرف', journal: 'سند القيد', cheque: 'الشيكات', stock: 'سندات المخزون', payroll: 'الرواتب' };
+const cfgCache = {};
+export function mergePrint(ps) { const o = { ...PRINT_DEFAULTS, ...(ps || {}) }; o.sig = { ...PRINT_DEFAULTS.sig, ...(ps?.sig || {}) }; return o; }
+export async function loadPrintSettings(force = false) {
+  const id = S.company?.id; if (!id) return mergePrint();
+  if (!force && cfgCache[id]) return cfgCache[id];
+  const { data } = await sb.from('company_settings').select('print_settings').eq('company_id', id).maybeSingle();
+  return (cfgCache[id] = mergePrint(data?.print_settings));
+}
+export function clearPrintCache() { for (const k in cfgCache) delete cfgCache[k]; }
+
+function css(cfg, { landscape, thermal, paper }) {
+  const col = /^#[0-9a-f]{3,8}$/i.test(cfg.color) ? cfg.color : '#5b2a86';
+  const fs = thermal ? 10.5 : (paper === 'A5' ? Math.max(9.5, cfg.font - 2) : cfg.font);
+  const base = `
+    @page { size: ${thermal ? '80mm auto' : `${paper} ${landscape ? 'landscape' : 'portrait'}`}; margin: ${thermal ? '3mm' : paper === 'A5' ? '8mm' : '12mm'}; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { font-family: 'Tajawal', sans-serif; color: #111; font-size: ${fs}px; margin: 0; ${thermal ? 'width: 72mm;' : ''} }
+    .head { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; margin-bottom: 12px; }
+    .head img { max-height: ${thermal ? 46 : 64}px; max-width: 130px; object-fit: contain }
+    .head .co { flex: 1 } .head .co h1 { margin: 0; font-size: ${thermal ? 15 : 19}px } .head .co div { font-size: ${thermal ? 10 : 12}px }
+    .head .meta2 { text-align: left; font-size: 11px }
+    h2.title { text-align: center; margin: 6px 0 2px; font-size: ${thermal ? 14 : 18}px } .sub { text-align: center; color: #555; margin-bottom: 12px }
     table { width: 100%; border-collapse: collapse }
-    table.pt th, table.pt td { border: 1px solid #bbb; padding: 5px 7px; text-align: right }
-    table.pt th { background: #efe7f7 } table.pt tfoot td { background: #f6f6f6 }
-    table.pt tr.grp td { font-weight: 700; background: #f6f2fa } table.pt tr.tot td { font-weight: 800; background: #ece4f5 }
+    table.pt th, table.pt td { padding: ${thermal ? '3px 2px' : '5px 7px'}; text-align: right }
     .n { text-align: left !important; direction: ltr; white-space: nowrap; font-variant-numeric: tabular-nums }
-    table.meta td { padding: 5px 4px; border-bottom: 1px dashed #ccc }
-    .amount-box { border: 2px solid #5b2a86; border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: 15px }
+    table.meta td { padding: 4px; border-bottom: 1px dashed #ccc }
+    .amount-box { border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: ${thermal ? 12 : 15}px }
     .amount-box span { font-size: 13px; color: #333 }
-    .signs { display: flex; justify-content: space-around; margin-top: 50px } .signs div { border-top: 1px solid #333; padding-top: 6px; width: 160px; text-align: center }
+    .signs { display: flex; justify-content: space-around; gap: 10px; margin-top: 50px; page-break-inside: avoid } .signs div { border-top: 1px solid #333; padding-top: 6px; width: 160px; text-align: center }
     .wm { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: -1 }
-    .wm div { transform: rotate(-24deg); font-size: 64px; font-weight: 800; color: #5b2a86; opacity: .06; text-align: center }
-    .foot { margin-top: 16px; font-size: 10.5px; color: #777; display: flex; justify-content: space-between; border-top: 1px solid #ddd; padding-top: 6px }
-    h3.sec { margin: 16px 0 6px; font-size: 14px; color: #5b2a86 }
-  </style></head><body>
-  <div class="wm"><div>${esc(c.name || '')}<br>${esc(S.fy ? (S.fy.name || S.fy.code) : '')}</div></div>
+    .wm div { transform: rotate(-24deg); font-size: 64px; font-weight: 800; color: ${col}; opacity: .06; text-align: center }
+    .foot { margin-top: 16px; font-size: 10.5px; color: #777; display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid #ddd; padding-top: 6px; flex-wrap: wrap }
+    .note-top { text-align: center; font-size: 12px; margin-top: -6px; margin-bottom: 8px; color: #444 }
+    .foot-text { text-align: center; margin-top: 12px; font-size: 12px; color: #333; white-space: pre-line }
+    h3.sec { margin: 16px 0 6px; font-size: 14px; color: ${col} }
+    .draft-stamp { color: #b45309; text-align: center } .cancel-stamp { color: #b91c1c; text-align: center }
+    @media screen { body { padding: 16px; max-width: ${thermal ? '80mm' : paper === 'A5' ? '148mm' : landscape ? '297mm' : '210mm'}; margin: 0 auto; background: #fff } html { background: #eee } }`;
+  const t = {
+    classic: `
+    .head { border-bottom: 3px solid ${col} } .head .co h1 { color: ${col} } .head .co div, .head .meta2 { color: #555 }
+    table.pt th, table.pt td { border: 1px solid #bbb } table.pt th { background: ${col}1f } table.pt tfoot td { background: #f6f6f6 }
+    table.pt tr.grp td { font-weight: 700; background: ${col}0f } table.pt tr.tot td { font-weight: 800; background: ${col}1a }
+    .amount-box { border: 2px solid ${col} }`,
+    modern: `
+    .head { background: ${col}; color: #fff; border-radius: 12px; padding: 14px 16px } .head .co h1 { color: #fff } .head .co div, .head .meta2 { color: #fff; opacity: .9 }
+    .head img { background: #fff; border-radius: 8px; padding: 4px }
+    h2.title { color: ${col} }
+    table.pt { border-radius: 10px; overflow: hidden } table.pt th { background: ${col}; color: #fff; border: 0 } table.pt td { border: 0; border-bottom: 1px solid #e5e5e5 }
+    table.pt tbody tr:nth-child(even) td { background: #fafafa } table.pt tfoot td { background: ${col}14; font-weight: 700 }
+    table.pt tr.grp td { font-weight: 700; background: ${col}0f } table.pt tr.tot td { font-weight: 800; background: ${col}22 }
+    .amount-box { background: ${col}12; border-right: 5px solid ${col} }`,
+    simple: `
+    .head { border-bottom: 1.5px solid #000 } .head .co h1 { color: #000 } .head .co div, .head .meta2 { color: #222 }
+    table.pt th, table.pt td { border-bottom: 1px solid #999 } table.pt th { border-bottom: 1.5px solid #000; font-weight: 800 }
+    table.pt tr.tot td, table.pt tfoot td { font-weight: 800; border-top: 1.5px solid #000 }
+    .amount-box { border: 1px solid #000 } .wm div { color: #000 }`,
+  };
+  const th = thermal ? `
+    .head { flex-direction: column; text-align: center; gap: 4px; border-radius: 0 } .head .meta2 { display: none }
+    .signs { margin-top: 28px } .signs div { width: auto; flex: 1; font-size: 10px }
+    table.meta td { display: block; border: 0; padding: 1px 0 } .foot { font-size: 9px }` : '';
+  return base + (t[cfg.template] || t.classic) + th;
+}
+
+// يفتح نافذة طباعة فيها ترويسة الشركة + المحتوى.
+// html ممكن يكون نص أو دالة (cfg, {thermal}) => نص. kind بيحدد التواقيع وحجم الورق (invoice بياخذ ورق الفواتير).
+export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null } = {}) {
+  const w = preview || window.open('', '_blank');
+  if (!w) { alert('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهالموقع.'); return; }
+  if (!preview) { w.document.write('<p dir="rtl" style="font-family:sans-serif;padding:20px">جاري تحضير الطباعة…</p>'); }
+  (given ? Promise.resolve(given) : loadPrintSettings()).then(cfg => {
+    const c = S.company || {};
+    const paper = kind === 'invoice' ? cfg.invoice_paper : cfg.paper;
+    const thermal = paper === '80mm';
+    const body = typeof html === 'function' ? html(cfg, { thermal }) : html;
+    if (typeof title === 'function') title = title(cfg);
+    const sigs = kind && cfg.sig[kind] ? String(cfg.sig[kind]).split(/[،,]/).map(x => x.trim()).filter(Boolean) : [];
+    const fy = S.fy ? (S.fy.name || S.fy.code) : '';
+    const doc = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>${css(cfg, { landscape, thermal, paper: paper === 'A5' ? 'A5' : 'A4' })}</style></head><body>
+  ${cfg.watermark && !thermal ? `<div class="wm"><div>${esc(c.name || '')}<br>${esc(fy)}</div></div>` : ''}
   <div class="head">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}
-    <div class="co"><h1>${esc(c.name || '')}</h1><div>${esc([c.address, c.city].filter(Boolean).join(' - '))} ${c.phone ? ' | هاتف: ' + esc(c.phone) : ''}</div>
-      <div>${c.income_tax_no ? 'الرقم الضريبي: ' + esc(c.income_tax_no) : ''} ${c.sales_tax_no ? ' | رقم ضريبة المبيعات: ' + esc(c.sales_tax_no) : ''}</div></div>
-    <div class="meta2">${esc(S.fy ? (S.fy.name || S.fy.code) : '')}</div></div>
+    <div class="co"><h1>${esc(c.name || '')}</h1><div>${esc([c.address, c.city].filter(Boolean).join(' - '))}${c.phone ? ' | هاتف: ' + esc(c.phone) : ''}</div>
+      ${cfg.show_tax_numbers && (c.income_tax_no || c.sales_tax_no) ? `<div>${c.income_tax_no ? 'الرقم الضريبي: ' + esc(c.income_tax_no) : ''}${c.income_tax_no && c.sales_tax_no ? ' | ' : ''}${c.sales_tax_no ? 'رقم ضريبة المبيعات: ' + esc(c.sales_tax_no) : ''}</div>` : ''}</div>
+    <div class="meta2">${esc(fy)}</div></div>
+  ${cfg.header_note ? `<div class="note-top">${esc(cfg.header_note)}</div>` : ''}
   <h2 class="title">${esc(title)}</h2>${subtitle ? `<div class="sub">${esc(subtitle)}</div>` : ''}
-  ${html}
-  <div class="foot"><span>طُبع بواسطة: ${esc(S.profile?.full_name || S.profile?.email || '')}</span><span>${fmtDateTime(new Date())}</span><span>السمو ERP</span></div>
-  <script>window.onload = () => setTimeout(() => window.print(), 400);<\/script></body></html>`);
-  w.document.close();
+  ${body}
+  ${sigs.length ? `<div class="signs">${sigs.map(x => `<div>${esc(x)}</div>`).join('')}</div>` : ''}
+  ${cfg.footer_text ? `<div class="foot-text">${esc(cfg.footer_text)}</div>` : ''}
+  <div class="foot">${cfg.show_printed_by ? `<span>طُبع بواسطة: ${esc(S.profile?.full_name || S.profile?.email || '')}</span>` : '<span></span>'}<span>${fmtDateTime(new Date())}</span></div>
+  ${preview ? '' : '<script>window.onload = () => setTimeout(() => window.print(), 450);<\/script>'}</body></html>`;
+    w.document.open(); w.document.write(doc); w.document.close();
+  }).catch(e => { w.document.body.innerHTML = '<p dir="rtl">ما قدرت أحضّر الطباعة: ' + esc(e.message) + '</p>'; });
 }
 
 // ---------------------------------------------------------------------

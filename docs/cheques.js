@@ -4,7 +4,7 @@
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
-import { printDoc } from './print.js';
+import { printDoc, amountToWords } from './print.js';
 
 const ST = {
   portfolio: ['بالمحفظة', 'warn'], collected: ['محصّل', 'ok'], returned: ['راجع', 'bad'],
@@ -91,7 +91,15 @@ async function viewCheques(v, ctx) {
     if (h) {
       const { data: ev } = await sb.from('cheque_events').select('*').eq('cheque_id', h.dataset.hist).order('created_at');
       return void modal({ title: 'سجل الشيك', size: 'sm', body: `<table class="t">${(ev || []).map(x => `<tr><td>${fmtDate(x.event_date)}</td><td>${esc(x.action)}</td><td class="muted">${esc(x.note || '')}</td></tr>`).join('') || '<tr><td class="empty">ما في حركات</td></tr>'}</table>`,
-        foot: '<button class="btn" data-close>إغلاق</button>' });
+        foot: `${can('cheques', 'print') ? '<button class="btn" data-pr>🖨️ طباعة إشعار</button>' : ''}<button class="btn" data-close>إغلاق</button>` }).el.querySelector('[data-pr]')?.addEventListener('click', () => {
+          const c = data.find(x => x.id === h.dataset.hist);
+          printDoc(`${dir === 'in' ? 'إشعار استلام شيك' : 'إشعار تسليم شيك'} رقم ${c.cheque_no}`, `<table class="meta">
+            <tr><td><b>${dir === 'in' ? 'استلمنا من' : 'سلّمنا إلى'}:</b> ${esc(pName[c.party_id] || c.drawer_name || '')}</td><td><b>تاريخ الاستلام:</b> ${fmtDate(c.issue_date || c.created_at)}</td></tr>
+            <tr><td><b>رقم الشيك:</b> ${esc(c.cheque_no)}</td><td><b>تاريخ الاستحقاق:</b> ${fmtDate(c.due_date)}</td></tr>
+            <tr><td><b>البنك:</b> ${esc(c.bank_name || '')}</td><td><b>الحالة:</b> ${esc(ST[c.status]?.[0] || c.status)}</td></tr>
+            ${c.notes ? `<tr><td colspan="2"><b>ملاحظات:</b> ${esc(c.notes)}</td></tr>` : ''}</table>
+            <div class="amount-box">مبلغ وقدره: <b>${fmtNum(c.amount)}</b> دينار<br><span>${amountToWords(c.amount)}</span></div>`, { kind: 'cheque' });
+        });
     }
     if (!b) return;
     const c = data.find(x => x.id === b.dataset.id), act = b.dataset.act;
