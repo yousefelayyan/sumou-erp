@@ -109,6 +109,7 @@ const DEFAULTS = {
     { id: 'erp',  g: 'برامجي', ic: '🧮', name: 'السمو ERP', desc: 'البرنامج المحاسبي للمكتب', url: 'https://yousefelayyan.github.io/sumou-erp/' },
     { id: 'jcpa', g: 'برامجي', ic: '🎓', name: 'منصة المحاسب القانوني', desc: 'JCPA', url: 'https://alsumou-jcpa.pages.dev' },
     { id: 'fms',  g: 'برامجي', ic: '🏛️', name: 'الإدارة المالية للجامعة', desc: 'الرسوم والتحصيل', url: 'https://university-fms.vercel.app' },
+    { id: 'pdf',  g: 'برامجي', ic: '📕', name: 'السمو PDF', desc: 'قراءة وكتابة على الملفات', url: 'https://yousefelayyan.github.io/sumou-erp/pdf/' },
     { id: 'att',  g: 'برامجي', ic: '🗓️', name: 'الحضور والغياب', desc: 'طلاب الكلية', url: 'https://yousefelayyan.github.io/attendance/' },
     { id: 'zs',   g: 'زوز شوب', ic: '🛍️', name: 'مبيعات زوز شوب', desc: '', url: '' },
     { id: 'zo',   g: 'زوز شوب', ic: '📦', name: 'طلبات زوز شوب', desc: '', url: '' },
@@ -124,12 +125,14 @@ const DEFAULTS = {
 };
 const EMOJIS = ['🧮','🎓','🏛️','🗓️','🛍️','📦','📣','▶️','💬','📍','🧾','🛡️','🗄️','📊','💼','🏦','📚','📝','📁','🛒','🧸','📸','📧','📅','⚙️','🔗','🌐','💳','🏢','👥'];
 const KEY = 'my-apps.v1';
+// إذا المستخدم عدّل القائمة قبل ما ننضاف برامج جديدة، بنضيفها له
+const addNew = (d) => { for (const a of DEFAULTS.apps) if (!d.apps.some(x => x.id === a.id) && !(d.removed || []).includes(a.id)) d.apps.push({ ...a }); return d; };
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let data = load(), editing = false, cur = null, pickedIc = '🔗';
 
 function load() {
-  try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && Array.isArray(s.apps)) return s; } catch (e) {}
+  try { const s = JSON.parse(localStorage.getItem(KEY) || 'null'); if (s && Array.isArray(s.apps)) return addNew(s); } catch (e) {}
   return JSON.parse(JSON.stringify(DEFAULTS));
 }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {} }
@@ -184,7 +187,7 @@ $('#e-save').onclick = () => {
   if (cur) Object.assign(cur, v); else data.apps.push({ id: 'a' + Date.now(), ...v });
   save(); closeEditor(); render(); toast('انحفظ ✓');
 };
-$('#e-del').onclick = () => { if (!cur) return; data.apps = data.apps.filter(x => x !== cur); save(); closeEditor(); render(); toast('انحذف'); };
+$('#e-del').onclick = () => { if (!cur) return; data.removed = [...(data.removed || []), cur.id]; data.apps = data.apps.filter(x => x !== cur); save(); closeEditor(); render(); toast('انحذف'); };
 $('#e-cancel').onclick = closeEditor;
 $('#ov').onclick = (e) => { if (e.target.id === 'ov') closeEditor(); };
 

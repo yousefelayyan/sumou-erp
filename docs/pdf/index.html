@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>السمو PDF</title>
+<meta name="theme-color" content="#7a1f2b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="السمو PDF">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- الشاشة الأولى -->
+<section id="home">
+  <div class="home-card">
+    <div class="logo"><img src="icon-192.png" alt=""><div><h1>السمو PDF</h1><p>قارئ ومحرّر ملفات PDF — مجاني وبيشتغل بدون إنترنت</p></div></div>
+    <label class="big-open" id="drop">
+      <input type="file" id="open-file" accept="application/pdf,.pdf" hidden>
+      <span class="ic">📂</span><b>افتح ملف PDF</b><small>أو اسحب الملف وأفلته هون</small>
+    </label>
+    <button class="btn wide" id="new-blank">📝 دفتر جديد فاضي (للشرح والكتابة)</button>
+    <h3>آخر الملفات</h3>
+    <div id="recent"><p class="muted">ما في ملفات لسا</p></div>
+    <p class="muted tiny">ملفاتك بتضل على جهازك بس، وما بتنرفع لأي مكان.</p>
+  </div>
+</section>
+
+<!-- القارئ -->
+<section id="viewer" hidden>
+  <header id="bar">
+    <div class="grp">
+      <button class="ib" id="b-home" title="الملفات">🏠</button>
+      <button class="ib" id="b-side" title="الصفحات المصغّرة">▦</button>
+      <span id="doc-name" class="doc-name"></span>
+    </div>
+    <div class="grp tools" id="tools">
+      <button class="ib tool" data-tool="hand" title="تحريك (ومسك النص)">✋</button>
+      <button class="ib tool" data-tool="select" title="تحديد وتحريك الإضافات">⬚</button>
+      <button class="ib tool" data-tool="pen" title="قلم">✏️</button>
+      <button class="ib tool" data-tool="hl" title="قلم تظليل">🖍️</button>
+      <button class="ib tool" data-tool="eraser" title="ممحاة">🧽</button>
+      <button class="ib tool" data-tool="shape" title="أشكال" id="b-shape">⬭</button>
+      <button class="ib tool" data-tool="text" title="نص">T</button>
+      <button class="ib tool" data-tool="sign" title="توقيع">✍️</button>
+      <button class="ib" id="b-image" title="صورة">🖼️</button>
+      <span class="sep"></span>
+      <input type="color" id="color" value="#d0021b" title="اللون">
+      <select id="width" title="السماكة"><option value="1">رفيع</option><option value="2" selected>وسط</option><option value="4">عريض</option><option value="7">عريض جداً</option></select>
+      <button class="ib" id="b-undo" title="تراجع">↶</button>
+      <button class="ib" id="b-redo" title="إعادة">↷</button>
+    </div>
+    <div class="grp">
+      <button class="ib" id="b-zout" title="تصغير">−</button>
+      <button class="zoom" id="b-zoom" title="ملء العرض">100%</button>
+      <button class="ib" id="b-zin" title="تكبير">+</button>
+      <span class="pg"><input id="pg-in" inputmode="numeric"> / <span id="pg-n">0</span></span>
+      <button class="ib" id="b-search" title="بحث">🔍</button>
+      <button class="ib" id="b-present" title="عرض بشاشة كاملة">📽️</button>
+      <button class="ib" id="b-more" title="المزيد">⋯</button>
+      <button class="btn pri" id="b-save" title="حفظ ملف PDF">💾 حفظ</button>
+    </div>
+  </header>
+  <div id="subbar" hidden></div>
+  <div id="body">
+    <aside id="side" hidden>
+      <div class="side-head"><b>الصفحات</b><span class="muted" id="side-n"></span></div>
+      <div id="thumbs"></div>
+    </aside>
+    <main id="pages"></main>
+  </div>
+  <div id="present-nav" hidden><button class="ib" id="pr-prev">›</button><span id="pr-n"></span><button class="ib" id="pr-next">‹</button><button class="ib" id="pr-exit">✕</button></div>
+</section>
+
+<div id="menu" class="pop" hidden></div>
+<div id="modal-root"></div>
+<div id="toast"></div>
+<input type="file" id="img-file" accept="image/*" hidden>
+<input type="file" id="merge-file" accept="application/pdf,.pdf" hidden multiple>
+<script type="module" src="app.js"></script>
+</body>
+</html>
