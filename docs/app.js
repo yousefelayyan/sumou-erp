@@ -343,7 +343,7 @@ function companyFormHTML(c = {}, readOnly = false) {
     </div>
     <div class="tab-panel active" data-tab="general">
       <div class="grid cols-2">
-        <div class="field"><label>رمز الشركة *</label><input name="code" required value="${esc(c.code)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>رمز الشركة *</label><input name="code" required value="${esc(c.code)}" ${ro} dir="ltr"><span class="hint">تلقائي بالترتيب (01، 02، 03…)، وبتقدر تكتب الرمز بإيدك</span></div>
         <div class="field"><label>اسم الشركة *</label><input name="name" required value="${esc(c.name)}" ${ro}></div>
         <div class="field"><label>الاسم القانوني</label><input name="legal_name" value="${esc(c.legal_name)}" ${ro}></div>
         <div class="field"><label>الاسم التجاري</label><input name="trade_name" value="${esc(c.trade_name)}" ${ro}></div>
@@ -449,12 +449,21 @@ async function viewCompany(v, ctx, editing = false) {
 }
 
 // نموذج شركة جديدة أو تعديل شركة (نافذة)
-function openCompanyForm(c) {
-  const m = modal({ title: c ? 'تعديل شركة: ' + c.name : 'شركة جديدة', body: companyFormHTML(c || {}),
+// رمز الشركة الجاي: تلقائي بخانتين 01، 02، 03… (وبتقدر تكتبه يدوي)
+async function nextCompanyCode() {
+  const { data } = await sb.from('companies').select('code');
+  const nums = (data || []).map(x => String(x.code || '').trim()).filter(x => /^\d+$/.test(x)).map(Number);
+  return String((nums.length ? Math.max(...nums) : 0) + 1).padStart(2, '0');
+}
+
+async function openCompanyForm(c) {
+  if (!c) c = { code: await nextCompanyCode(), is_active: true, currency: 'JOD' };
+  const isNew = !c.id;
+  const m = modal({ title: !isNew ? 'تعديل شركة: ' + c.name : 'شركة جديدة', body: companyFormHTML(c),
     foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
   setupTabs(m.el); wireLogo(m.el);
   m.el.querySelector('[data-save]').onclick = async () => {
-    const saved = await saveCompany(m.el.querySelector('#company-form'), c?.id);
+    const saved = await saveCompany(m.el.querySelector('#company-form'), c.id);
     if (saved) { m.close(); await loadContext(); if (!S.company) S.company = saved; renderShell(); route_(); }
   };
 }
