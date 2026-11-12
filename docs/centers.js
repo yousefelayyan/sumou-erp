@@ -45,7 +45,7 @@ function statementHTML(open, rows, from, to) {
   let b = open, td = 0, tc = 0;
   const body = rows.map(m => { b += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit);
     return `<tr><td>${fmtDate(m.entry_date)}</td><td>${esc((ENTRY_TYPES[m.entry_type]?.label || '') + ' ' + docNo(m))}</td>
-      <td>${esc(m.line_description || m.description || '')}</td><td>${esc(m.reference || '')}</td>
+      <td>${esc(m.line_description || m.description || '')}${m.draft ? ' <span class="badge warn">غير مرحّل</span>' : ''}</td><td>${esc(m.reference || '')}</td>
       <td class="n">${amt(num(m.debit))}</td><td class="n">${amt(num(m.credit))}</td><td class="n">${bal(b)}</td></tr>`; }).join('');
   return `<table class="t rep stmt"><thead><tr><th>التاريخ</th><th>السند</th><th>البيان</th><th>المرجع</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
     <tbody><tr class="grp"><td>${fmtDate(from)}</td><td colspan="5">رصيد أول المدة</td><td class="n">${bal(open)}</td></tr>
@@ -66,13 +66,21 @@ function summaryHTML(open, rows) {
 }
 // «احتساب»: اختيار أنواع السندات اللي بتدخل بالملخص والحركات، ومع أو بدون الرصيد المدور
 const STMT = new WeakMap();
-function tabbed(open, rows, from, to) {
+// السندات غير المرحّلة لحساب أو طرف (للخيار «غير مرحّل / الجميع»)
+async function draftRows(col, id, to) {
+  const { data, error } = await sb.from('journal_lines').select('debit,credit,description,journal_entries!inner(company_id,fiscal_year_id,status,entry_date,entry_type,entry_no,doc_code,description,reference)')
+    .eq(col, id).eq('journal_entries.company_id', S.company.id).eq('journal_entries.fiscal_year_id', S.fy.id).eq('journal_entries.status', 'draft').lte('journal_entries.entry_date', to).limit(5000);
+  if (error) throw error;
+  return (data || []).map(l => ({ ...l.journal_entries, line_description: l.description, debit: l.debit, credit: l.credit, draft: true })).sort((a, b) => a.entry_date.localeCompare(b.entry_date));
+}
+function tabbed(open, rows, from, to, drafts = null) {
   const kinds = [...new Set(rows.map(m => m.entry_type || 'journal'))];
   const html = `<div class="stmt-tabs"><button type="button" class="btn sm primary" data-v="sum">📋 ملخص</button><button type="button" class="btn sm" data-v="mov">📄 الحركات</button>
+      ${drafts ? '<select data-stat style="width:auto;padding:4px 8px"><option value="posted">مرحّل</option><option value="draft">غير مرحّل</option><option value="all">الجميع</option></select>' : ''}
       <span class="stmt-calc"><b>احتساب:</b> <label><input type="checkbox" data-open checked> الرصيد المدور</label>
       ${kinds.map(k => `<label><input type="checkbox" data-k="${esc(k)}" checked> ${esc(ENTRY_TYPES[k]?.label || k)}</label>`).join('')}</span></div>
     <div data-p="sum">${summaryHTML(open, rows)}</div><div data-p="mov" hidden>${statementHTML(open, rows, from, to)}</div>`;
-  tabbed.last = { open, rows, from, to };
+  tabbed.last = { open, rows, from, to, drafts, base: { open, rows } };
   return html;
 }
 function wireTabs(box) {
@@ -81,7 +89,17 @@ function wireTabs(box) {
   t.onclick = (e) => { e.stopPropagation(); const b = e.target.closest('[data-v]'); if (!b) return;
     t.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('primary', x === b));
     box.querySelectorAll('[data-p]').forEach(p => p.hidden = p.dataset.p !== b.dataset.v); };
-  t.onchange = () => {
+  t.onchange = async (e) => {
+    if (e.target.matches('[data-stat]')) {
+      const mode = e.target.value; let dr = [];
+      if (mode !== 'posted') { try { dr = await st.drafts(); } catch (err) { return toast(arError(err), 'err'); } }
+      const dOpen = dr.filter(m => m.entry_date < st.from).reduce((s, m) => s + num(m.debit) - num(m.credit), 0);
+      const dIn = dr.filter(m => m.entry_date >= st.from);
+      st.open = mode === 'posted' ? st.base.open : mode === 'draft' ? dOpen : st.base.open + dOpen;
+      st.rows = mode === 'posted' ? st.base.rows : mode === 'draft' ? dIn : [...st.base.rows, ...dIn].sort((a, b) => a.entry_date.localeCompare(b.entry_date));
+      const kinds = [...new Set(st.rows.map(m => m.entry_type || 'journal'))];
+      t.querySelector('.stmt-calc').innerHTML = `<b>احتساب:</b> <label><input type="checkbox" data-open checked> الرصيد المدور</label>` + kinds.map(k => `<label><input type="checkbox" data-k="${esc(k)}" checked> ${esc(ENTRY_TYPES[k]?.label || k)}</label>`).join('');
+    }
     const on = new Set([...t.querySelectorAll('[data-k]')].filter(x => x.checked).map(x => x.dataset.k));
     const open = t.querySelector('[data-open]').checked ? st.open : 0;
     const rows = st.rows.filter(m => on.has(m.entry_type || 'journal'));
@@ -148,7 +166,7 @@ async function viewAccountCenter(v) {
         sb.rpc('rep_balance_before', { p_company: S.company.id, p_fy: S.fy.id, p_account: id, p_date: from }),
         sb.rpc('rep_ledger', { p_company: S.company.id, p_fy: S.fy.id, p_account: id, p_from: from, p_to: to })]);
       if (ob.error || mv.error) throw (ob.error || mv.error);
-      return `<div class="stmt-head"><b>كشف حساب: ${esc(byId[id].code)} — ${esc(byId[id].name)}</b></div>` + tabbed(num(ob.data), mv.data || [], from, to);
+      return `<div class="stmt-head"><b>كشف حساب: ${esc(byId[id].code)} — ${esc(byId[id].name)}</b></div>` + tabbed(num(ob.data), mv.data || [], from, to, () => draftRows('account_id', id, to));
     });
   });
   f('csv').onclick = () => downloadCSV('الأستاذ العام.csv', [['الرمز', 'الحساب', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة']].concat(out));
@@ -211,7 +229,7 @@ async function viewPartyCenter(v) {
         sb.rpc('rep_party_ledger', { p_company: S.company.id, p_fy: S.fy.id, p_party: p.id, p_from: from, p_to: to })]);
       if (ob.error || mv.error) throw (ob.error || mv.error);
       return `<div class="stmt-head"><b>كشف حساب: ${esc(p.code)} — ${esc(p.name)}</b>${num(p.credit_limit) ? ` <span class="muted">سقف الائتمان: ${fmtNum(p.credit_limit)}</span>` : ''}
-        <a class="btn sm" href="#/rep-party" style="margin-inline-start:auto">كشف الحساب الكامل (طباعة وواتساب)</a></div>` + tabbed(num(ob.data), mv.data || [], from, to);
+        <a class="btn sm" href="#/rep-party" style="margin-inline-start:auto">كشف الحساب الكامل (طباعة وواتساب)</a></div>` + tabbed(num(ob.data), mv.data || [], from, to, () => draftRows('party_id', p.id, to));
     });
   });
   f('csv').onclick = () => downloadCSV(`أستاذ مساعد ${P.plural}.csv`, [['الرمز', 'الاسم', 'الفئة', 'الهاتف', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة', 'آخر حركة']].concat(out));

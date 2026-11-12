@@ -4,7 +4,7 @@
 // =====================================================================
 import { attachAudit } from './audit.js';
 import { deptField, deptValue } from './departments.js';
-import { loadLookups, pmOptions } from './lookups.js';
+import { loadLookups, pmOptions, repOptions, hasReps } from './lookups.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -289,6 +289,7 @@ async function invoiceEditor(type, inv, ctx) {
       <div class="field"><label>${isSale ? 'رقم الطلب / المرجع' : 'رقم فاتورة المورد'}</label><input name="reference" value="${esc(i0.reference)}" ${ro}></div>
       ${ccs.length ? `<div class="field"><label>مركز الكلفة</label><select name="cost_center_id" ${ro}><option value="">—</option>${ccs.map(c => `<option value="${c.id}" ${c.id === i0.cost_center_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : ''}
       ${dept}
+      ${isSale && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id" ${ro}><option value="">— مندوب العميل —</option>${repOptions(i0.sales_rep_id)}</select></div>` : ''}
       ${whs.length > 1 ? `<div class="field"><label>المستودع</label><select name="warehouse_id" ${ro}>${whs.map(w => `<option value="${w.id}" ${w.id === (i0.warehouse_id || pre?.inv.warehouse_id) ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
       <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" name="prices_include_tax" ${i0.prices_include_tax ? 'checked' : ''} ${ro}> الأسعار شاملة الضريبة</label></div>
     </div></form>
@@ -374,7 +375,7 @@ async function invoiceEditor(type, inv, ctx) {
     if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم الفاتورة (رقم صحيح أكبر من صفر)', 'err');
     const header = { ...(mn.value ? { inv_no: mn.value } : {}), inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
       party_name: h.payment_type === 'cash' ? (h.party_name || p?.name || null) : null, cash_account_id: h.payment_type === 'cash' ? h.cash_account_id : null,
-      reference: h.reference, prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
+      reference: h.reference, prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
       subtotal: r3(out.reduce((s, l) => s + l.subtotal, 0)), tax_total: r3(out.reduce((s, l) => s + l.tax_amount, 0)), discount_total: r3(out.reduce((s, l) => s + l.discount, 0)) };
     header.total = r3(header.subtotal + header.tax_total);
     if (p && isSale && type === 'sale' && p.credit_limit > 0 && h.payment_type === 'credit') {

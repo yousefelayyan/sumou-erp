@@ -19,6 +19,7 @@ import { CENTER_ROUTES } from './centers.js';
 import { DEPARTMENT_ROUTES } from './departments.js';
 import { permEditor } from './perms.js';
 import { LOOKUP_ROUTES } from './lookups.js';
+import { DAYBOOK_ROUTES, DAYBOOKS } from './daybook.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
@@ -131,6 +132,7 @@ const NAV = () => [
     { r: 'setup?k=cheque_type', i: '🧾', l: 'أنواع الأوراق التجارية', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=country', i: '🌍', l: 'الدول / البلاد', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=region', i: '🗺️', l: 'المناطق / الأقاليم', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=sales_rep', i: '🧑‍💼', l: 'مندوبي المبيعات', show: () => S.company && can('lookups', 'view') },
     { r: 'cost-centers', i: '💱', l: 'العملات وأسعار التحويل', show: () => S.company && can('accounts', 'view') },
   ]},
   { title: 'المالية', items: [
@@ -194,7 +196,12 @@ const NAV = () => [
     { r: 'rep-salestax', i: '🏛️', l: 'إقرار ضريبة المبيعات', show: () => S.company && can('reports', 'view') },
     { r: 'rep-cc', i: '🎯', l: 'تقرير مراكز الكلفة', show: () => S.company && can('reports', 'view') },
     { r: 'rep-fx', i: '💱', l: 'أرصدة العملات', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-sales-reps', i: '🧑‍💼', l: 'مبيعات وتحصيلات المندوبين', show: () => S.company && can('reports', 'view') },
+    { r: 'stock-analysis?k=aging', i: '⏳', l: 'تعمير المخزون', show: () => S.company && can('inventory', 'view') },
+    { r: 'stock-analysis?k=slow', i: '🐢', l: 'المخزون بطيء الحركة', show: () => S.company && can('inventory', 'view') },
+    { r: 'stock-analysis?k=turnover', i: '🔄', l: 'معدل دوران المخزون', show: () => S.company && can('inventory', 'view') },
   ]},
+  { title: 'اليوميات', items: Object.entries(DAYBOOKS).map(([k, d]) => ({ r: 'daybook?k=' + k, i: d.icon, l: d.label, show: () => S.company && can('reports', 'view') })) },
   { title: 'قريباً', items: [
  { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
   ]},
@@ -207,7 +214,7 @@ const NAV = () => [
   ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'إعداد': '⚙️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'إعداد': '⚙️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'اليوميات': '📚', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
@@ -371,7 +378,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

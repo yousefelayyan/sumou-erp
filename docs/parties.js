@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — المرحلة 4: الزبائن والموردين
 // =====================================================================
-import { loadLookups, lookupDatalistSync } from './lookups.js';
+import { loadLookups, lookupDatalistSync, repOptions, hasReps } from './lookups.js';
 import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -111,6 +111,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
       <div class="tab-panel active" data-tab="g"><div class="grid cols-2">
         <div class="field"><label>الاسم *</label><input name="name" required value="${esc(p.name)}"></div>
         <div class="field"><label>الرقم</label><input name="code" value="${esc(p.code)}" placeholder="تلقائي" dir="ltr"></div>
+        ${type === 'customer' && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id"><option value="">—</option>${repOptions(p.sales_rep_id)}</select></div>` : ''}
         <div class="field"><label>الفئة</label><select name="category_id"><option value="">— بدون فئة —</option>${cats.filter(c => c.is_active || c.id === p.category_id).map(c => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
         <div class="field"><label>الاسم التجاري</label><input name="trade_name" value="${esc(p.trade_name)}"></div>
         <div class="field"><label>الرقم الضريبي</label><input name="tax_no" value="${esc(p.tax_no)}" dir="ltr"></div>
@@ -141,7 +142,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
     const d = formData(m.el.querySelector('#p-form'));
     if (!d.name) return toast('الاسم مطلوب', 'err');
     if (!d.account_id) return toast('اختار الحساب', 'err');
-    d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null;
+    d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null;
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
     else if (!d.code) delete d.code;
     const res = isNew ? await sb.from('parties').insert(d) : await sb.from('parties').update(d).eq('id', p.id);
