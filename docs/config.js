@@ -2,4 +2,4 @@
 export const SUPABASE_URL = 'https://zobmukdrkmzzkpcykguc.supabase.co';
 export const SUPABASE_KEY = 'sb_publishable_nyFE2-2-a2ZSCWZEqFjs8Q_QbLDXSQF';
 export const APP_NAME = 'السمو ERP';
-export const APP_VERSION = '4.1.3';
+export const APP_VERSION = '4.2.0';

@@ -40,7 +40,8 @@ function partyList(type) {
   return async function (v, ctx) {
     if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
     const P = PARTY[type];
-    const [parties, accs] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true)]);
+    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type)]);
+    const catById = Object.fromEntries(cats.map(c => [c.id, c]));
     let bal = {};
     if (S.fy) {
       const { data } = await sb.from('party_balances').select('party_id,debit,credit').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id);
@@ -51,36 +52,38 @@ function partyList(type) {
     v.innerHTML = `
       <div class="page-head"><h2>${P.icon} ${P.plural}</h2><span class="badge brand">${list.length}</span>
         <span class="muted">إجمالي الأرصدة: <b dir="ltr">${fmtNum(total)}</b></span><div class="spacer"></div>
+        <select class="search" id="fc" style="min-width:140px"><option value="">كل الفئات</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="-">بدون فئة</option></select>
         <input class="search" id="q" placeholder="بحث بالاسم أو الرقم أو الهاتف…">
+        <a class="btn sm" href="#/party-categories?type=${type}">🗂️ فئات ${P.plural}</a>
         <button class="btn sm" id="csv">⬇️ Excel</button>
         ${can(P.screen, 'add') ? `<button class="btn primary" id="add">➕ ${P.label} جديد</button>` : ''}</div>
       ${!accs.length ? `<div class="notice">لازم يكون في دليل حسابات أول. <a href="#/accounts">روح لدليل الحسابات</a></div>` : ''}
       <div class="card table-wrap"><table class="t">
-        <thead><tr><th>الرقم</th><th>الاسم</th><th>الهاتف</th><th>المدينة</th><th>الرقم الضريبي</th><th style="text-align:left">الرصيد</th><th>الحالة</th><th></th></tr></thead>
+        <thead><tr><th>الرقم</th><th>الاسم</th><th>الفئة</th><th>الهاتف</th><th>المدينة</th><th>الرقم الضريبي</th><th style="text-align:left">الرصيد</th><th>الحالة</th><th></th></tr></thead>
         <tbody id="rows"></tbody></table></div>
       <p class="muted" style="font-size:13px">الرصيد من القيود المرحّلة بالسنة المالية الحالية. ${type === 'customer' ? 'الرصيد الموجب = علينا نحصّله من العميل.' : 'الرصيد الموجب = علينا ندفعه للمورد.'}</p>`;
     const draw = () => {
-      const q = v.querySelector('#q').value.trim().toLowerCase();
-      const rows = list.filter(p => !q || [p.code, p.name, p.trade_name, p.phone, p.mobile, p.tax_no].some(x => (x || '').toLowerCase().includes(q)));
+      const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value;
+      const rows = list.filter(p => (!fc || (fc === '-' ? !p.category_id : p.category_id === fc))).filter(p => !q || [p.code, p.name, p.trade_name, p.phone, p.mobile, p.tax_no].some(x => (x || '').toLowerCase().includes(q)));
       v.querySelector('#rows').innerHTML = rows.map(p => { const b = (bal[p.id] || 0) * P.side; const over = p.credit_limit > 0 && b > p.credit_limit;
-        return `<tr><td>${esc(p.code)}</td><td><b>${esc(p.name)}</b>${p.trade_name ? `<div class="muted" style="font-size:12px">${esc(p.trade_name)}</div>` : ''}</td>
+        return `<tr><td>${esc(p.code)}</td><td><b>${esc(p.name)}</b>${p.trade_name ? `<div class="muted" style="font-size:12px">${esc(p.trade_name)}</div>` : ''}</td><td>${esc(catById[p.category_id]?.name || '')}</td>
         <td dir="ltr" style="text-align:right">${esc(p.mobile || p.phone || '')}</td><td>${esc(p.city || '')}</td><td dir="ltr" style="text-align:right">${esc(p.tax_no || '')}</td>
         <td dir="ltr" style="text-align:left;${over ? 'color:var(--bad);font-weight:700' : ''}">${b ? fmtNum(b) : '<span class="muted">—</span>'}${over ? ' ⚠️' : ''}</td>
         <td>${p.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
         <td class="actions"><a class="btn sm" href="#/rep-party?party=${p.id}">كشف</a>
           ${can(P.screen, 'edit') ? `<button class="btn sm" data-edit="${p.id}">تعديل</button>` : ''}
           ${can(P.screen, 'delete') ? `<button class="btn sm danger" data-del="${p.id}">حذف</button>` : ''}</td></tr>`; }).join('')
-        || `<tr><td colspan="8" class="empty">ما في ${P.plural}</td></tr>`;
+        || `<tr><td colspan="9" class="empty">ما في ${P.plural}</td></tr>`;
     };
     draw();
-    v.querySelector('#q').oninput = draw;
-    v.querySelector('#add')?.addEventListener('click', () => partyForm(type, null, accs, ctx));
+    v.querySelector('#q').oninput = draw; v.querySelector('#fc').onchange = draw;
+    v.querySelector('#add')?.addEventListener('click', () => partyForm(type, null, accs, ctx, cats));
     v.querySelector('#csv').onclick = () => downloadCSV(`${P.plural} - ${S.company.name}.csv`,
       [['الرقم', 'الاسم', 'الاسم التجاري', 'الهاتف', 'الموبايل', 'الإيميل', 'المدينة', 'العنوان', 'الرقم الضريبي', 'سقف الائتمان', 'مدة السداد', 'الرصيد']]
         .concat(list.map(p => [p.code, p.name, p.trade_name, p.phone, p.mobile, p.email, p.city, p.address, p.tax_no, p.credit_limit, p.payment_terms_days, ((bal[p.id] || 0) * P.side).toFixed(3)])));
     v.querySelector('#rows').onclick = async (e) => {
       const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
-      if (ed) partyForm(type, list.find(p => p.id === ed.dataset.edit), accs, ctx);
+      if (ed) partyForm(type, list.find(p => p.id === ed.dataset.edit), accs, ctx, cats);
       if (dl) {
         const p = list.find(x => x.id === dl.dataset.del);
         if (!(await confirmBox(`حذف ${P.label} «${p.name}»؟`))) return;
@@ -92,7 +95,7 @@ function partyList(type) {
   };
 }
 
-function partyForm(type, p, accs, ctx) {
+function partyForm(type, p, accs, ctx, cats = []) {
   const P = PARTY[type], isNew = !p;
   const leaves = leafAccounts(accs);
   const def = leaves.find(a => a.account_type === P.accType);
@@ -104,6 +107,7 @@ function partyForm(type, p, accs, ctx) {
       <div class="tab-panel active" data-tab="g"><div class="grid cols-2">
         <div class="field"><label>الاسم *</label><input name="name" required value="${esc(p.name)}"></div>
         <div class="field"><label>الرقم</label><input name="code" value="${esc(p.code)}" placeholder="تلقائي" dir="ltr"></div>
+        <div class="field"><label>الفئة</label><select name="category_id"><option value="">— بدون فئة —</option>${cats.filter(c => c.is_active || c.id === p.category_id).map(c => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
         <div class="field"><label>الاسم التجاري</label><input name="trade_name" value="${esc(p.trade_name)}"></div>
         <div class="field"><label>الرقم الضريبي</label><input name="tax_no" value="${esc(p.tax_no)}" dir="ltr"></div>
         <div class="field"><label>الرقم الوطني</label><input name="national_no" value="${esc(p.national_no)}" dir="ltr"></div>
@@ -132,7 +136,7 @@ function partyForm(type, p, accs, ctx) {
     const d = formData(m.el.querySelector('#p-form'));
     if (!d.name) return toast('الاسم مطلوب', 'err');
     if (!d.account_id) return toast('اختار الحساب', 'err');
-    d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0;
+    d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null;
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
     else if (!d.code) delete d.code;
     const res = isNew ? await sb.from('parties').insert(d) : await sb.from('parties').update(d).eq('id', p.id);
@@ -254,7 +258,55 @@ async function viewAging(v) {
   run();
 }
 
+// ---------------------------------------------------------------------
+//  فئات العملاء / فئات الموردين
+// ---------------------------------------------------------------------
+async function loadPartyCats(type) {
+  const { data, error } = await sb.from('party_categories').select('*').eq('company_id', S.company.id).eq('party_type', type).order('code');
+  if (error) throw error; return data || [];
+}
+async function viewPartyCategories(v, ctx) {
+  if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
+  const type = new URLSearchParams(location.hash.split('?')[1] || '').get('type') === 'supplier' ? 'supplier' : 'customer';
+  const P = PARTY[type];
+  const [cats, parties] = await Promise.all([loadPartyCats(type), loadParties(true), loadNumbering(true)]);
+  const used = (id) => parties.filter(p => p.category_id === id).length;
+  const canAdd = can(P.screen, 'add'), canEd = can(P.screen, 'edit'), canDel = can(P.screen, 'delete');
+  v.innerHTML = `<div class="page-head"><h2>🗂️ فئات ${P.plural}</h2><span class="badge brand">${cats.length}</span><div class="spacer"></div>
+      <a class="btn sm" href="#/${P.route}">${P.icon} ${P.plural}</a>${canAdd ? `<button class="btn primary" id="c-add">➕ فئة جديدة</button>` : ''}</div>
+    <p class="muted">الفئة بتجمّع ${P.plural} (مثلاً: ${type === 'customer' ? 'جملة، مفرق، شركات' : 'محلي، استيراد، خدمات'}). بتختار فئة كل ${P.label} من بطاقته، وبتفلتر فيها القائمة.</p>
+    <div class="card table-wrap"><table class="t"><thead><tr><th style="width:120px">الرمز</th><th>اسم الفئة</th><th>عدد ${P.plural}</th><th>فعّالة</th><th></th></tr></thead><tbody id="crows"></tbody></table></div>`;
+  const draw = () => {
+    v.querySelector('#crows').innerHTML = cats.map(c => `<tr data-id="${c.id}"><td><input data-f="code" value="${esc(c.code)}" dir="ltr" ${canEd ? '' : 'disabled'}></td>
+      <td><input data-f="name" value="${esc(c.name)}" ${canEd ? '' : 'disabled'}></td><td>${used(c.id)}</td>
+      <td><input type="checkbox" data-f="is_active" ${c.is_active ? 'checked' : ''} ${canEd ? '' : 'disabled'}></td>
+      <td class="actions">${canEd ? '<button class="btn sm" data-save type="button">💾 حفظ</button>' : ''} ${canDel && !used(c.id) ? '<button class="btn sm danger" data-del type="button">حذف</button>' : ''}</td></tr>`).join('')
+      || '<tr><td colspan="5" class="empty">ما في فئات لسا</td></tr>';
+  };
+  draw();
+  v.querySelector('#c-add')?.addEventListener('click', async () => {
+    const code = masterCode(type === 'customer' ? 'm_customer_category' : 'm_supplier_category', cats.map(c => c.code)) ?? String(Math.max(0, ...cats.map(c => parseInt(c.code, 10) || 0)) + 1);
+    const { data, error } = await sb.from('party_categories').insert({ company_id: S.company.id, party_type: type, code, name: 'فئة جديدة' }).select().single();
+    if (error) return toast(arError(error), 'err');
+    cats.push(data); await log('إضافة', 'party_categories', data.id, { type }); draw(); v.querySelector(`[data-id="${data.id}"] [data-f=name]`)?.select();
+  });
+  v.querySelector('#crows').addEventListener('click', async (e) => {
+    const tr = e.target.closest('[data-id]'); if (!tr) return; const c = cats.find(x => x.id === tr.dataset.id);
+    if (e.target.closest('[data-save]')) {
+      const d = { code: tr.querySelector('[data-f=code]').value.trim(), name: tr.querySelector('[data-f=name]').value.trim(), is_active: tr.querySelector('[data-f=is_active]').checked };
+      if (!d.code || !d.name) return toast('الرمز والاسم مطلوبين', 'err');
+      const { error } = await sb.from('party_categories').update(d).eq('id', c.id); if (error) return toast(arError(error), 'err');
+      Object.assign(c, d); await log('تعديل', 'party_categories', c.id, { name: d.name }); toast('تم الحفظ', 'ok');
+    }
+    if (e.target.closest('[data-del]')) {
+      if (!(await confirmBox(`حذف الفئة «${c.name}»؟`))) return;
+      const { error } = await sb.from('party_categories').delete().eq('id', c.id); if (error) return toast(arError(error), 'err');
+      cats.splice(cats.indexOf(c), 1); await log('حذف', 'party_categories', c.id, { name: c.name }); draw();
+    }
+  });
+}
+
 export const PARTY_ROUTES = {
-  'customers': partyList('customer'), 'suppliers': partyList('supplier'),
+  'customers': partyList('customer'), 'suppliers': partyList('supplier'), 'party-categories': viewPartyCategories,
   'rep-party': viewPartyLedger, 'rep-aging': viewAging,
 };

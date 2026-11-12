@@ -210,13 +210,16 @@ function invoiceList(group) {
       loadParties()]);
     if (error) throw error;
     const pName = Object.fromEntries(parties.map(p => [p.id, p.name]));
+    const preT = new URLSearchParams(location.hash.split('?')[1] || '').get('t');
+    const only = types.includes(preT) ? preT : '';
     const posted = data.filter(i => i.status === 'posted');
     const sum = (t) => posted.filter(i => i.inv_type === t).reduce((s, i) => s + num(i.total), 0);
-    v.innerHTML = `<div class="page-head"><h2>${group === 'sales' ? '🧾 المبيعات' : '🛒 المشتريات'}</h2><span class="badge brand">${data.length}</span><div class="spacer"></div>
-        <select class="search" id="ft" style="min-width:140px"><option value="">كل الأنواع</option>${types.map(t => `<option value="${t}">${INV[t].label}</option>`).join('')}</select>
+    const heading = only === 'sale' ? '🧾 فواتير المبيعات' : only === 'sale_return' ? '↩️ مردودات المبيعات' : only === 'purchase' ? '🛒 فواتير المشتريات' : only === 'purchase_return' ? '↩️ مردودات المشتريات' : group === 'sales' ? '🧾 المبيعات' : '🛒 المشتريات';
+    v.innerHTML = `<div class="page-head"><h2>${heading}</h2><span class="badge brand">${data.length}</span><div class="spacer"></div>
+        <select class="search" id="ft" style="min-width:140px"><option value="">كل الأنواع</option>${types.map(t => `<option value="${t}" ${t === only ? 'selected' : ''}>${INV[t].label}</option>`).join('')}</select>
         <select class="search" id="fs" style="min-width:120px"><option value="">كل الحالات</option><option value="draft">مسودة</option><option value="posted">مرحّلة</option><option value="cancelled">ملغاة</option></select>
         <input class="search" id="q" placeholder="بحث بالرقم أو الاسم أو المرجع…">
-        ${can(screen, 'add') ? types.map(t => `<button class="btn ${t.endsWith('return') ? '' : 'primary'}" data-new="${t}">➕ ${INV[t].label}</button>`).join('') : ''}</div>
+        ${can(screen, 'add') ? types.filter(t => !only || t === only).map(t => `<button class="btn ${t.endsWith('return') ? '' : 'primary'}" data-new="${t}">➕ ${INV[t].label}</button>`).join('') : ''}</div>
       <div class="grid cols-3" style="margin-bottom:14px">
         <div class="card stat"><span class="k">${INV[types[0]].label}ات المرحّلة</span><span class="v" dir="ltr">${fmtNum(sum(types[0]))}</span></div>
         <div class="card stat"><span class="k">المرتجعات</span><span class="v" dir="ltr">${fmtNum(sum(types[1]))}</span></div>

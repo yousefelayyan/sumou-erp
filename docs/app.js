@@ -136,21 +136,25 @@ const NAV = () => [
   { title: 'الأصول الثابتة', items: [
     { r: 'assets', i: '🏢', l: 'الأصول الثابتة والاستهلاك', show: () => S.company && can('fixed_assets', 'view') },
   ]},
-  { title: 'المبيعات والمشتريات', items: [
-    { r: 'sales', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
-    { r: 'purchases', i: '🛒', l: 'فواتير المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
-    { r: 'items', i: '🏷️', l: 'الأصناف والخدمات', show: () => S.company && can('items', 'view') },
-  ]},
   { title: 'المخزون', items: [
+    { r: 'items', i: '🏷️', l: 'الأصناف والخدمات', show: () => S.company && can('items', 'view') },
     { r: 'stock', i: '📦', l: 'رصيد المخزون', show: () => S.company && can('inventory', 'view') },
     { r: 'stock-docs?type=in', i: '📥', l: 'سندات الإدخال والإخراج', show: () => S.company && can('inventory', 'view') },
     { r: 'stock-docs?type=count', i: '📋', l: 'الجرد والتسوية', show: () => S.company && can('inventory', 'view') },
     { r: 'item-card', i: '🗂️', l: 'بطاقة صنف', show: () => S.company && can('inventory', 'view') },
     { r: 'warehouses', i: '🏬', l: 'المستودعات', show: () => S.company && can('inventory', 'view') },
   ]},
-  { title: 'العملاء والموردين', items: [
+  { title: 'العملاء والذمم المدينة', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
+    { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
+    { r: 'sales?t=sale_return', i: '↩️', l: 'مردودات المبيعات', show: () => S.company && can('sales_invoices', 'view') },
+    { r: 'party-categories?type=customer', i: '🗂️', l: 'فئات العملاء', show: () => S.company && can('customers', 'view') },
+  ]},
+  { title: 'الموردين والذمم الدائنة', items: [
     { r: 'suppliers', i: '🏭', l: 'الموردين', show: () => S.company && can('suppliers', 'view') },
+    { r: 'purchases?t=purchase', i: '🛒', l: 'فواتير المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
+    { r: 'purchases?t=purchase_return', i: '↩️', l: 'مردودات المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
+    { r: 'party-categories?type=supplier', i: '🗂️', l: 'فئات الموردين', show: () => S.company && can('suppliers', 'view') },
   ]},
   { title: 'التقارير', items: [
     { r: 'rep-ledger', i: '📄', l: 'كشف حساب', show: () => S.company && can('reports', 'view') },
@@ -174,7 +178,7 @@ const NAV = () => [
   ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المبيعات والمشتريات': '🧾', 'المخزون': '📦', 'العملاء والموردين': '🤝', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
@@ -205,7 +209,7 @@ function renderShell() {
               <div class="nav-items">${items.map(it => it.soon
                 ? `<div class="soon"><span class="ico">${it.i}</span>${it.l}<small>قريباً</small></div>`
                 : it.href ? `<a href="${it.href}" target="_blank" rel="noopener"><span class="ico">${it.i}</span>${it.l} ↗</a>`
-                : `<a href="#/${it.r}" class="${route === it.r.split('?')[0] ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
+                : `<a href="#/${it.r}" class="${('#/' + it.r) === location.hash ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
             </div></div>`;
           }).join('')}
         </nav>
@@ -267,8 +271,10 @@ const ROUTES = {
 
 async function route_() {
   const r = currentRoute();
-  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#/' + r));
-  const og = groupOfRoute(r); if (og && !document.querySelector(`.nav-group.open[data-g="${CSS.escape(og)}"]`)) setOpenGroup(og);
+  const fullHash = location.hash || '#/';
+  const exact = [...document.querySelectorAll('.nav a')].some(a => a.getAttribute('href') === fullHash);
+  document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', exact ? a.getAttribute('href') === fullHash : a.getAttribute('href').split('?')[0] === '#/' + r));
+  const og = document.querySelector('.nav a.active')?.closest('.nav-group')?.dataset.g || groupOfRoute(r); if (og && !document.querySelector(`.nav-group.open[data-g="${CSS.escape(og)}"]`)) setOpenGroup(og);
   const view = document.getElementById('view'); if (!view) return;
   view.innerHTML = '<div class="empty">جاري التحميل…</div>';
   try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); }
