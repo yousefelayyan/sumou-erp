@@ -6,6 +6,7 @@ import { attachAudit } from './audit.js';
 import { deptField, deptValue } from './departments.js';
 import { loadLookups, pmOptions, repOptions, hasReps } from './lookups.js';
 import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
+import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -139,7 +140,7 @@ async function viewSettings(v, ctx) {
 async function viewItems(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
   const [items, accs, st, , catR] = await Promise.all([loadItems(true), loadAccounts(), loadSettings(), loadNumbering(true),
-    sb.from('item_categories').select('*').eq('company_id', S.company.id).order('code'), loadCustomFields()]);
+    sb.from('item_categories').select('*').eq('company_id', S.company.id).order('code'), loadCustomFields(), loadFieldLayout()]);
   const cats = catR.data || [], catById = Object.fromEntries(cats.map(c => [c.id, c]));
   v.innerHTML = `<div class="page-head"><h2>🏷️ الأصناف والخدمات</h2><span class="badge brand">${items.length}</span><div class="spacer"></div>
       <select class="search" id="fc" style="min-width:140px"><option value="">كل الفئات</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="-">بدون فئة</option></select>
@@ -182,11 +183,13 @@ async function viewItems(v, ctx) {
       <label class="check"><input type="checkbox" name="is_active" ${it.is_active ? 'checked' : ''}> فعّال</label></form>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
     if (!isNew) attachAudit(m.el, it);
+    applyLayout(m.el.querySelector('#i-form'), 'item');
     if (isNew) { let lastSug = it.code; const codeEl = m.el.querySelector('[name=code]');
       m.el.querySelector('[name=category_id]').onchange = (e) => { if (codeEl.value === lastSug) { lastSug = suggest(e.target.value || null); codeEl.value = lastSug; } }; }
     m.el.querySelector('[data-save]').onclick = async () => {
       const d = formData(m.el.querySelector('#i-form'));
       if (!d.code || !d.name) return toast('الرقم والاسم مطلوبين', 'err');
+      { const rq = checkRequired(m.el.querySelector('#i-form'), 'item'); if (rq) return toast(rq, 'err'); }
       d.category_id = d.category_id || null;
       { const ex = cfValues(m.el.querySelector('#i-form'), 'item', it.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex; }
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);

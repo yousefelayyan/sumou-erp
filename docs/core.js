@@ -54,6 +54,8 @@ export const SCREENS = [
   { key: 'purchase_invoices',label: 'فواتير ومردودات المشتريات', group: 'الموردين والذمم الدائنة' },
   { key: 'purchase_orders',  label: 'طلبات التزويد', group: 'الموردين والذمم الدائنة' },
   { key: 'marketing',        label: 'العروض الترويجية', group: 'التسويق' },
+  { key: 'manufacturing',    label: 'الوصفات وأوامر الإنتاج', group: 'التصنيع' },
+  { key: 'maintenance',      label: 'بطاقات الصيانة', group: 'الصيانة' },
   { key: 'reports',          label: 'التقارير والأستاذ العام والمساعد', group: 'التقارير' },
   { key: 'obligations',      label: 'متابعة إقرارات العملاء', group: 'المكتب' },
 ];

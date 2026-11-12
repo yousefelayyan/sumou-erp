@@ -18,7 +18,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..25). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..26). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -42,6 +42,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   lookups.js        قوائم «إعداد» (setup?k=…): وسائل الدفع، البنوك وفروعها، الدول والمناطق، أنواع الأوراق التجارية + pmOptions()/lookupDatalistSync()
   daybook.js        اليوميات لكل نوع سند (daybook?k=…)، تقرير مندوبي المبيعات (rep-sales-reps)، تحليل المخزون (stock-analysis?k=aging|slow|turnover) — قراءة بس من الجداول
   orders.js         طلبات المبيعات/التزويد (orders?t=sales_order|purchase_order) وتحويلها لفاتورة، العروض الترويجية (promotions)، بطاقات الولاء (loyalty)، الحقول الإضافية (custom-fields + cfFieldsHTML/cfValues)
+  mfg.js            التصنيع (boms، production)، الصيانة (service)، تنسيق الحقول (field-layout + applyLayout/checkRequired)، وزر «⚙️ الأعمدة» على كل جدول تقرير (enhanceReportTables، بيتذكّر بالمتصفح)
   centers.js        الأستاذ العام (account-center) والأستاذ المساعد: party-center?type=customer|supplier|expense، employee-center، asset-center — فترة، أرصدة أول/آخر المدة، وتفاصيل تحت السطر (ملخص حسب نوع السند + الحركات + «احتساب» لاختيار الأنواع والرصيد المدور)
   audit.js          سجل التتبع: شريط «أدخله/آخر تعديل» + «سجل التتبع» بكل سند (attachAudit)
   posting.js        الترحيل: شريط «ترحيل للمحاسبة/للمخزون» بكل سند + شاشة الأدوات ← الترحيل
@@ -88,7 +89,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -112,7 +113,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.10.0)
+## اللي انبنى (لحد النسخة 4.11.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -149,6 +150,8 @@ dev/                أدوات الفحص (شوف تحت)
 - الأستاذ العام والمساعد: بلوحة الحساب خيار «مرحّل / غير مرحّل / الجميع» (المسودات من journal_lines مباشرة).
 
 - **الطلبات والتسويق (المرحلة 25):** `orders`/`order_lines` (open/converted/cancelled، ترقيم لحاله، المجموع من السطور). «تحويل لفاتورة» بيفتح فاتورة مسودة معبّاة (`openInvoicePrefill`) وبعد الحفظ بتنربط بـ RPC `link_order_invoice` (بصلاحية إضافة الفواتير)؛ المستخدم ما بيقدر يكتب invoice_id ولا المجاميع؛ الطلب المحوّل/الملغى بتتعدّل ملاحظاته بس؛ حذف الفاتورة المسودة بيرجّع الطلب مفتوح. صلاحيات `sales_orders`/`purchase_orders`/`marketing`. `promotions` (خصم % على صنف/فئة/الكل بفترة وأقل كمية) بتنطبق لحالها بفاتورة البيع عند اختيار الصنف. الولاء: `lookups.kind = 'loyalty_type'` (rate = نقاط لكل دينار)، و`parties.loyalty_type_id/loyalty_card_no/loyalty_redeemed`؛ النقاط بتنحسب من كل فواتير البيع المرحّلة. `custom_fields` (customer/supplier/item) والقيم بـ `parties.extra`/`items.extra`. مجموعة «التسويق» بالقائمة. تنبيه: بالـ plpgsql ما تحط `case … end` جوّا شرط `if … then` (بيخرب التحليل)؛ حطه بمتغيّر.
+
+- **التصنيع والصيانة وتنسيق الحقول (المرحلة 26):** `boms`/`bom_lines` (منتج، كمية بتطلع، كلفة إضافية لكل دفعة). `create_production(bom, batches, date, warehouse)` (بصلاحية manufacturing+inventory add، وسنة مفتوحة) بيعمل سندين مسودة عليهم `stock_docs.production_id`. الترحيل بس من `post_production(id)`: بيرحّل الإخراج، بياخذ الكلفة الفعلية من stock_moves + الكلفة الإضافية، بيكتبها على سطر الإدخال وبيرحّله. سندات الإنتاج ما بتترحّل ولا بتتعدّل سطورها ولا بتنحذف مباشرة (`ab_production_doc_guard`، `ab_production_lines_guard` بالـ GUC `sumou.prod` = internal_token)؛ الحذف من `delete_production`. `service_tickets` (استلام → قيد الصيانة → بانتظار قطع → جاهز → تسلّم) مع إيصال استلام وتحويل لفاتورة صيانة. `company_settings.field_layout` (إخفاء/تسمية/إلزامي لحقول العميل والمورد والصنف). صلاحيات `manufacturing`/`maintenance`. **تنبيه CSS:** الكلاس `pt` محجوز لجداول التقارير (طباعة)، ما تستعمله لشي ثاني.
 
 ## مأجّل أو ناقص
 - **الفوترة الإلكترونية (جوفوترة):** مأجلة بطلب يوسف، لحد ما يتأكد إنه البرنامج شغّال 100%.

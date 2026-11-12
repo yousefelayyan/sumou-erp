@@ -3,6 +3,7 @@
 // =====================================================================
 import { loadLookups, lookupDatalistSync, repOptions, hasReps, loyaltyOptions, hasLoyalty } from './lookups.js';
 import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
+import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -44,7 +45,7 @@ function partyList(type) {
   return async function (v, ctx) {
     if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
     const P = PARTY[type];
-    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups(), loadCustomFields()]);
+    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups(), loadCustomFields(), loadFieldLayout()]);
     const catById = Object.fromEntries(cats.map(c => [c.id, c]));
     let bal = {};
     if (S.fy) {
@@ -143,9 +144,11 @@ function partyForm(type, p, accs, ctx, cats = []) {
     tabs.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
     m.el.querySelectorAll('.tab-panel').forEach(x => x.classList.toggle('active', x.dataset.tab === t.dataset.tab));
   }));
+  applyLayout(m.el.querySelector('#p-form'), type);
   m.el.querySelector('[data-save]').onclick = async () => {
     const d = formData(m.el.querySelector('#p-form'));
     if (!d.name) return toast('الاسم مطلوب', 'err');
+    { const rq = checkRequired(m.el.querySelector('#p-form'), type); if (rq) return toast(rq, 'err'); }
     if (!d.account_id) return toast('اختار الحساب', 'err');
     const ex = cfValues(m.el.querySelector('#p-form'), type, p.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex;
     if ('loyalty_type_id' in d) d.loyalty_type_id = d.loyalty_type_id || null; if ('loyalty_card_no' in d) d.loyalty_card_no = d.loyalty_card_no || null;

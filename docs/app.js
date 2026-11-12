@@ -21,6 +21,7 @@ import { permEditor } from './perms.js';
 import { LOOKUP_ROUTES } from './lookups.js';
 import { DAYBOOK_ROUTES, DAYBOOKS } from './daybook.js';
 import { ORDER_ROUTES } from './orders.js';
+import { MFG_ROUTES, enhanceReportTables } from './mfg.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
@@ -136,6 +137,7 @@ const NAV = () => [
     { r: 'setup?k=sales_rep', i: '🧑‍💼', l: 'مندوبي المبيعات', show: () => S.company && can('lookups', 'view') },
     { r: 'cost-centers', i: '💱', l: 'العملات وأسعار التحويل', show: () => S.company && can('accounts', 'view') },
     { r: 'custom-fields', i: '🧩', l: 'الحقول الإضافية', show: () => S.company && can('lookups', 'view') },
+    { r: 'field-layout', i: '🧱', l: 'تنسيق الحقول', show: () => S.company && can('companies', 'view') },
   ]},
   { title: 'المالية', items: [
     { r: 'accounts', i: '🌳', l: 'دليل الحسابات', show: () => S.company && can('accounts', 'view') },
@@ -189,6 +191,13 @@ const NAV = () => [
     { r: 'purchases?t=purchase_return', i: '↩️', l: 'مردودات المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'party-categories?type=supplier', i: '🗂️', l: 'فئات الموردين', show: () => S.company && can('suppliers', 'view') },
   ]},
+  { title: 'التصنيع', items: [
+    { r: 'boms', i: '🧪', l: 'الوصفات (قوائم المواد)', show: () => S.company && can('manufacturing', 'view') },
+    { r: 'production', i: '🏭', l: 'أوامر الإنتاج', show: () => S.company && can('manufacturing', 'view') },
+  ]},
+  { title: 'الصيانة', items: [
+    { r: 'service', i: '🔧', l: 'بطاقات الصيانة', show: () => S.company && can('maintenance', 'view') },
+  ]},
   { title: 'التسويق', items: [
     { r: 'promotions', i: '📢', l: 'العروض الترويجية', show: () => S.company && can('marketing', 'view') },
     { r: 'loyalty', i: '💳', l: 'مركز تحكم بطاقات الولاء', show: () => S.company && can('customers', 'view') },
@@ -225,7 +234,7 @@ const NAV = () => [
   ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'إعداد': '⚙️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'اليوميات': '📚', 'التسويق': '📢', 'قريباً': '⏳', 'الأدوات': '🛠️' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'إعداد': '⚙️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'اليوميات': '📚', 'التسويق': '📢', 'التصنيع': '🏭', 'الصيانة': '🔧', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
@@ -389,7 +398,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -403,7 +412,7 @@ async function route_() {
   if (S.company) { const t = tabsLoad(); t.hash[S.company.id] = location.hash || '#/home'; tabsSave(t); }
   const view = document.getElementById('view'); if (!view) return;
   view.innerHTML = '<div class="empty">جاري التحميل…</div>';
-  try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); }
+  try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); try { enhanceReportTables(view, location.hash.slice(2)); } catch {} }
   catch (err) { view.innerHTML = `<div class="notice">${esc(arError(err))}</div>`; }
 }
 window.addEventListener('hashchange', () => { document.getElementById('modal-root').innerHTML = ''; if (S.profile?.is_active) route_(); });

@@ -29,7 +29,7 @@ export function permEditor(root, perms = {}, { compact = false } = {}) {
   function draw() {
     const scr = SCREENS.find(s => s.key === sel);
     const vis = (s) => !q || s.label.includes(q) || s.group.includes(q);
-    root.innerHTML = `<div class="pt ${compact ? 'compact' : ''}">
+    root.innerHTML = `<div class="ptree ${compact ? 'compact' : ''}">
       <div class="pt-tree">
         <div class="pt-tools"><input class="pt-q" placeholder="🔎 بحث عن شاشة…" value="${esc(q)}">
           <button type="button" class="btn sm" data-pall="1" title="كل الصلاحيات على كل الشاشات">✔ الكل</button><button type="button" class="btn sm" data-pall="0" title="شيل كل الصلاحيات">✖ لا شي</button></div>

@@ -235,8 +235,8 @@ small.cr{color:#a03030}
 .dt-code{font-weight:700;min-width:28px}
 .ro-val{padding:8px 10px;border:1px solid var(--line,#e5e0ee);border-radius:8px;background:#faf9fc;min-height:38px}
 /* محرر الصلاحيات (شجرة) */
-.pt{display:grid;grid-template-columns:minmax(230px,300px) 1fr;gap:12px;border:1px solid var(--line,#e5e0ee);border-radius:12px;padding:10px;background:#fff}
-@media (max-width:760px){.pt{grid-template-columns:1fr}}
+.ptree{display:grid;grid-template-columns:minmax(230px,300px) 1fr;gap:12px;border:1px solid var(--line,#e5e0ee);border-radius:12px;padding:10px;background:#fff}
+@media (max-width:760px){.ptree{grid-template-columns:1fr}}
 .pt-tree{max-height:420px;overflow:auto;border-inline-end:1px solid var(--line,#e5e0ee);padding-inline-end:8px}
 .pt-tools{display:flex;gap:4px;margin-bottom:6px}.pt-tools .pt-q{flex:1;min-width:0}
 .pt-gt{all:unset;display:flex;gap:6px;align-items:center;width:100%;padding:7px 6px;cursor:pointer;font-weight:700;border-radius:8px;box-sizing:border-box}
@@ -254,3 +254,4 @@ small.cr{color:#a03030}
 .lk-tabs a.tab{text-decoration:none;color:inherit}
 .stmt-tabs{display:flex;gap:6px;margin:6px 0 8px}
 .stmt-calc{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:center;font-size:12.5px;margin-inline-start:12px}.stmt-calc label{display:inline-flex;gap:4px;align-items:center}
+.col-bar{display:flex;justify-content:flex-end;margin:0 0 6px}
