@@ -3,6 +3,7 @@
 //  دليل الحسابات، الأرصدة الافتتاحية، سندات القيد والقبض والصرف
 // =====================================================================
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
+import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
@@ -299,6 +300,7 @@ async function voucherEditor(type, entry, ctx) {
   const isCash = type === 'receipt' || type === 'payment';
   const readOnly = entry && entry.status !== 'draft' || (entry ? !can(T.screen, 'edit') : !can(T.screen, 'add'));
   const manual = await isManual(type);
+  await loadPosting();
   const byId = Object.fromEntries(accs.map(a => [a.id, a]));
   const e = entry || { entry_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, description: '', reference: '', party_name: '', cash_account_id: null };
 
@@ -316,7 +318,11 @@ async function voucherEditor(type, entry, ctx) {
   const cashAccs = leafAccounts(accs).sort((x, y) => (['cash', 'bank'].includes(y.account_type) ? 1 : 0) - (['cash', 'bank'].includes(x.account_type) ? 1 : 0) || x.code.localeCompare(y.code, 'en', { numeric: true }));
   const ro = readOnly ? 'disabled' : '';
   const title = entry ? `${T.label} رقم ${docNo(entry)}` : `${T.label} جديد`;
-  const m = modal({ title, body: `
+  const bar = entry ? postBarHTML([{ key: 'gl', posted: entry.status !== 'draft',
+    canPost: entry.status === 'draft' && can(T.screen, 'post') && postFlag(type, 'gl'),
+    canUnpost: entry.status === 'posted' && !entry.reversal_of && !entry.reversed_by && ['journal', 'receipt', 'payment'].includes(type) && can(T.screen, 'unpost'),
+    note: entry.status === 'reversed' ? 'انعمله قيد عكسي' : (!postFlag(type, 'gl') && entry.status === 'draft' ? 'هالنوع مش مفعّل ترحيله (الأدوات ← الترحيل)' : '') }]) : '';
+  const m = modal({ title, body: `${bar}
     ${entry ? `<div style="margin:-6px 0 12px">${statusBadge(entry.status)} ${entry.reversal_of ? '<span class="badge brand">قيد عكسي</span>' : ''}
       ${entry.status !== 'draft' ? '<span class="muted" style="font-size:13px"> — القيد المرحّل ما بينعدّل. للتصحيح اعمل «قيد عكسي».</span>' : ''}</div>` : ''}
     <form id="v-form"><div class="grid ${isCash ? 'cols-3' : 'cols-3'}">
@@ -340,8 +346,7 @@ async function voucherEditor(type, entry, ctx) {
         <tr><td></td><td colspan="${(isCash ? 5 : 6) + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}" class="muted" id="t-words" style="font-size:13px"></td></tr></tfoot>
     </table></div>`,
     foot: `
-      ${!readOnly ? `<button class="btn primary" data-save>💾 حفظ مسودة</button>` : ''}
-      ${!readOnly && can(T.screen, 'post') ? `<button class="btn primary" data-savepost>✅ حفظ وترحيل</button>` : ''}
+      ${!readOnly ? `<button class="btn primary" data-save>💾 حفظ</button>` : ''}
       ${entry?.status === 'posted' && can(T.screen, 'post') && !entry.reversal_of ? `<button class="btn" data-reverse>↩️ قيد عكسي</button>` : ''}
       ${entry && can(T.screen, 'print') ? `<button class="btn" data-print>🖨️ طباعة</button>` : ''}
       ${entry ? `<button class="btn" data-attach>📎 مرفقات</button>` : ''}
@@ -487,13 +492,21 @@ async function voucherEditor(type, entry, ctx) {
       const li = await sb.from('journal_lines').insert(out.map((l, k) => ({ ...l, entry_id: id, line_no: k + 1 })));
       if (li.error) throw li.error;
       await log(entry && entry.id === id && !post ? 'حفظ' : 'إضافة', T.screen, id, { no: entry?.entry_no });
-      if (post) { const p = await sb.rpc('post_entry', { p_id: id }); if (p.error) throw p.error; toast('تم الحفظ والترحيل', 'ok'); }
-      else toast('تم الحفظ كمسودة', 'ok');
-      m.close(); ctx.rerender();
+      if (post) { const p = await sb.rpc('post_entry', { p_id: id }); if (p.error) { toast(arError(p.error), 'err'); return reopen(id); } toast('انحفظ وانرحّل للمحاسبة', 'ok'); }
+      else toast('تم الحفظ', 'ok');
+      reopen(id);
     } catch (err) { toast(arError(err), 'err'); btns.forEach(b => b.disabled = false); }
   };
+  // بعد الحفظ أو الترحيل: السند بيضل مفتوح عشان تبيّن كبسات الترحيل
+  const reopen = async (id) => {
+    m.close(); ctx.rerender();
+    const { data } = await sb.from('journal_entries').select('*').eq('id', id).single();
+    if (data) voucherEditor(type, data, ctx);
+  };
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
-  m.el.querySelector('[data-savepost]')?.addEventListener('click', () => save(true));
+  // كبسة «ترحيل للمحاسبة»: إذا السند لسا مسودة بيحفظ التعديلات أول وبعدين بيرحّل
+  m.el.querySelector('[data-postdo=gl]')?.addEventListener('click', (ev) => { if (!readOnly) { ev.stopImmediatePropagation(); save(true); } });
+  if (entry) wirePostBar(m.el, 'entry', entry.id, () => reopen(entry.id));
   m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('entry', entry.id, `${T.label} رقم ${docNo(entry)}`));
   m.el.querySelector('[data-recur]')?.addEventListener('click', () => recurringDialog(entry));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {

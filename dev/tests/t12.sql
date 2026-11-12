@@ -15,12 +15,14 @@ insert into invoice_lines(invoice_id,item_id,description,qty,unit_price,tax_rate
  ('20000000-0000-0000-0000-0000000000c2','10000000-0000-0000-0000-0000000000c1','x',10,6,0),
  ('20000000-0000-0000-0000-0000000000c3','10000000-0000-0000-0000-0000000000c1','x',8,10,16);
 select post_invoice('20000000-0000-0000-0000-0000000000c1') is not null, post_invoice('20000000-0000-0000-0000-0000000000c2') is not null, post_invoice('20000000-0000-0000-0000-0000000000c3') is not null;
+select post_invoice_stock('20000000-0000-0000-0000-0000000000c1') is null, post_invoice_stock('20000000-0000-0000-0000-0000000000c2') is null, post_invoice_stock('20000000-0000-0000-0000-0000000000c3') is null;
 select a.code, l.debit, l.credit, l.description from journal_lines l join accounts a on a.id=l.account_id join invoices i on i.entry_id=l.entry_id where i.id='20000000-0000-0000-0000-0000000000c3' order by l.line_no;
 select item_avg_cost(:'C','10000000-0000-0000-0000-0000000000c1','2026-12-31') avg;
 -- count: actual 10 (book 12) → -2 @5 = 10
 insert into stock_docs(id,company_id,doc_type,doc_date,warehouse_id) values ('30000000-0000-0000-0000-0000000000c1',:'C','count','2026-04-05',default_warehouse(:'C'));
 insert into stock_doc_lines(doc_id,item_id,counted_qty) values ('30000000-0000-0000-0000-0000000000c1','10000000-0000-0000-0000-0000000000c1',10);
 select post_stock_doc('30000000-0000-0000-0000-0000000000c1');
+select post_stock_doc_gl('30000000-0000-0000-0000-0000000000c1') is not null;
 select a.code, l.debit, l.credit from journal_lines l join accounts a on a.id=l.account_id join stock_docs d on d.entry_id=l.entry_id where d.id='30000000-0000-0000-0000-0000000000c1';
 -- account balances: inventory 1105 should = 10*5 = 50
 select a.code, sum(l.debit-l.credit) bal from journal_lines l join accounts a on a.id=l.account_id join journal_entries e on e.id=l.entry_id where e.company_id=:'C' and a.code in ('1105','5101','5104') and e.status in ('posted','reversed') group by 1 order by 1;

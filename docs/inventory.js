@@ -2,6 +2,7 @@
 //  السمو ERP — المخزون والجرد
 // =====================================================================
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
+import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadItems } from './invoices.js';
@@ -136,11 +137,18 @@ async function docEditor(type, doc, whs, ctx) {
   const readOnly = (doc && doc.status === 'posted') || (doc ? !can('inventory', 'edit') : !can('inventory', 'add'));
   const ro = readOnly ? 'disabled' : '';
   const manual = await isManual('stock_' + type);
+  await loadPosting();
+  const K = 'stock_' + type;
+  const bar = doc ? postBarHTML([
+    postFlag(K, 'stock') || doc.status === 'posted' ? { key: 'stock', posted: doc.status === 'posted', canPost: doc.status === 'draft' && can('inventory', 'post') && postFlag(K, 'stock'),
+      canUnpost: doc.status === 'posted' && !doc.entry_id && can('inventory', 'unpost'), note: doc.status === 'posted' && doc.entry_id && can('inventory', 'unpost') ? 'لإلغاء ترحيل المخزون ألغِ ترحيل المحاسبة أول' : '' } : null,
+    postFlag(K, 'gl') || doc.entry_id ? { key: 'gl', posted: !!doc.entry_id, canPost: doc.status === 'posted' && !doc.entry_id && can('inventory', 'post') && postFlag(K, 'gl'),
+      canUnpost: !!doc.entry_id && can('inventory', 'unpost'), note: doc.status !== 'posted' && !doc.entry_id ? 'بعد الترحيل للمخزون' : '' } : null]) : '';
   const d0 = doc || { doc_date: today(), warehouse_id: whs[0]?.id };
   let rows = lines.map(l => ({ item: itemLabel(byId[l.item_id]), qty: num(l.qty), counted: l.counted_qty == null ? '' : num(l.counted_qty), cost: num(l.unit_cost) }));
   if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 });
   const isCount = type === 'count';
-  const m = modal({ title: doc ? `${D.label} رقم ${docNo(doc)}` : `${D.label} جديد`, body: `
+  const m = modal({ title: doc ? `${D.label} رقم ${docNo(doc)}` : `${D.label} جديد`, body: `${bar}
     <form id="sd-form"><div class="grid cols-3">
       ${manualField(manual, doc?.doc_no, ro)}
       <div class="field"><label>التاريخ</label><input type="date" name="doc_date" value="${esc(d0.doc_date)}" ${ro}></div>
@@ -153,8 +161,7 @@ async function docEditor(type, doc, whs, ctx) {
     ${isCount ? '<div class="notice info">اكتب الكمية الفعلية اللي عدّيتها. لما ترحّل، النظام بيحسب الفرق عن رصيد الدفاتر وبيعمل تسوية.</div>' : ''}
     <table class="t lines" id="sdl"><thead><tr><th>#</th><th style="min-width:240px">الصنف</th><th style="width:130px">${isCount ? 'الكمية الفعلية' : 'الكمية'}</th>${isCount && doc?.status === 'posted' ? '<th style="width:120px">التسوية</th>' : ''}<th style="width:130px">الكلفة للوحدة</th><th></th></tr></thead><tbody></tbody></table>
     ${!readOnly ? '<button class="btn sm" id="sd-add" type="button" style="margin-top:6px">➕ سطر</button>' : ''}`,
-    foot: `${!readOnly ? '<button class="btn primary" data-save>💾 حفظ مسودة</button>' : ''}
-      ${!readOnly && can('inventory', 'post') ? '<button class="btn primary" data-post>✅ حفظ وترحيل</button>' : ''}
+    foot: `${!readOnly ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}
       ${doc && can('inventory', 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
       ${doc ? '<button class="btn" data-attach>📎 مرفقات</button>' : ''}
       ${doc?.status === 'draft' && can('inventory', 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
@@ -195,13 +202,19 @@ async function docEditor(type, doc, whs, ctx) {
       if (id) { const u = await sb.from('stock_docs').update(header).eq('id', id); if (u.error) throw u.error; const dl = await sb.from('stock_doc_lines').delete().eq('doc_id', id); if (dl.error) throw dl.error; }
       else { const ins = await sb.from('stock_docs').insert({ ...header, company_id: S.company.id, doc_type: type }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; doc = ins.data; }
       const li = await sb.from('stock_doc_lines').insert(out.map((l, k) => ({ ...l, doc_id: id, line_no: k + 1 }))); if (li.error) throw li.error;
-      if (post) { const p = await sb.rpc('post_stock_doc', { p_id: id }); if (p.error) throw p.error; toast('تم الترحيل وتحديث المخزون', 'ok'); }
-      else toast('تم الحفظ كمسودة', 'ok');
-      m.close(); ctx.rerender();
+      if (post) { const p = await sb.rpc('post_stock_doc', { p_id: id }); if (p.error) { toast(arError(p.error), 'err'); return reopen(id); } toast('انحفظ وانرحّل للمخزون', 'ok'); }
+      else toast('تم الحفظ', 'ok');
+      reopen(id);
     } catch (err) { toast(arError(err), 'err'); btns.forEach(b => b.disabled = false); }
   };
+  const reopen = async (id) => {
+    m.close(); ctx.rerender();
+    const { data } = await sb.from('stock_docs').select('*').eq('id', id).single();
+    if (data) docEditor(type, data, whs, ctx);
+  };
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
-  m.el.querySelector('[data-post]')?.addEventListener('click', () => save(true));
+  m.el.querySelector('[data-postdo=stock]')?.addEventListener('click', (ev) => { if (!readOnly) { ev.stopImmediatePropagation(); save(true); } });
+  if (doc) wirePostBar(m.el, 'stock', doc.id, () => reopen(doc.id));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (!(await confirmBox(`حذف ${D.label} رقم ${docNo(doc)}؟`))) return;
     const { error } = await sb.from('stock_docs').delete().eq('id', doc.id); if (error) return toast(arError(error), 'err'); toast('تم الحذف', 'ok'); m.close(); ctx.rerender();

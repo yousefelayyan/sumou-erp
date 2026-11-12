@@ -18,7 +18,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..17). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..18). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -37,6 +37,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   attach.js         المرفقات (Supabase Storage، bucket اسمه attachments)
   print.js          printDoc + إعدادات نماذج الطباعة + التفقيط
   printset.js       شاشة نماذج الطباعة
+  posting.js        الترحيل: شريط «ترحيل للمحاسبة/للمخزون» بكل سند + شاشة الأدوات ← الترحيل
   numbering.js      طريقة الترقيم (أرقام المستندات + اقتراح رموز البطاقات) + docNo()
   sw.js             كاش PWA — ارفع رقم النسخة مع كل تحديث
   pdf/              برنامج «السمو PDF» (pdf.js + pdf-lib بمجلد lib)
@@ -47,7 +48,14 @@ dev/                أدوات الفحص (شوف تحت)
 ## قواعد قاعدة البيانات (مهم)
 - **RLS على كل الجداول.** الصلاحية بتتفحص بـ `public.can(company, screen, action)`، والعمليات: view, add, edit, delete, print, post. وفي كمان `has_company()` و`is_admin()` و`is_active_user()`.
 - صلاحيات المستخدم: من مجموعته بالشركة (`user_groups.permissions`)، أو صلاحيات خاصة إله (`profiles.permissions`): `true` يعني كل العمليات، أو مثلاً `{"view":true,"print":true}`.
-- **المستند المرحّل ما بيتعدّل.** القيود والفواتير وسندات المخزون والرواتب. التصحيح بقيد عكسي بس.
+- **المستند المرحّل ما بيتعدّل.** القيود والفواتير وسندات المخزون والرواتب. التصحيح بقيد عكسي، أو «إلغاء ترحيل» (المرحلة 18) لمين إله صلاحية `unpost` على الشاشة (المجموعة لازم يكون فيها المفتاح صريح؛ المدير دايماً؛ والمستخدم اللي صلاحيته الخاصة على الشاشة «الكل» = true بياخذها كمان).
+- **الترحيل (المرحلة 18):** الحفظ بيخزّن بس. الترحيل بكبستين منفصلات: للمحاسبة وللمخزون.
+  - الفاتورة: `status` = المحاسبة (draft/posted/cancelled)، و`stock_posted` = المخزون. حركات المخزون من trigger `invoice_stock_moves` لما `stock_posted` يصير true. الفاتورة المرحّلة للمخزون مقفولة (`ab_invoice_stock_lock`).
+  - قيد كلفة البضاعة (الجرد المستمر) صار قيد لحاله `cogs_entry_id` من `invoice_cogs_sync` لما تكون الفاتورة مرحّلة للاثنين. الفواتير القديمة اللي الكلفة جوّا قيدها `cogs_in_entry = true`.
+  - سند المخزون: `status` = المخزون (`post_stock_doc`)، و`entry_id` = المحاسبة (`post_stock_doc_gl`، جرد مستمر بس، بعد المخزون).
+  - إعدادات كل نوع بـ `company_settings.posting` ({kind:{gl,stock}})، والدالة `posting_flag()`.
+  - حماية: `ab_stock_docs_guard` (رقم القيد بسند المخزون من النظام بس)، و`ab_invoice_lines_lock` (السطر ما بينقل لفاتورة ثانية). الاسترجاع من نسخة قبل 18 بيعبّي stock_posted لحاله (`posting_ready`). إغلاق السنة ممنوع إذا في ترحيل ناقص (`fy_close_posting_check`). الترحيل دفعة واحدة بالتاريخ، والداخل للمخزون قبل الطالع.
+  - إلغاء الترحيل: `unpost_entry`، `unpost_invoice(id,'gl'|'stock')`، `unpost_stock_doc(id,'gl'|'stock')`. ممنوع إذا السنة مغلقة، أو القيد انعكس، أو عليه تسوية بنكية أو شيك، أو في مرتجع مرحّل.
 - التعديل الداخلي بيصير بس من دوال `security definer`، اللي بتعمل `set_config('sumou.internal', public.internal_token(), true)`. والدالة `is_internal()` بتقارن مع السر. **ممنوع** أي شي يفضح `internal_token`.
 - أنواع القيود: journal, receipt, payment, opening, invoice, closing, cheque, stock, payroll, depreciation.
   - إذا ضفت نوع جديد، لازم تضيفه بقيد `entry_type` بالملفين 05 و08، وبـ `entry_screen` بالملفين 05 و08، وبـ `entries_type_guard` (08)، وبـ `reverse_entry` (13)، وبـ ENTRY_TYPES بـ finance.js.
@@ -72,7 +80,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -96,7 +104,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.2.0)
+## اللي انبنى (لحد النسخة 4.3.0)
 - الشركات والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.

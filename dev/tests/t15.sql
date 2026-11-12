@@ -9,9 +9,11 @@ insert into invoices(id,company_id,fiscal_year_id,inv_type,inv_date,payment_type
 insert into invoice_lines(invoice_id,item_id,description,qty,unit_price,tax_rate) values
  ('20000000-0000-0000-0000-0000000000d1','10000000-0000-0000-0000-0000000000d1','x',10,4,0),('20000000-0000-0000-0000-0000000000d2','10000000-0000-0000-0000-0000000000d1','x',10,9,0),('20000000-0000-0000-0000-0000000000d3','10000000-0000-0000-0000-0000000000d1','x',10,6,0);
 select post_invoice('20000000-0000-0000-0000-0000000000d1') is not null, post_invoice('20000000-0000-0000-0000-0000000000d2') is not null, post_invoice('20000000-0000-0000-0000-0000000000d3') is not null;
+select post_invoice_stock('20000000-0000-0000-0000-0000000000d1') is null, post_invoice_stock('20000000-0000-0000-0000-0000000000d2') is null, post_invoice_stock('20000000-0000-0000-0000-0000000000d3') is null;
 insert into invoices(id,company_id,fiscal_year_id,inv_type,inv_date,payment_type,cash_account_id,original_invoice_id) values ('20000000-0000-0000-0000-0000000000d4',:'C',:'F','purchase_return','2026-08-04','cash',(select id from accounts where company_id=:'C' and code='1101'),'20000000-0000-0000-0000-0000000000d3');
 insert into invoice_lines(invoice_id,item_id,description,qty,unit_price,tax_rate) values ('20000000-0000-0000-0000-0000000000d4','10000000-0000-0000-0000-0000000000d1','x',2,7,0);
 select post_invoice('20000000-0000-0000-0000-0000000000d4') is not null;
+select post_invoice_stock('20000000-0000-0000-0000-0000000000d4') is null;
 select item_avg_cost(:'C','10000000-0000-0000-0000-0000000000d1','2026-12-31') avg, (select sum(value) from rep_stock_balance(:'C','2026-12-31')) report_total,
  (select sum(l.debit-l.credit) from journal_lines l join journal_entries e on e.id=l.entry_id join accounts a on a.id=l.account_id where e.company_id=:'C' and a.code='1105') book_total;
 \echo == payroll re-run after cancel

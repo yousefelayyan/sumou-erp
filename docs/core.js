@@ -39,7 +39,7 @@ export const SCREENS = [
 ];
 export const ACTIONS = [
   { key: 'view', label: 'عرض' }, { key: 'add', label: 'إضافة' },
-  { key: 'edit', label: 'تعديل' }, { key: 'delete', label: 'حذف' }, { key: 'print', label: 'طباعة' }, { key: 'post', label: 'ترحيل' },
+  { key: 'edit', label: 'تعديل' }, { key: 'delete', label: 'حذف' }, { key: 'print', label: 'طباعة' }, { key: 'post', label: 'ترحيل' }, { key: 'unpost', label: 'إلغاء ترحيل' },
 ];
 
 export const COMPANY_TYPES = ['مؤسسة فردية','شركة تضامن','شركة توصية بسيطة','شركة ذات مسؤولية محدودة','شركة مساهمة خاصة','شركة مساهمة عامة','شركة غير ربحية','جمعية','أخرى'];

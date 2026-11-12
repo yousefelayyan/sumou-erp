@@ -12,6 +12,7 @@ import { CHEQUE_ROUTES } from './cheques.js';
 import { INVENTORY_ROUTES } from './inventory.js';
 import { PRINTSET_ROUTES } from './printset.js';
 import { NUMBERING_ROUTES } from './numbering.js';
+import { POSTING_ROUTES } from './posting.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
@@ -172,6 +173,7 @@ const NAV = () => [
  { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
   ]},
   { title: 'الأدوات', items: [
+    { r: 'posting', i: '📮', l: 'الترحيل', show: () => S.company && ['journal_entries', 'sales_invoices', 'purchase_invoices', 'inventory', 'companies'].some(x => can(x, 'post') || can(x, 'unpost') || can(x, 'edit')) },
     { r: 'numbering', i: '🔢', l: 'طريقة الترقيم', show: () => S.company && can('companies', 'edit') },
     { r: 'backup', i: '💾', l: 'النسخ الاحتياطي', show: isAdmin },
     { r: 'print-settings', i: '🖨️', l: 'نماذج الطباعة', show: () => S.company && can('companies', 'edit') },
@@ -264,7 +266,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

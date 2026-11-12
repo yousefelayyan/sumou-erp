@@ -3,6 +3,7 @@
 //  حسابات الربط، الأصناف والخدمات، فواتير البيع والشراء والمرتجعات، تقرير الإقرار
 // =====================================================================
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
+import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
@@ -230,8 +231,8 @@ function invoiceList(group) {
       v.querySelector('#rows').innerHTML = data.filter(i => (!ft || i.inv_type === ft) && (!fs || i.status === fs) && (!q || [docNo(i), String(i.inv_no), pName[i.party_id], i.party_name, i.reference].some(x => (x || '').toLowerCase().includes(q))))
         .map(i => `<tr class="click" data-open="${i.id}"><td>${i.inv_type.endsWith('return') ? `<span class="badge warn">${INV[i.inv_type].label}</span>` : INV[i.inv_type].label}</td><td><b dir="ltr">${esc(docNo(i))}</b></td><td>${fmtDate(i.inv_date)}</td>
           <td>${esc(pName[i.party_id] || i.party_name || '')}</td><td>${i.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td><td>${esc(i.reference || '')}</td>
-          <td dir="ltr" style="text-align:left">${i.status === 'draft' ? '—' : fmtNum(i.subtotal)}</td><td dir="ltr" style="text-align:left">${i.status === 'draft' ? '—' : fmtNum(i.tax_total)}</td>
-          <td dir="ltr" style="text-align:left"><b>${i.status === 'draft' ? '—' : fmtNum(i.total)}</b></td><td>${badge(i.status)}</td></tr>`).join('')
+          <td dir="ltr" style="text-align:left">${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.subtotal)}</td><td dir="ltr" style="text-align:left">${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.tax_total)}</td>
+          <td dir="ltr" style="text-align:left"><b>${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.total)}</b></td><td>${badge(i.status)}${i.stock_posted ? ' <span class="badge ok" title="مرحّلة للمخزون">📦</span>' : ''}</td></tr>`).join('')
         || '<tr><td colspan="10" class="empty">ما في فواتير بهالسنة المالية</td></tr>';
     };
     draw(); ['#q', '#ft', '#fs'].forEach(s => v.querySelector(s).addEventListener('input', draw));
@@ -254,9 +255,13 @@ async function invoiceEditor(type, inv, ctx) {
   if (inv) { const r = await sb.from('invoice_lines').select('*').eq('invoice_id', inv.id).order('line_no'); lines = r.data || []; }
   const myParties = parties.filter(p => p.party_type === T.partyType);
   const isSale = T.group === 'sales';
-  const readOnly = (inv && inv.status !== 'draft') || (inv ? !can(T.screen, 'edit') : !can(T.screen, 'add'));
+  const readOnly = (inv && (inv.status !== 'draft' || inv.stock_posted)) || (inv ? !can(T.screen, 'edit') : !can(T.screen, 'add'));
   const ro = readOnly ? 'disabled' : '';
   const manual = await isManual(type);
+  await loadPosting();
+  const bar = inv && inv.status !== 'cancelled' ? postBarHTML([
+    postFlag(type, 'gl') || inv.status === 'posted' ? { key: 'gl', posted: inv.status === 'posted', canPost: inv.status === 'draft' && can(T.screen, 'post') && postFlag(type, 'gl'), canUnpost: inv.status === 'posted' && can(T.screen, 'unpost') } : null,
+    postFlag(type, 'stock') || inv.stock_posted ? { key: 'stock', posted: !!inv.stock_posted, canPost: !inv.stock_posted && can(T.screen, 'post') && postFlag(type, 'stock'), canUnpost: inv.stock_posted && can(T.screen, 'unpost') } : null]) : '';
   const pre = !inv && returnPrefill ? returnPrefill : null; returnPrefill = null;
   const i0 = inv || { inv_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, payment_type: pre?.inv.payment_type || 'credit',
     prices_include_tax: pre?.inv.prices_include_tax || false, cash_account_id: pre?.inv.cash_account_id || st.cash_account_id, party_id: pre?.inv.party_id,
@@ -267,7 +272,7 @@ async function invoiceEditor(type, inv, ctx) {
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
   const m = modal({ title: inv ? `${T.label} رقم ${docNo(inv)}` : `${T.label} جديدة`, body: `
-    ${inv ? `<div style="margin:-6px 0 12px">${badge(inv.status)} ${inv.status !== 'draft' ? '<span class="muted" style="font-size:13px">— الفاتورة المرحّلة ما بتنعدّل. للتصحيح ألغيها واعمل وحدة جديدة، أو اعمل مرتجع.</span>' : ''}</div>` : ''}
+    ${bar}${inv ? `<div style="margin:-6px 0 12px">${badge(inv.status)} ${readOnly && (inv.status !== 'draft' || inv.stock_posted) ? '<span class="muted" style="font-size:13px">— الفاتورة المرحّلة ما بتنعدّل. للتعديل ألغِ ترحيلها، أو ألغيها، أو اعمل مرتجع.</span>' : ''}</div>` : ''}
     <form id="inv-form"><div class="grid cols-3">
       ${manualField(manual, inv?.inv_no, ro)}
       <div class="field"><label>التاريخ *</label><input type="date" name="inv_date" value="${esc(i0.inv_date)}" min="${S.fy.start_date}" max="${S.fy.end_date}" ${ro}></div>
@@ -288,13 +293,12 @@ async function invoiceEditor(type, inv, ctx) {
     <div class="inv-totals"><div><span>المجموع قبل الضريبة</span><b id="t-sub" dir="ltr"></b></div><div><span>الخصومات</span><b id="t-disc" dir="ltr"></b></div>
       <div><span>ضريبة المبيعات</span><b id="t-tax" dir="ltr"></b></div><div class="big"><span>الإجمالي</span><b id="t-tot" dir="ltr"></b></div><div class="muted" id="t-words" style="font-size:13px"></div></div>
     <div class="field" style="margin-top:10px"><label>ملاحظات</label><input form="inv-form" name="notes" value="${esc(i0.notes)}" ${ro}></div>`,
-    foot: `${!readOnly ? '<button class="btn primary" data-save>💾 حفظ مسودة</button>' : ''}
-      ${!readOnly && can(T.screen, 'post') ? '<button class="btn primary" data-post>✅ حفظ وترحيل</button>' : ''}
+    foot: `${!readOnly ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}
       ${inv?.status === 'posted' && can(T.screen, 'post') ? '<button class="btn danger" data-cancel>⛔ إلغاء الفاتورة</button>' : ''}
       ${inv?.status === 'posted' && !type.endsWith('return') && can(T.screen, 'add') ? `<button class="btn" data-return>↩️ ${type === 'sale' ? 'مرتجع بيع' : 'مرتجع شراء'} منها</button>` : ''}
       ${inv && can(T.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
       ${inv ? '<button class="btn" data-attach>📎 مرفقات</button>' : ''}
-      ${inv?.status === 'draft' && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
+      ${inv?.status === 'draft' && !inv.stock_posted && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '1100px';
   const f = m.el.querySelector('#inv-form'), tb = m.el.querySelector('#il tbody');
@@ -378,13 +382,23 @@ async function invoiceEditor(type, inv, ctx) {
       else { const ins = await sb.from('invoices').insert({ ...header, company_id: S.company.id, fiscal_year_id: S.fy.id, inv_type: type, original_invoice_id: i0.original_invoice_id || null }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; inv = ins.data; }
       const li = await sb.from('invoice_lines').insert(out.map((l, k) => ({ ...l, invoice_id: id, line_no: k + 1 }))); if (li.error) throw li.error;
       await log(inv ? 'تعديل' : 'إضافة', T.screen, id, { type });
-      if (post) { const r = await sb.rpc('post_invoice', { p_id: id }); if (r.error) throw r.error; toast('تم الحفظ والترحيل، وانعمل القيد تلقائياً', 'ok'); }
-      else toast('تم الحفظ كمسودة', 'ok');
-      m.close(); ctx.rerender();
+      if (post) { const r = post === 'gl' ? await sb.rpc('post_invoice', { p_id: id }) : await sb.rpc('post_invoice_stock', { p_id: id });
+        if (r.error) { toast(arError(r.error), 'err'); return reopen(id); }
+        toast(post === 'gl' ? 'انحفظت وانرحّلت للمحاسبة' : 'انحفظت وانرحّلت للمخزون', 'ok'); }
+      else toast('تم الحفظ', 'ok');
+      reopen(id);
     } catch (err) { toast(arError(err), 'err'); btns.forEach(b => b.disabled = false); }
   };
+  // بعد الحفظ أو الترحيل: الفاتورة بتضل مفتوحة عشان تبيّن كبسات الترحيل
+  const reopen = async (id) => {
+    m.close(); ctx.rerender();
+    const { data } = await sb.from('invoices').select('*').eq('id', id).single();
+    if (data) invoiceEditor(data.inv_type, data, ctx);
+  };
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
-  m.el.querySelector('[data-post]')?.addEventListener('click', () => save(true));
+  // الترحيل من مسودة لسا بتنعدّل: بيحفظ التعديلات أول
+  m.el.querySelectorAll('[data-postdo]').forEach(b => b.addEventListener('click', (ev) => { if (!readOnly) { ev.stopImmediatePropagation(); save(b.dataset.postdo); } }));
+  if (inv) wirePostBar(m.el, 'invoice', inv.id, () => reopen(inv.id));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (!(await confirmBox(`حذف ${T.label} رقم ${docNo(inv)}؟`))) return;
     const { error } = await sb.from('invoices').delete().eq('id', inv.id); if (error) return toast(arError(error), 'err');
