@@ -1,0 +1,184 @@
+// =====================================================================
+//  السمو ERP — مراكز التحكم: الحسابات، العملاء، الموردين
+//  بتحدد فترة، وبيطلعلك لكل حساب/عميل/مورد: رصيد أول المدة، مدين ودائن الفترة، والرصيد آخر المدة.
+//  كبسة على أي سطر بتفتح كشف حسابه تحته (نفس مبدأ كشف الحساب).
+// =====================================================================
+import { S, sb, esc, toast, arError, can, fmtNum, fmtDate, num } from './core.js';
+import { loadAccounts } from './finance.js';
+import { ENTRY_TYPES } from './finance.js';
+import { loadParties, PARTY } from './parties.js';
+import { docNo } from './numbering.js';
+import { downloadCSV } from './finance.js';
+
+const bal = (x) => Math.abs(x) < 0.0005 ? '<span class="muted">—</span>' : `${fmtNum(Math.abs(x))} <small class="${x > 0 ? 'dr' : 'cr'}">${x > 0 ? 'مدين' : 'دائن'}</small>`;
+const balTxt = (x) => Math.abs(x) < 0.0005 ? '' : `${fmtNum(Math.abs(x))} ${x > 0 ? 'مدين' : 'دائن'}`;
+const amt = (x) => Math.abs(x) < 0.0005 ? '' : fmtNum(x);
+
+function periodBar(id = 'pc') {
+  return `<div class="card no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end" id="${id}">
+    <div class="field"><label>الفترة</label><select data-f="per"><option value="fy">السنة المالية كاملة</option><option value="month">الشهر الحالي</option><option value="q">آخر 3 شهور</option><option value="custom">فترة محددة</option></select></div>
+    <div class="field"><label>من</label><input type="date" data-f="from" value="${S.fy.start_date}"></div>
+    <div class="field"><label>إلى</label><input type="date" data-f="to" value="${S.fy.end_date}"></div>
+    <span data-slot></span>
+    <div class="field" style="flex:1;min-width:150px"><label>بحث</label><input data-f="q" placeholder="الرمز أو الاسم…"></div>
+    <label class="check" style="margin:0 0 10px"><input type="checkbox" data-f="moving" checked> بس اللي إلهم رصيد أو حركة</label>
+    <button class="btn primary" data-f="go" type="button">🔎 عرض</button>
+    <button class="btn sm" data-f="csv" type="button">⬇️ Excel</button><button class="btn sm" data-f="prn" type="button">🖨️ طباعة</button></div>`;
+}
+function wirePeriod(box, onGo) {
+  const f = (n) => box.querySelector(`[data-f=${n}]`);
+  const clamp = (d) => d < S.fy.start_date ? S.fy.start_date : d > S.fy.end_date ? S.fy.end_date : d;
+  f('per').onchange = () => {
+    const p = f('per').value, t = new Date(); const iso = (d) => d.toISOString().slice(0, 10);
+    if (p === 'fy') { f('from').value = S.fy.start_date; f('to').value = S.fy.end_date; }
+    if (p === 'month') { f('from').value = clamp(iso(new Date(t.getFullYear(), t.getMonth(), 1))); f('to').value = clamp(iso(t)); }
+    if (p === 'q') { f('from').value = clamp(iso(new Date(t.getFullYear(), t.getMonth() - 2, 1))); f('to').value = clamp(iso(t)); }
+    if (p !== 'custom') onGo();
+  };
+  ['from', 'to'].forEach(n => f(n).onchange = () => { f('per').value = 'custom'; });
+  f('go').onclick = onGo; f('q').onkeydown = (e) => { if (e.key === 'Enter') onGo(); };
+  f('prn').onclick = () => window.print();
+  return f;
+}
+// كشف حساب مختصر تحت السطر
+function statementHTML(open, rows, from, to) {
+  let b = open, td = 0, tc = 0;
+  const body = rows.map(m => { b += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit);
+    return `<tr><td>${fmtDate(m.entry_date)}</td><td>${esc((ENTRY_TYPES[m.entry_type]?.label || '') + ' ' + docNo(m))}</td>
+      <td>${esc(m.line_description || m.description || '')}</td><td>${esc(m.reference || '')}</td>
+      <td class="n">${amt(num(m.debit))}</td><td class="n">${amt(num(m.credit))}</td><td class="n">${bal(b)}</td></tr>`; }).join('');
+  return `<table class="t rep stmt"><thead><tr><th>التاريخ</th><th>السند</th><th>البيان</th><th>المرجع</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
+    <tbody><tr class="grp"><td>${fmtDate(from)}</td><td colspan="5">رصيد أول المدة</td><td class="n">${bal(open)}</td></tr>
+    ${body || '<tr><td colspan="7" class="empty">ما في حركات مرحّلة بهالفترة</td></tr>'}</tbody>
+    <tfoot><tr class="tot"><td colspan="4">المجموع / رصيد ${fmtDate(to)}</td><td class="n">${fmtNum(td)}</td><td class="n">${fmtNum(tc)}</td><td class="n">${bal(b)}</td></tr></tfoot></table>`;
+}
+async function toggleStatement(tr, cols, loader) {
+  const nx = tr.nextElementSibling;
+  if (nx?.classList.contains('stmt-row')) { nx.remove(); tr.classList.remove('open'); return; }
+  tr.classList.add('open');
+  const row = document.createElement('tr'); row.className = 'stmt-row';
+  row.innerHTML = `<td colspan="${cols}"><div class="muted">جاري تحميل كشف الحساب…</div></td>`;
+  tr.after(row);
+  try { row.firstElementChild.innerHTML = await loader(); } catch (e) { row.firstElementChild.innerHTML = `<div class="notice">${esc(arError(e))}</div>`; }
+}
+
+// ---------------------------------------------------------------------
+//  مركز تحكم الحسابات
+// ---------------------------------------------------------------------
+async function viewAccountCenter(v) {
+  if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
+  const accs = await loadAccounts();
+  const byId = Object.fromEntries(accs.map(a => [a.id, a]));
+  const groups = accs.filter(a => a.is_group);
+  v.innerHTML = `<div class="page-head"><h2>🎛️ مركز تحكم الحسابات</h2><div class="spacer"></div><span class="muted">${esc(S.company.name)} — ${esc(S.fy.name || S.fy.code)}</span></div>
+    ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>`;
+  v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>تحت حساب</label><select data-f="par"><option value="">كل الحسابات</option>${groups.map(g => `<option value="${g.id}">${esc(g.code)} — ${esc(g.name)}</option>`).join('')}</select></div>
+    <div class="field"><label>المستوى</label><select data-f="lvl"><option value="0">كل المستويات</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>`;
+  const box = v.querySelector('#pc');
+  let out = [];
+  const f = wirePeriod(box, () => run());
+  f('par').onchange = () => run(); f('lvl').onchange = () => run(); f('moving').onchange = () => run();
+  const under = (a, pid) => { for (let x = a; x; x = byId[x.parent_id]) if (x.id === pid) return true; return false; };
+  async function run() {
+    const from = f('from').value, to = f('to').value;
+    const { data, error } = await sb.rpc('rep_trial_balance', { p_company: S.company.id, p_fy: S.fy.id, p_from: from, p_to: to });
+    if (error) return toast(arError(error), 'err');
+    const t = {}; accs.forEach(a => t[a.id] = { o: 0, d: 0, c: 0 });
+    (data || []).forEach(r => { for (let x = byId[r.account_id]; x; x = byId[x.parent_id]) {
+      const s = t[x.id]; s.o += num(r.open_debit) - num(r.open_credit); s.d += num(r.period_debit); s.c += num(r.period_credit); } });
+    const par = f('par').value, lvl = +f('lvl').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
+    const list = accs.filter(a => (!par || (a.id !== par && under(a, par))) && (!lvl || (a.level || 1) <= lvl)
+      && (!q || [a.code, a.name].some(x => (x || '').toLowerCase().includes(q)))
+      && (!moving || Math.abs(t[a.id].o) > 0.0005 || t[a.id].d || t[a.id].c));
+    const leaves = list.filter(a => !a.is_group);
+    const sum = (k) => leaves.reduce((s, a) => s + t[a.id][k], 0);
+    const close = (a) => t[a.id].o + t[a.id].d - t[a.id].c;
+    const kp = (l, x) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`;
+    v.querySelector('#kp').innerHTML = kp('عدد الحسابات', leaves.length) + kp('مجموع مدين الفترة', fmtNum(sum('d'))) + kp('مجموع دائن الفترة', fmtNum(sum('c')))
+      + kp('الفرق', fmtNum(Math.abs(sum('d') - sum('c'))));
+    out = list.map(a => [a.code, a.name, balTxt(t[a.id].o), amt(t[a.id].d), amt(t[a.id].c), balTxt(close(a))]);
+    v.querySelector('#tb').innerHTML = `<thead><tr><th>الرمز</th><th>الحساب</th><th>رصيد أول المدة</th><th>مدين الفترة</th><th>دائن الفترة</th><th>الرصيد آخر المدة</th></tr></thead>
+      <tbody>${list.map(a => `<tr class="${a.is_group ? 'grp' : 'clickable'}" data-acc="${a.id}"><td dir="ltr" style="text-align:right">${esc(a.code)}</td>
+        <td style="padding-inline-start:${8 + ((a.level || 1) - 1) * 14}px">${a.is_group ? `<b>${esc(a.name)}</b>` : `${esc(a.name)} <span class="muted" style="font-size:11px">▾ كشف</span>`}</td>
+        <td class="n">${bal(t[a.id].o)}</td><td class="n">${amt(t[a.id].d)}</td><td class="n">${amt(t[a.id].c)}</td><td class="n"><b>${bal(close(a))}</b></td></tr>`).join('')
+        || '<tr><td colspan="6" class="empty">ما في حسابات بهالفلتر</td></tr>'}</tbody>`;
+  }
+  v.querySelector('#tb').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr.clickable[data-acc]'); if (!tr) return;
+    const from = f('from').value, to = f('to').value, id = tr.dataset.acc;
+    toggleStatement(tr, 6, async () => {
+      const [ob, mv] = await Promise.all([
+        sb.rpc('rep_balance_before', { p_company: S.company.id, p_fy: S.fy.id, p_account: id, p_date: from }),
+        sb.rpc('rep_ledger', { p_company: S.company.id, p_fy: S.fy.id, p_account: id, p_from: from, p_to: to })]);
+      if (ob.error || mv.error) throw (ob.error || mv.error);
+      return `<div class="stmt-head"><b>كشف حساب: ${esc(byId[id].code)} — ${esc(byId[id].name)}</b></div>` + statementHTML(num(ob.data), mv.data || [], from, to);
+    });
+  });
+  f('csv').onclick = () => downloadCSV('مركز تحكم الحسابات.csv', [['الرمز', 'الحساب', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة']].concat(out));
+  run();
+}
+
+// ---------------------------------------------------------------------
+//  مركز تحكم العملاء / الموردين
+// ---------------------------------------------------------------------
+async function viewPartyCenter(v) {
+  if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
+  const type = new URLSearchParams(location.hash.split('?')[1] || '').get('type') === 'customer' ? 'customer' : 'supplier';
+  const P = PARTY[type];
+  const [parties, catR] = await Promise.all([loadParties(true), sb.from('party_categories').select('*').eq('company_id', S.company.id).eq('party_type', type).order('code')]);
+  const list0 = parties.filter(p => p.party_type === type);
+  const cats = catR.data || [], catById = Object.fromEntries(cats.map(c => [c.id, c]));
+  v.innerHTML = `<div class="page-head"><h2>🎛️ مركز تحكم ${P.plural}</h2><div class="spacer"></div><a class="btn sm no-print" href="#/${P.route}">${P.icon} ${P.plural}</a><a class="btn sm no-print" href="#/rep-aging">⏳ أعمار الذمم</a></div>
+    ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>`;
+  v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>الفئة</label><select data-f="cat"><option value="">كل الفئات</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="-">بدون فئة</option></select></div>
+    <div class="field"><label>الرصيد</label><select data-f="side"><option value="">الكل</option><option value="dr">مدين بس</option><option value="cr">دائن بس</option><option value="over">فوق سقف الائتمان</option></select></div>`;
+  const box = v.querySelector('#pc');
+  let out = [];
+  const f = wirePeriod(box, () => run());
+  ['cat', 'side', 'moving'].forEach(n => f(n).onchange = () => run());
+  async function run() {
+    const from = f('from').value, to = f('to').value;
+    const { data, error } = await sb.rpc('rep_party_movements', { p_company: S.company.id, p_fy: S.fy.id, p_type: type, p_to: to });
+    if (error) return toast(arError(error), 'err');
+    const t = {}; list0.forEach(p => t[p.id] = { o: 0, d: 0, c: 0, last: null });
+    (data || []).forEach(r => { const s = t[r.party_id]; if (!s) return;
+      if (r.entry_date < from) s.o += num(r.debit) - num(r.credit); else { s.d += num(r.debit); s.c += num(r.credit); }
+      if (!s.last || r.entry_date > s.last) s.last = r.entry_date; });
+    const close = (p) => t[p.id].o + t[p.id].d - t[p.id].c;
+    const cat = f('cat').value, side = f('side').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
+    const list = list0.filter(p => (!cat || (cat === '-' ? !p.category_id : p.category_id === cat))
+      && (!q || [p.code, p.name, p.phone, p.trade_name].some(x => (x || '').toLowerCase().includes(q)))
+      && (!moving || Math.abs(t[p.id].o) > 0.0005 || t[p.id].d || t[p.id].c)
+      && (!side || (side === 'dr' ? close(p) > 0.0005 : side === 'cr' ? close(p) < -0.0005 : (num(p.credit_limit) > 0 && Math.abs(close(p)) > num(p.credit_limit)))))
+      .sort((a, b) => Math.abs(close(b)) - Math.abs(close(a)));
+    const dr = list.reduce((s, p) => s + Math.max(0, close(p)), 0), cr = list.reduce((s, p) => s + Math.max(0, -close(p)), 0);
+    const kp = (l, x, s = '') => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span>${s ? `<span class="muted" style="font-size:12px">${s}</span>` : ''}</div>`;
+    v.querySelector('#kp').innerHTML = kp(`عدد ${P.plural}`, list.length) + kp('مجموع الأرصدة المدينة', fmtNum(dr)) + kp('مجموع الأرصدة الدائنة', fmtNum(cr))
+      + kp('صافي الرصيد', bal(dr - cr), type === 'supplier' ? 'الدائن = مستحق للموردين' : 'المدين = مستحق على العملاء');
+    out = list.map(p => [p.code, p.name, catById[p.category_id]?.name || '', p.phone || '', balTxt(t[p.id].o), amt(t[p.id].d), amt(t[p.id].c), balTxt(close(p)), t[p.id].last || '']);
+    v.querySelector('#tb').innerHTML = `<thead><tr><th>الرمز</th><th>الاسم</th><th>الفئة</th><th>الهاتف</th><th>رصيد أول المدة</th><th>مدين الفترة</th><th>دائن الفترة</th><th>الرصيد آخر المدة</th><th>آخر حركة</th></tr></thead>
+      <tbody>${list.map(p => { const over = num(p.credit_limit) > 0 && Math.abs(close(p)) > num(p.credit_limit);
+        return `<tr class="clickable" data-p="${p.id}"><td dir="ltr" style="text-align:right">${esc(p.code)}</td><td>${esc(p.name)} <span class="muted" style="font-size:11px">▾ كشف</span>${over ? ' <span class="badge bad">فوق السقف</span>' : ''}</td>
+        <td>${esc(catById[p.category_id]?.name || '')}</td><td dir="ltr" style="text-align:right">${esc(p.phone || '')}</td>
+        <td class="n">${bal(t[p.id].o)}</td><td class="n">${amt(t[p.id].d)}</td><td class="n">${amt(t[p.id].c)}</td><td class="n"><b>${bal(close(p))}</b></td><td>${t[p.id].last ? fmtDate(t[p.id].last) : ''}</td></tr>`; }).join('')
+        || `<tr><td colspan="9" class="empty">ما في ${P.plural} بهالفلتر</td></tr>`}</tbody>
+      <tfoot><tr class="tot"><td colspan="4">المجموع</td><td class="n">${bal(list.reduce((s, p) => s + t[p.id].o, 0))}</td><td class="n">${fmtNum(list.reduce((s, p) => s + t[p.id].d, 0))}</td>
+        <td class="n">${fmtNum(list.reduce((s, p) => s + t[p.id].c, 0))}</td><td class="n">${bal(dr - cr)}</td><td></td></tr></tfoot>`;
+  }
+  v.querySelector('#tb').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr.clickable[data-p]'); if (!tr) return;
+    const from = f('from').value, to = f('to').value, p = list0.find(x => x.id === tr.dataset.p);
+    toggleStatement(tr, 9, async () => {
+      const [ob, mv] = await Promise.all([
+        sb.rpc('rep_party_balance_before', { p_company: S.company.id, p_fy: S.fy.id, p_party: p.id, p_date: from }),
+        sb.rpc('rep_party_ledger', { p_company: S.company.id, p_fy: S.fy.id, p_party: p.id, p_from: from, p_to: to })]);
+      if (ob.error || mv.error) throw (ob.error || mv.error);
+      return `<div class="stmt-head"><b>كشف حساب: ${esc(p.code)} — ${esc(p.name)}</b>${num(p.credit_limit) ? ` <span class="muted">سقف الائتمان: ${fmtNum(p.credit_limit)}</span>` : ''}
+        <a class="btn sm" href="#/rep-party" style="margin-inline-start:auto">كشف الحساب الكامل (طباعة وواتساب)</a></div>` + statementHTML(num(ob.data), mv.data || [], from, to);
+    });
+  });
+  f('csv').onclick = () => downloadCSV(`مركز تحكم ${P.plural}.csv`, [['الرمز', 'الاسم', 'الفئة', 'الهاتف', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة', 'آخر حركة']].concat(out));
+  run();
+}
+
+export const CENTER_ROUTES = { 'account-center': viewAccountCenter, 'party-center': viewPartyCenter };

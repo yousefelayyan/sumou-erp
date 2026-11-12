@@ -212,3 +212,12 @@ table.t{width:100%;border-collapse:collapse}
 .co-x:hover{opacity:1;background:rgba(0,0,0,.08)}
 .co-add{background:none;border:0;font-size:18px;cursor:pointer;color:#5b3b86;padding:4px 10px;border-radius:8px;margin-bottom:3px}
 .co-add:hover{background:rgba(0,0,0,.06)}
+
+/* مراكز التحكم */
+tr.clickable{cursor:pointer}
+tr.clickable:hover td{background:#f7f3fc}
+tr.clickable.open td{background:#efe7f9;font-weight:600}
+tr.stmt-row>td{background:#fbf9fe;padding:10px 14px 16px}
+.stmt-head{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+small.dr{color:#1d6b3a}
+small.cr{color:#a03030}

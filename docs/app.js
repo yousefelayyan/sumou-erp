@@ -15,6 +15,7 @@ import { INVENTORY_ROUTES } from './inventory.js';
 import { PRINTSET_ROUTES } from './printset.js';
 import { NUMBERING_ROUTES } from './numbering.js';
 import { POSTING_ROUTES } from './posting.js';
+import { CENTER_ROUTES } from './centers.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
@@ -121,6 +122,7 @@ const NAV = () => [
   ]},
   { title: 'المالية', items: [
     { r: 'accounts', i: '🌳', l: 'دليل الحسابات', show: () => S.company && can('accounts', 'view') },
+    { r: 'account-center', i: '🎛️', l: 'مركز تحكم الحسابات', show: () => S.company && can('reports', 'view') },
     { r: 'opening', i: '🧮', l: 'الأرصدة الافتتاحية', show: () => S.company && can('opening_balances', 'view') },
     { r: 'journal', i: '📒', l: 'سندات القيد', show: () => S.company && can('journal_entries', 'view') },
     { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
@@ -148,12 +150,14 @@ const NAV = () => [
   ]},
   { title: 'العملاء والذمم المدينة', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
+    { r: 'party-center?type=customer', i: '🎛️', l: 'مركز تحكم العملاء', show: () => S.company && can('reports', 'view') },
     { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'sales?t=sale_return', i: '↩️', l: 'مردودات المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'party-categories?type=customer', i: '🗂️', l: 'فئات العملاء', show: () => S.company && can('customers', 'view') },
   ]},
   { title: 'الموردين والذمم الدائنة', items: [
     { r: 'suppliers', i: '🏭', l: 'الموردين', show: () => S.company && can('suppliers', 'view') },
+    { r: 'party-center?type=supplier', i: '🎛️', l: 'مركز تحكم الموردين', show: () => S.company && can('reports', 'view') },
     { r: 'purchases?t=purchase', i: '🛒', l: 'فواتير المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'purchases?t=purchase_return', i: '↩️', l: 'مردودات المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'party-categories?type=supplier', i: '🗂️', l: 'فئات الموردين', show: () => S.company && can('suppliers', 'view') },
@@ -346,7 +350,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
