@@ -252,3 +252,5 @@ small.cr{color:#a03030}
 .pt-a input{width:18px;height:18px;accent-color:var(--brand,#5b2a86);flex:none}
 .pt-a span{display:flex;flex-direction:column}.pt-a small{font-size:12px}
 .lk-tabs a.tab{text-decoration:none;color:inherit}
+.stmt-tabs{display:flex;gap:6px;margin:6px 0 8px}
+.stmt-calc{display:flex;gap:4px 12px;flex-wrap:wrap;align-items:center;font-size:12.5px;margin-inline-start:12px}.stmt-calc label{display:inline-flex;gap:4px;align-items:center}

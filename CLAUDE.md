@@ -40,7 +40,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   departments.js    الدوائر (شجرة رئيسية/فرعية) + deptField()/deptValue() لحقل «الدائرة» بالمستندات
   perms.js          محرر الصلاحيات على شكل شجرة (permEditor) للمجموعات والمستخدمين
   lookups.js        قوائم «إعداد» (setup?k=…): وسائل الدفع، البنوك وفروعها، الدول والمناطق، أنواع الأوراق التجارية + pmOptions()/lookupDatalistSync()
-  centers.js        الأستاذ العام (account-center) والأستاذ المساعد: party-center?type=customer|supplier|expense، employee-center، asset-center — فترة، أرصدة أول/آخر المدة، وتفاصيل تحت السطر
+  centers.js        الأستاذ العام (account-center) والأستاذ المساعد: party-center?type=customer|supplier|expense، employee-center، asset-center — فترة، أرصدة أول/آخر المدة، وتفاصيل تحت السطر (ملخص حسب نوع السند + الحركات + «احتساب» لاختيار الأنواع والرصيد المدور)
   audit.js          سجل التتبع: شريط «أدخله/آخر تعديل» + «سجل التتبع» بكل سند (attachAudit)
   posting.js        الترحيل: شريط «ترحيل للمحاسبة/للمخزون» بكل سند + شاشة الأدوات ← الترحيل
   numbering.js      طريقة الترقيم (أرقام المستندات + اقتراح رموز البطاقات) + docNo()

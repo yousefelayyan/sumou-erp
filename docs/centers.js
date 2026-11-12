@@ -52,6 +52,43 @@ function statementHTML(open, rows, from, to) {
     ${body || '<tr><td colspan="7" class="empty">ما في حركات مرحّلة بهالفترة</td></tr>'}</tbody>
     <tfoot><tr class="tot"><td colspan="4">المجموع / رصيد ${fmtDate(to)}</td><td class="n">${fmtNum(td)}</td><td class="n">${fmtNum(tc)}</td><td class="n">${bal(b)}</td></tr></tfoot></table>`;
 }
+// ملخص الحساب حسب نوع السند (مثل «ملخص» بستاليون) + الحركات
+function summaryHTML(open, rows) {
+  const g = {};
+  rows.forEach(m => { const k = m.entry_type || 'journal'; (g[k] ||= { d: 0, c: 0, n: 0 }); g[k].d += num(m.debit); g[k].c += num(m.credit); g[k].n++; });
+  const td = rows.reduce((s, m) => s + num(m.debit), 0), tc = rows.reduce((s, m) => s + num(m.credit), 0);
+  const ob = open > 0 ? [open, 0] : [0, -open];
+  return `<table class="t rep stmt" style="max-width:720px"><thead><tr><th>التفاصيل</th><th>عدد</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead><tbody>
+    <tr class="grp"><td>رصيد افتتاحي (أول المدة)</td><td></td><td class="n">${amt(ob[0])}</td><td class="n">${amt(ob[1])}</td><td class="n">${bal(open)}</td></tr>
+    ${Object.entries(g).map(([k, x]) => `<tr><td>${esc(ENTRY_TYPES[k]?.label || k)}</td><td class="n">${x.n}</td><td class="n">${amt(x.d)}</td><td class="n">${amt(x.c)}</td><td class="n">${bal(x.d - x.c)}</td></tr>`).join('')
+      || '<tr><td colspan="5" class="empty">ما في حركات مرحّلة بهالفترة</td></tr>'}</tbody>
+    <tfoot><tr class="tot"><td>الرصيد</td><td></td><td class="n">${fmtNum(ob[0] + td)}</td><td class="n">${fmtNum(ob[1] + tc)}</td><td class="n">${bal(open + td - tc)}</td></tr></tfoot></table>`;
+}
+// «احتساب»: اختيار أنواع السندات اللي بتدخل بالملخص والحركات، ومع أو بدون الرصيد المدور
+const STMT = new WeakMap();
+function tabbed(open, rows, from, to) {
+  const kinds = [...new Set(rows.map(m => m.entry_type || 'journal'))];
+  const html = `<div class="stmt-tabs"><button type="button" class="btn sm primary" data-v="sum">📋 ملخص</button><button type="button" class="btn sm" data-v="mov">📄 الحركات</button>
+      <span class="stmt-calc"><b>احتساب:</b> <label><input type="checkbox" data-open checked> الرصيد المدور</label>
+      ${kinds.map(k => `<label><input type="checkbox" data-k="${esc(k)}" checked> ${esc(ENTRY_TYPES[k]?.label || k)}</label>`).join('')}</span></div>
+    <div data-p="sum">${summaryHTML(open, rows)}</div><div data-p="mov" hidden>${statementHTML(open, rows, from, to)}</div>`;
+  tabbed.last = { open, rows, from, to };
+  return html;
+}
+function wireTabs(box) {
+  const st = tabbed.last; if (!st) return; STMT.set(box, st);
+  const t = box.querySelector('.stmt-tabs'); if (!t) return;
+  t.onclick = (e) => { e.stopPropagation(); const b = e.target.closest('[data-v]'); if (!b) return;
+    t.querySelectorAll('[data-v]').forEach(x => x.classList.toggle('primary', x === b));
+    box.querySelectorAll('[data-p]').forEach(p => p.hidden = p.dataset.p !== b.dataset.v); };
+  t.onchange = () => {
+    const on = new Set([...t.querySelectorAll('[data-k]')].filter(x => x.checked).map(x => x.dataset.k));
+    const open = t.querySelector('[data-open]').checked ? st.open : 0;
+    const rows = st.rows.filter(m => on.has(m.entry_type || 'journal'));
+    box.querySelector('[data-p=sum]').innerHTML = summaryHTML(open, rows);
+    box.querySelector('[data-p=mov]').innerHTML = statementHTML(open, rows, st.from, st.to);
+  };
+}
 async function toggleStatement(tr, cols, loader) {
   const nx = tr.nextElementSibling;
   if (nx?.classList.contains('stmt-row')) { nx.remove(); tr.classList.remove('open'); return; }
@@ -59,7 +96,7 @@ async function toggleStatement(tr, cols, loader) {
   const row = document.createElement('tr'); row.className = 'stmt-row';
   row.innerHTML = `<td colspan="${cols}"><div class="muted">جاري تحميل كشف الحساب…</div></td>`;
   tr.after(row);
-  try { row.firstElementChild.innerHTML = await loader(); } catch (e) { row.firstElementChild.innerHTML = `<div class="notice">${esc(arError(e))}</div>`; }
+  try { row.firstElementChild.innerHTML = await loader(); wireTabs(row); } catch (e) { row.firstElementChild.innerHTML = `<div class="notice">${esc(arError(e))}</div>`; }
 }
 
 // ---------------------------------------------------------------------
@@ -111,7 +148,7 @@ async function viewAccountCenter(v) {
         sb.rpc('rep_balance_before', { p_company: S.company.id, p_fy: S.fy.id, p_account: id, p_date: from }),
         sb.rpc('rep_ledger', { p_company: S.company.id, p_fy: S.fy.id, p_account: id, p_from: from, p_to: to })]);
       if (ob.error || mv.error) throw (ob.error || mv.error);
-      return `<div class="stmt-head"><b>كشف حساب: ${esc(byId[id].code)} — ${esc(byId[id].name)}</b></div>` + statementHTML(num(ob.data), mv.data || [], from, to);
+      return `<div class="stmt-head"><b>كشف حساب: ${esc(byId[id].code)} — ${esc(byId[id].name)}</b></div>` + tabbed(num(ob.data), mv.data || [], from, to);
     });
   });
   f('csv').onclick = () => downloadCSV('الأستاذ العام.csv', [['الرمز', 'الحساب', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة']].concat(out));
@@ -174,7 +211,7 @@ async function viewPartyCenter(v) {
         sb.rpc('rep_party_ledger', { p_company: S.company.id, p_fy: S.fy.id, p_party: p.id, p_from: from, p_to: to })]);
       if (ob.error || mv.error) throw (ob.error || mv.error);
       return `<div class="stmt-head"><b>كشف حساب: ${esc(p.code)} — ${esc(p.name)}</b>${num(p.credit_limit) ? ` <span class="muted">سقف الائتمان: ${fmtNum(p.credit_limit)}</span>` : ''}
-        <a class="btn sm" href="#/rep-party" style="margin-inline-start:auto">كشف الحساب الكامل (طباعة وواتساب)</a></div>` + statementHTML(num(ob.data), mv.data || [], from, to);
+        <a class="btn sm" href="#/rep-party" style="margin-inline-start:auto">كشف الحساب الكامل (طباعة وواتساب)</a></div>` + tabbed(num(ob.data), mv.data || [], from, to);
     });
   });
   f('csv').onclick = () => downloadCSV(`أستاذ مساعد ${P.plural}.csv`, [['الرمز', 'الاسم', 'الفئة', 'الهاتف', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة', 'آخر حركة']].concat(out));
