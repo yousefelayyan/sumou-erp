@@ -12,6 +12,7 @@
 ## الروابط
 - البرنامج: https://yousefelayyan.github.io/sumou-erp/ (GitHub Pages من مجلد `docs/`، بيتحدّث بعد أي push على `main` خلال دقيقة تقريباً)
 - برنامج «السمو PDF»: https://yousefelayyan.github.io/sumou-erp/pdf/
+- برنامج «السمو قصاصة»: https://yousefelayyan.github.io/sumou-erp/snip/
 - صفحة «برامجي» (روابط كل برامجه): https://yousefelayyan.github.io/sumou-erp/apps/
 - قاعدة البيانات: مشروع Supabase اسمه Sumou-erp، الرمز `zobmukdrkmzzkpcykguc`، والخطة المجانية.
 - محرر SQL: https://supabase.com/dashboard/project/zobmukdrkmzzkpcykguc/sql/new
@@ -49,6 +50,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   numbering.js      طريقة الترقيم (أرقام المستندات + اقتراح رموز البطاقات) + docNo()
   sw.js             كاش PWA — ارفع رقم النسخة مع كل تحديث
   pdf/              برنامج «السمو PDF» (pdf.js + pdf-lib بمجلد lib)
+  snip/             برنامج «السمو قصاصة»: تصوير الشاشة (getDisplayMedia) وقصّها والكتابة عليها (أسهم، مربعات، ترقيم، تغبيش، نص)، نسخ/حفظ، وسجل بالـ IndexedDB. على الآيفون/الآيباد بس فتح أو لصق صورة
   apps/             صفحة «برامجي»
 dev/                أدوات الفحص (شوف تحت)
 ```

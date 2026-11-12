@@ -1,0 +1,55 @@
+:root { --brand: #0f5c5a; --brand2: #14807d; --bg: #eef2f2; --text: #1f2430; --muted: #6b7280; --line: #dfe5e5; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; font-family: 'Tajawal', system-ui, sans-serif; color: var(--text); background: var(--bg); }
+button, input, select { font: inherit; }
+[hidden] { display: none !important; }
+.muted { color: var(--muted); } .tiny { font-size: 12px; text-align: center; }
+.btn { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 9px 14px; font-weight: 700; cursor: pointer; color: var(--text); display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: #f5f8f8; } .btn.pri { background: var(--brand); color: #fff; border-color: var(--brand); }
+.link { border: 0; background: none; color: var(--brand); cursor: pointer; font-size: 13px; text-decoration: underline; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.notice { background: #fff7e6; border: 1px solid #f5d48a; border-radius: 12px; padding: 12px; margin-top: 12px; font-size: 14px; }
+
+/* الرئيسية */
+#home { min-height: 100%; display: flex; justify-content: center; align-items: flex-start; padding: calc(24px + env(safe-area-inset-top)) 14px 30px; background: linear-gradient(160deg, #0f5c5a 0, #0a3d3c 250px, var(--bg) 250px); }
+.card { width: 100%; max-width: 680px; background: #fff; border-radius: 22px; padding: 22px; box-shadow: 0 10px 30px rgba(10,40,40,.18); }
+.logo { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; } .logo img { width: 58px; height: 58px; border-radius: 14px; }
+.logo h1 { margin: 0; color: var(--brand); font-size: 26px; } .logo p { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.cap { width: 100%; border: 2px dashed #a8cfcd; background: #f2fbfa; border-radius: 18px; padding: 26px 10px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; }
+.cap:hover { background: #e6f6f5; border-color: var(--brand); } .cap span { font-size: 42px; } .cap b { font-size: 20px; color: var(--brand); } .cap small { color: var(--muted); }
+#gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.shot { position: relative; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; cursor: pointer; background: #f6f8f8; }
+.shot img { width: 100%; height: 100px; object-fit: cover; display: block; } .shot small { display: block; padding: 4px 8px; color: var(--muted); font-size: 11px; }
+.shot .x { position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; font-size: 12px; }
+h3 { display: flex; justify-content: space-between; align-items: center; }
+
+/* تحديد الجزء */
+#crop { position: fixed; inset: 0; background: #000; z-index: 20; cursor: crosshair; touch-action: none; overflow: hidden; }
+#crop-cv { position: absolute; top: 0; left: 0; }
+#crop::after { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.35); pointer-events: none; }
+#crop.has-sel::after { display: none; }
+#crop-sel { position: absolute; border: 2px solid #22d3ee; box-shadow: 0 0 0 99999px rgba(0,0,0,.45); z-index: 2; pointer-events: none; }
+#crop-size { position: absolute; top: -26px; right: 0; background: #0f5c5a; color: #fff; font-size: 12px; padding: 2px 8px; border-radius: 6px; direction: ltr; white-space: nowrap; }
+.crop-hint { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: rgba(15,92,90,.92); color: #fff; padding: 8px 16px; border-radius: 999px; z-index: 3; font-size: 14px; pointer-events: none; }
+
+/* المحرر */
+#editor { position: fixed; inset: 0; display: flex; flex-direction: column; }
+#bar { display: flex; align-items: center; gap: 6px; padding: calc(6px + env(safe-area-inset-top)) 8px 6px; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+#bar .grp { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; } #bar .tools { flex: 1; justify-content: center; }
+.ib { min-width: 38px; height: 38px; border: 1px solid transparent; background: none; border-radius: 10px; font-size: 18px; cursor: pointer; color: var(--text); display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
+.ib:hover { background: #f1f5f5; } .ib.on { background: #e1f3f2; border-color: var(--brand); color: var(--brand); }
+.tool[data-tool="text"] { font-weight: 800; font-family: serif; }
+.sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
+#color { width: 38px; height: 34px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; background: #fff; }
+#width { height: 34px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+#stage { flex: 1; overflow: auto; display: flex; padding: 20px; background: repeating-conic-gradient(#e7ecec 0 25%, #f4f7f7 0 50%) 0 0/22px 22px; }
+#wrap { position: relative; margin: auto; box-shadow: 0 4px 20px rgba(0,0,0,.2); background: #fff; }
+#cv { display: block; touch-action: none; }
+#status { padding: 4px 12px; font-size: 12px; color: var(--muted); background: #fff; border-top: 1px solid var(--line); direction: rtl; }
+.tbox { position: absolute; z-index: 5; min-width: 40px; outline: 2px dashed #22d3ee; background: rgba(255,255,255,.6); white-space: pre-wrap; line-height: 1.3; font-family: 'Tajawal', sans-serif; font-weight: 700; padding: 0 2px; }
+.pop { position: fixed; z-index: 30; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 6px; min-width: 230px; }
+.pop button { display: flex; width: 100%; gap: 10px; border: 0; background: none; padding: 9px 12px; border-radius: 9px; cursor: pointer; text-align: right; font-size: 15px; }
+.pop button:hover { background: #f1f5f5; } .pop hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+#toast { position: fixed; bottom: calc(24px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); background: #1f2430; color: #fff; padding: 10px 18px; border-radius: 12px; z-index: 50; display: none; max-width: 90vw; text-align: center; }
+#countdown { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; font-size: 140px; font-weight: 800; color: #fff; background: rgba(15,92,90,.55); }
+@media (max-width: 760px) { #bar .tools { order: 3; width: 100%; justify-content: flex-start; overflow-x: auto; flex-wrap: nowrap; } #stage { padding: 8px; } }

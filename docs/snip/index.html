@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>السمو قصاصة</title>
+<meta name="theme-color" content="#0f5c5a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="السمو قصاصة">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- الشاشة الأولى -->
+<section id="home">
+  <div class="card">
+    <div class="logo"><img src="icon-192.png" alt=""><div><h1>السمو قصاصة</h1><p>صوّر الشاشة، قصّ الجزء اللي بدك إياه، اكتب عليه وابعته</p></div></div>
+    <div class="big" id="cap-box">
+      <button class="cap" id="b-cap"><span>✂️</span><b>قصاصة جديدة</b><small>بتختار الشاشة أو النافذة، وبعدين بتحدد الجزء</small></button>
+      <div class="row">
+        <button class="btn" data-delay="3">⏱️ بعد ٣ ثواني</button><button class="btn" data-delay="5">⏱️ بعد ٥ ثواني</button><button class="btn" data-delay="10">⏱️ بعد ١٠ ثواني</button>
+        <button class="btn" id="b-full">🖥️ الشاشة كاملة</button>
+      </div>
+    </div>
+    <div class="notice" id="no-cap" hidden>تصوير الشاشة من المتصفح مش متاح على هالجهاز (الآيفون والآيباد). صوّر بأزرار الجهاز، وبعدين افتح الصورة هون عشان تقصّها وتكتب عليها.</div>
+    <div class="row">
+      <label class="btn">🖼️ فتح صورة<input type="file" id="open-img" accept="image/*" hidden></label>
+      <button class="btn" id="b-paste">📋 لصق صورة (كنترول + V)</button>
+    </div>
+    <h3>آخر القصاصات <button class="link" id="clear-all" hidden>مسح الكل</button></h3>
+    <div id="gallery"><p class="muted">ما في قصاصات لسا</p></div>
+    <p class="muted tiny">القصاصات بتنحفظ على جهازك بس.</p>
+  </div>
+</section>
+
+<!-- تحديد الجزء -->
+<section id="crop" hidden>
+  <canvas id="crop-cv"></canvas>
+  <div id="crop-sel" hidden><span id="crop-size"></span></div>
+  <div class="crop-hint" id="crop-hint">اسحب لتحديد الجزء · <b>Enter</b> = الشاشة كاملة · <b>Esc</b> = إلغاء</div>
+</section>
+
+<!-- المحرر -->
+<section id="editor" hidden>
+  <header id="bar">
+    <div class="grp">
+      <button class="ib" id="b-home" title="الرئيسية">🏠</button>
+      <button class="ib" id="b-new" title="قصاصة جديدة">✂️</button>
+    </div>
+    <div class="grp tools" id="tools">
+      <button class="ib tool" data-tool="move" title="تحديد وتحريك">⬚</button>
+      <button class="ib tool" data-tool="pen" title="قلم">✏️</button>
+      <button class="ib tool" data-tool="hl" title="تظليل">🖍️</button>
+      <button class="ib tool" data-tool="arrow" title="سهم">↗</button>
+      <button class="ib tool" data-tool="rect" title="مربع">▭</button>
+      <button class="ib tool" data-tool="ellipse" title="دائرة">◯</button>
+      <button class="ib tool" data-tool="line" title="خط">╱</button>
+      <button class="ib tool" data-tool="text" title="نص">T</button>
+      <button class="ib tool" data-tool="num" title="ترقيم ①②③">①</button>
+      <button class="ib tool" data-tool="blur" title="تغبيش (لإخفاء معلومات)">▦</button>
+      <button class="ib tool" data-tool="crop" title="قص">⛶</button>
+      <span class="sep"></span>
+      <input type="color" id="color" value="#e11d48" title="اللون">
+      <select id="width" title="السماكة"><option value="2">رفيع</option><option value="4" selected>وسط</option><option value="7">عريض</option><option value="12">عريض جداً</option></select>
+      <button class="ib" id="b-undo" title="تراجع">↶</button>
+      <button class="ib" id="b-redo" title="إعادة">↷</button>
+    </div>
+    <div class="grp">
+      <button class="btn pri" id="b-copy" title="نسخ">📋 نسخ</button>
+      <button class="btn" id="b-save" title="حفظ صورة">💾 حفظ</button>
+      <button class="ib" id="b-more" title="المزيد">⋯</button>
+    </div>
+  </header>
+  <div id="stage"><div id="wrap"><canvas id="cv"></canvas></div></div>
+  <div id="status"></div>
+</section>
+
+<div id="menu" class="pop" hidden></div>
+<div id="toast"></div>
+<div id="countdown" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
