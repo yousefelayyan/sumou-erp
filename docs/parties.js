@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — المرحلة 4: الزبائن والموردين
 // =====================================================================
+import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, ENTRY_TYPES, downloadCSV } from './finance.js';
@@ -127,6 +128,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
         <div class="field"><label>مدة السداد (أيام)</label><input name="payment_terms_days" value="${p.payment_terms_days || ''}" inputmode="numeric" dir="ltr"></div></div>
         <div class="field"><label>ملاحظات</label><textarea name="notes" style="min-height:60px">${esc(p.notes)}</textarea></div></div>
     </form>`, foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+  if (!isNew) attachAudit(m.el, p);
   m.el.querySelectorAll('.tabs').forEach(tabs => tabs.addEventListener('click', ev => {
     const t = ev.target.closest('.tab'); if (!t) return;
     tabs.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));

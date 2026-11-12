@@ -1,6 +1,8 @@
 // =====================================================================
 //  السمو ERP — الهيكل الرئيسي وشاشات المرحلة 1
 // =====================================================================
+import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
+import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
 import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
@@ -239,6 +241,7 @@ function renderShell() {
           <div class="user-chip"><span>${esc(S.profile.full_name || S.profile.email)}</span><div class="avatar">${esc(initials)}</div></div>
           <button class="btn sm" id="logout">خروج</button>
         </header>
+        <div class="co-tabs" id="co-tabs">${coTabsHTML()}</div>
         <section class="content" id="view"></section>
         <div class="watermark" id="watermark" aria-hidden="true"></div>
       </div>
@@ -258,11 +261,12 @@ function renderShell() {
       if (INSTANCE) window.close();   // نافذة «مثيل جديد» بتتسكّر
     }
   });
-  document.getElementById('company-select').onchange = async (e) => {
-    S.company = S.companies.find(c => c.id === e.target.value) || null;
-    localStorageSet('sumou.company', S.company?.id);
-    await loadFiscalYears(); renderShell(); route_();
-  };
+  document.getElementById('company-select').onchange = (e) => activateCompany(e.target.value);
+  document.getElementById('co-tabs').addEventListener('click', (e) => {
+    const x = e.target.closest('[data-close-tab]'); if (x) { e.stopPropagation(); return closeCompanyTab(x.dataset.closeTab); }
+    if (e.target.closest('[data-add-tab]')) return switchCompanyDialog();
+    const t = e.target.closest('[data-co-tab]'); if (t && t.dataset.coTab !== S.company?.id) activateCompany(t.dataset.coTab);
+  });
   document.getElementById('fy-select').onchange = (e) => {
     S.fy = S.fiscalYears.find(y => y.id === e.target.value) || null;
     localStorageSet('sumou.fy.' + S.company.id, S.fy?.id);
@@ -286,11 +290,48 @@ function switchCompanyDialog() {
   draw(); m.el.querySelector('#sc-q').oninput = draw; m.el.querySelector('#sc-q').focus();
   m.el.querySelector('#sc-list').onclick = async (e) => {
     const b = e.target.closest('[data-co]'); if (!b) return;
-    S.company = S.companies.find(c => c.id === b.dataset.co) || null;
-    localStorageSet('sumou.company', S.company?.id);
-    m.close(); await loadFiscalYears(); renderShell(); route_();
-    toast('صرت على: ' + (S.company?.name || ''), 'ok');
+    m.close(); await activateCompany(b.dataset.co);
   };
+}
+
+// ---------------------------------------------------------------------
+//  تبويبات الشركات (مثل تبويبات كروم): كل شركة مفتوحة إلها تبويب، وكل تبويب بيتذكّر صفحته
+// ---------------------------------------------------------------------
+const TABS_KEY = 'sumou.cotabs' + (INSTANCE ? '.' + INSTANCE : '');
+function tabsLoad() {
+  let t; try { t = JSON.parse((INSTANCE ? sessionStorage : localStorage).getItem(TABS_KEY) || 'null'); } catch { t = null; }
+  t = t && Array.isArray(t.ids) ? t : { ids: [], hash: {} };
+  t.hash = t.hash || {};
+  t.ids = t.ids.filter(id => S.companies.some(c => c.id === id && c.is_active));
+  if (S.company && !t.ids.includes(S.company.id)) t.ids.push(S.company.id);
+  return t;
+}
+function tabsSave(t) { try { (INSTANCE ? sessionStorage : localStorage).setItem(TABS_KEY, JSON.stringify(t)); } catch {} }
+function coTabsHTML() {
+  if (!S.company) return '';
+  const t = tabsLoad(); tabsSave(t);
+  return t.ids.map(id => { const c = S.companies.find(x => x.id === id); return `<div class="co-tab ${id === S.company.id ? 'active' : ''}" data-co-tab="${id}" title="${esc(c.name)}">
+      <span class="co-code" dir="ltr">${esc(c.code)}</span><span class="co-name">${esc(c.name)}</span>
+      ${t.ids.length > 1 ? `<button type="button" class="co-x" data-close-tab="${id}" title="سكّر التبويب">×</button>` : ''}</div>`; }).join('')
+    + `<button type="button" class="co-add" data-add-tab title="فتح شركة بتبويب جديد">＋</button>`;
+}
+async function activateCompany(id) {
+  const t = tabsLoad();
+  if (S.company) t.hash[S.company.id] = location.hash || '#/home';
+  if (!t.ids.includes(id)) t.ids.push(id);
+  tabsSave(t);
+  S.company = S.companies.find(c => c.id === id) || null;
+  localStorageSet('sumou.company', S.company?.id);
+  document.getElementById('modal-root').innerHTML = '';
+  await loadFiscalYears(); renderShell();
+  const h = t.hash[id] || '#/home';
+  if (location.hash !== h) location.hash = h; else route_();
+}
+function closeCompanyTab(id) {
+  const t = tabsLoad(); if (t.ids.length < 2) return;
+  const i = t.ids.indexOf(id); t.ids.splice(i, 1); delete t.hash[id]; tabsSave(t);
+  if (id === S.company?.id) activateCompany(t.ids[Math.max(0, i - 1)]);
+  else document.getElementById('co-tabs').innerHTML = coTabsHTML();
 }
 
 // علامة مائية على الخلفية: اسم الشركة والسنة المالية الحالية
@@ -298,7 +339,8 @@ function updateWatermark() {
   const wm = document.getElementById('watermark'); if (!wm) return;
   if (!S.company) { wm.innerHTML = ''; return; }
   const year = S.fy ? (S.fy.name || S.fy.code) : '';
-  wm.innerHTML = `<div class="wm-inner"><div class="wm-name">${esc(S.company.name)}</div>${year ? `<div class="wm-year">${esc(year)}</div>` : ''}</div>`;
+  const who = S.profile?.full_name || S.profile?.username || (S.profile?.email || '').split('@')[0];
+  wm.innerHTML = `<div class="wm-inner"><div class="wm-name">${esc(S.company.name)}</div>${year ? `<div class="wm-year">${esc(year)}</div>` : ''}${who ? `<div class="wm-user">${esc(who)}</div>` : ''}</div>`;
 }
 
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
@@ -315,6 +357,7 @@ async function route_() {
   const exact = [...document.querySelectorAll('.nav a')].some(a => a.getAttribute('href') === fullHash);
   document.querySelectorAll('.nav a').forEach(a => a.classList.toggle('active', exact ? a.getAttribute('href') === fullHash : a.getAttribute('href').split('?')[0] === '#/' + r));
   const og = document.querySelector('.nav a.active')?.closest('.nav-group')?.dataset.g || groupOfRoute(r); if (og && !document.querySelector(`.nav-group.open[data-g="${CSS.escape(og)}"]`)) setOpenGroup(og);
+  if (S.company) { const t = tabsLoad(); t.hash[S.company.id] = location.hash || '#/home'; tabsSave(t); }
   const view = document.getElementById('view'); if (!view) return;
   view.innerHTML = '<div class="empty">جاري التحميل…</div>';
   try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); }
@@ -835,23 +878,48 @@ async function viewGroups(v) {
 // ---------------------------------------------------------------------
 async function viewLog(v) {
   if (!isAdmin()) return viewHome(v);
-  const [l, p, c] = await Promise.all([
-    sb.from('activity_log').select('*').order('created_at', { ascending: false }).limit(300),
-    sb.from('profiles').select('id,full_name,email'),
-    sb.from('companies').select('id,name'),
-  ]);
-  if (l.error) throw l.error;
-  const uName = Object.fromEntries((p.data || []).map(x => [x.id, x.full_name || x.email]));
+  const [p, c] = await Promise.all([sb.from('profiles').select('id,full_name,username,email').order('full_name'), sb.from('companies').select('id,name').order('code')]);
+  const uName = Object.fromEntries((p.data || []).map(x => [x.id, x.full_name || x.username || x.email]));
   const cName = Object.fromEntries((c.data || []).map(x => [x.id, x.name]));
-  const ent = { companies: 'الشركات', fiscal_years: 'السنوات المالية', users: 'المستخدمين', groups: 'المجموعات', auth: 'الدخول' };
+  const ent = { companies: 'الشركات', fiscal_years: 'السنوات المالية', users: 'المستخدمين', groups: 'المجموعات', auth: 'الدخول والخروج', ...AUDIT_ENTITIES };
+  const d30 = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
   v.innerHTML = `
-    <div class="page-head"><h2>سجل النشاط</h2><span class="muted">آخر 300 عملية</span></div>
+    <div class="page-head"><h2>📜 سجل النشاط والتتبع</h2><div class="spacer"></div><button class="btn sm" id="csv">⬇️ Excel</button></div>
+    <div class="tabs" id="lt"><div class="tab active" data-k="all">كل الحركات</div><div class="tab" data-k="auth">الدخول والخروج</div><div class="tab" data-k="post">الترحيل وإلغاؤه</div><div class="tab" data-k="del">الحذف</div></div>
+    <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="field"><label>المستخدم</label><select id="fu"><option value="">الكل</option>${(p.data || []).map(x => `<option value="${x.id}">${esc(uName[x.id])}</option>`).join('')}</select></div>
+      <div class="field"><label>الشركة</label><select id="fc"><option value="">الكل</option>${(c.data || []).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>من</label><input type="date" id="ff" value="${d30}"></div>
+      <div class="field"><label>إلى</label><input type="date" id="ft" value="${new Date().toISOString().slice(0, 10)}"></div>
+      <div class="field" style="flex:1;min-width:160px"><label>بحث</label><input id="fq" placeholder="رقم السند أو الاسم…"></div>
+      <button class="btn primary" id="go">🔎 عرض</button></div>
     <div class="card table-wrap"><table class="t">
       <thead><tr><th>الوقت</th><th>المستخدم</th><th>العملية</th><th>الشاشة</th><th>الشركة</th><th>التفاصيل</th></tr></thead>
-      <tbody>${l.data.map(r => `<tr><td dir="ltr" style="text-align:right">${fmtDateTime(r.created_at)}</td><td>${esc(uName[r.user_id] || '')}</td>
-        <td>${esc(r.action)}</td><td>${esc(ent[r.entity] || r.entity || '')}</td><td>${esc(cName[r.company_id] || '')}</td>
-        <td class="muted" style="font-size:12px">${esc(r.details ? (r.details.name || r.details.code || r.details.email || '') : '')}</td></tr>`).join('')
-        || '<tr><td colspan="6" class="empty">ما في نشاط لسا</td></tr>'}</tbody></table></div>`;
+      <tbody id="rows"></tbody></table></div>
+    <p class="muted" id="cnt"></p>`;
+  let kind = 'all', rows = [];
+  const det = (r) => { const d = r.details || {}; const ch = (d.changes || []).map(x => AUDIT_COLS[x]).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i);
+    return [d.no ? `رقم/رمز: ${d.no}` : '', d.name || d.code || d.email || d.doc || '', ch.length ? `تغيّر: ${ch.join('، ')}` : ''].filter(Boolean).join(' — '); };
+  const load = async () => {
+    let q = sb.from('activity_log').select('*').gte('created_at', v.querySelector('#ff').value).lte('created_at', v.querySelector('#ft').value + 'T23:59:59').order('created_at', { ascending: false }).limit(2000);
+    const u = v.querySelector('#fu').value, co = v.querySelector('#fc').value;
+    if (u) q = q.eq('user_id', u); if (co) q = q.eq('company_id', co);
+    if (kind === 'auth') q = q.eq('entity', 'auth');
+    if (kind === 'post') q = q.or('action.ilike.%ترحيل%,action.eq.إلغاء,action.eq.قيد عكسي');
+    if (kind === 'del') q = q.eq('action', 'حذف');
+    const { data, error } = await q; if (error) return toast(arError(error), 'err');
+    const fq = v.querySelector('#fq').value.trim().toLowerCase();
+    rows = (data || []).filter(r => !fq || [det(r), uName[r.user_id], r.action].some(x => (x || '').toLowerCase().includes(fq)));
+    v.querySelector('#rows').innerHTML = rows.map(r => `<tr><td dir="ltr" style="text-align:right">${fmtDateTime(r.created_at)}</td><td>${esc(uName[r.user_id] || '')}</td>
+        <td>${r.entity === 'auth' ? (r.action === 'دخول' ? '<span class="badge ok">دخول</span>' : '<span class="badge">خروج</span>') : esc(r.action)}</td><td>${esc(ent[r.entity] || r.entity || '')}</td><td>${esc(cName[r.company_id] || '')}</td>
+        <td class="muted" style="font-size:12px">${esc(det(r))}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">ما في حركات بهالفترة</td></tr>';
+    v.querySelector('#cnt').textContent = `${rows.length} حركة${rows.length >= 2000 ? ' (أول 2000، ضيّق الفترة)' : ''}`;
+  };
+  v.querySelector('#lt').onclick = (e) => { const t = e.target.closest('.tab'); if (!t) return; v.querySelectorAll('#lt .tab').forEach(x => x.classList.toggle('active', x === t)); kind = t.dataset.k; load(); };
+  v.querySelector('#go').onclick = load; v.querySelector('#fq').onkeydown = (e) => { if (e.key === 'Enter') load(); };
+  v.querySelector('#csv').onclick = () => downloadCSV('سجل النشاط.csv', [['الوقت', 'المستخدم', 'العملية', 'الشاشة', 'الشركة', 'التفاصيل']]
+    .concat(rows.map(r => [fmtDateTime(r.created_at), uName[r.user_id] || '', r.action, ent[r.entity] || r.entity || '', cName[r.company_id] || '', det(r)])));
+  load();
 }
 
 // ---------------------------------------------------------------------

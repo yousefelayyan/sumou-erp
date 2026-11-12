@@ -2,6 +2,7 @@
 //  السمو ERP — المرحلة 2: المالية
 //  دليل الحسابات، الأرصدة الافتتاحية، سندات القيد والقبض والصرف
 // =====================================================================
+import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -354,6 +355,7 @@ async function voucherEditor(type, entry, ctx) {
       ${entry?.status === 'draft' && can(T.screen, 'delete') ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>` : ''}
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = ccs.length || curs.length ? '1320px' : '1000px';
+  if (entry) attachAudit(m.el, entry);
   const tb = m.el.querySelector('#lines tbody');
 
   const drawRows = () => {

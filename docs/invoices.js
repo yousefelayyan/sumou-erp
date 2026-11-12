@@ -2,6 +2,7 @@
 //  السمو ERP — المرحلة 5 و6: الفواتير وضريبة المبيعات
 //  حسابات الربط، الأصناف والخدمات، فواتير البيع والشراء والمرتجعات، تقرير الإقرار
 // =====================================================================
+import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -176,6 +177,7 @@ async function viewItems(v, ctx) {
       <div class="field"><label>حساب المشتريات</label>${accSel('purchase_account_id', st.purchase_account_id)}</div></div>
       <label class="check"><input type="checkbox" name="is_active" ${it.is_active ? 'checked' : ''}> فعّال</label></form>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+    if (!isNew) attachAudit(m.el, it);
     if (isNew) { let lastSug = it.code; const codeEl = m.el.querySelector('[name=code]');
       m.el.querySelector('[name=category_id]').onchange = (e) => { if (codeEl.value === lastSug) { lastSug = suggest(e.target.value || null); codeEl.value = lastSug; } }; }
     m.el.querySelector('[data-save]').onclick = async () => {
@@ -301,6 +303,7 @@ async function invoiceEditor(type, inv, ctx) {
       ${inv?.status === 'draft' && !inv.stock_posted && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '1100px';
+  if (inv) attachAudit(m.el, inv);
   const f = m.el.querySelector('#inv-form'), tb = m.el.querySelector('#il tbody');
   const incl = () => f.prices_include_tax.checked;
   const calc = (r) => { const g = r3(num(r.qty) * num(r.price) - num(r.disc)); const rate = num(r.rate);

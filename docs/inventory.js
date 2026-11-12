@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — المخزون والجرد
 // =====================================================================
+import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -168,6 +169,7 @@ async function docEditor(type, doc, whs, ctx) {
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '900px';
   const tb = m.el.querySelector('#sdl tbody');
+  if (doc) attachAudit(m.el, doc);
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td>
