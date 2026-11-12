@@ -2,7 +2,7 @@
 //  السمو ERP — الهيكل الرئيسي وشاشات المرحلة 1
 // =====================================================================
 import { APP_NAME, APP_VERSION } from './config.js';
-import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
@@ -98,7 +98,7 @@ function renderPending() {
       <button class="btn danger block" id="logout">تسجيل خروج</button>
     </div></div>`;
   document.getElementById('refresh').onclick = boot;
-  document.getElementById('logout').onclick = () => sb.auth.signOut();
+  document.getElementById('logout').onclick = () => signOutHere();
 }
 
 // ---------------------------------------------------------------------
@@ -215,6 +215,13 @@ function renderShell() {
             </div></div>`;
           }).join('')}
         </nav>
+        <div class="side-tools">
+          <button type="button" data-tool="home" title="الرئيسية"><span>🏠</span><small>الرئيسية</small></button>
+          <button type="button" data-tool="company" title="تبديل الشركة"><span>🏢</span><small>تبديل الشركة</small></button>
+          <button type="button" data-tool="user" title="تبديل المستخدم"><span>👤</span><small>تبديل المستخدم</small></button>
+          <button type="button" data-tool="instance" title="مثيل جديد: نافذة جديدة بتسجيل دخول لحاله"><span>🪟</span><small>مثيل جديد</small></button>
+          <button type="button" data-tool="exit" title="خروج"><span>🚪</span><small>خروج</small></button>
+        </div>
       </aside>
       <div class="main">
         <header class="topbar">
@@ -238,7 +245,19 @@ function renderShell() {
     </div>`;
   updateWatermark();
   document.getElementById('menu-btn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('logout').onclick = async () => { await log('خروج', 'auth'); sb.auth.signOut(); };
+  document.getElementById('logout').onclick = async () => { await log('خروج', 'auth'); signOutHere(); };
+  document.querySelector('.side-tools').addEventListener('click', async (e) => {
+    const t = e.target.closest('[data-tool]')?.dataset.tool; if (!t) return;
+    if (t === 'home') location.hash = '#/home';
+    if (t === 'company') switchCompanyDialog();
+    if (t === 'instance') window.open(location.pathname + '?instance=' + Date.now() + '#/home', '_blank', 'noopener');
+    if (t === 'user') { if (!(await confirmBox('تبديل المستخدم؟ رح تطلع من هالحساب وتدخل بحساب ثاني.'))) return; await log('خروج', 'auth', null, { switch: true }); await signOutHere(); }
+    if (t === 'exit') {
+      if (!(await confirmBox('بدك تطلع من البرنامج؟'))) return;
+      await log('خروج', 'auth'); await signOutHere();
+      if (INSTANCE) window.close();   // نافذة «مثيل جديد» بتتسكّر
+    }
+  });
   document.getElementById('company-select').onchange = async (e) => {
     S.company = S.companies.find(c => c.id === e.target.value) || null;
     localStorageSet('sumou.company', S.company?.id);
@@ -253,6 +272,25 @@ function renderShell() {
   document.querySelectorAll('.nav-title').forEach(b => b.addEventListener('click', () => {
     const g = b.closest('.nav-group'); setOpenGroup(g.classList.contains('open') ? null : g.dataset.g);
   }));
+}
+
+// تبديل الشركة من نافذة صغيرة
+function switchCompanyDialog() {
+  const list = S.companies.filter(c => c.is_active);
+  const m = modal({ title: '🏢 تبديل الشركة', body: `<input class="search" id="sc-q" placeholder="بحث بالاسم أو الرمز…" style="width:100%;margin-bottom:10px">
+    <div id="sc-list" style="display:grid;gap:6px;max-height:60vh;overflow:auto"></div>`, foot: '<button class="btn" data-close>إلغاء</button>' });
+  const draw = () => { const q = m.el.querySelector('#sc-q').value.trim().toLowerCase();
+    m.el.querySelector('#sc-list').innerHTML = list.filter(c => !q || [c.code, c.name].some(x => (x || '').toLowerCase().includes(q))).map(c => `
+      <button type="button" class="btn ${c.id === S.company?.id ? 'primary' : ''}" data-co="${c.id}" style="justify-content:flex-start;text-align:start">
+        <b dir="ltr" style="min-width:42px">${esc(c.code)}</b> ${esc(c.name)}</button>`).join('') || '<div class="empty">ما في شركات</div>'; };
+  draw(); m.el.querySelector('#sc-q').oninput = draw; m.el.querySelector('#sc-q').focus();
+  m.el.querySelector('#sc-list').onclick = async (e) => {
+    const b = e.target.closest('[data-co]'); if (!b) return;
+    S.company = S.companies.find(c => c.id === b.dataset.co) || null;
+    localStorageSet('sumou.company', S.company?.id);
+    m.close(); await loadFiscalYears(); renderShell(); route_();
+    toast('صرت على: ' + (S.company?.name || ''), 'ok');
+  };
 }
 
 // علامة مائية على الخلفية: اسم الشركة والسنة المالية الحالية
@@ -841,7 +879,7 @@ async function boot() {
       <button class="btn block" onclick="location.reload()">إعادة المحاولة</button></div></div>`;
   } finally { booting = false; }
 }
-window.__logout = () => sb.auth.signOut();
+window.__logout = () => signOutHere();
 
 sb.auth.onAuthStateChange((event, session) => {
   if (event === 'PASSWORD_RECOVERY') { S.session = session; return renderNewPassword(); }

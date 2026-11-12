@@ -4,7 +4,21 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import { SUPABASE_URL, SUPABASE_KEY, APP_NAME, APP_VERSION } from './config.js';
 
-export const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+// «مثيل جديد»: نافذة لحالها بتسجيل دخول لحاله (الجلسة بتنحفظ بالنافذة بس، مش مشتركة مع باقي النوافذ)
+export const INSTANCE = (() => {
+  try {
+    const qs = new URLSearchParams(location.search);
+    if (qs.has('instance')) {
+      sessionStorage.setItem('sumou.instance', qs.get('instance') || String(Date.now()));
+      history.replaceState(null, '', location.pathname + location.hash);
+    }
+    return sessionStorage.getItem('sumou.instance');
+  } catch { return null; }
+})();
+export const sb = createClient(SUPABASE_URL, SUPABASE_KEY, INSTANCE
+  ? { auth: { storage: window.sessionStorage, storageKey: 'sumou-auth-' + INSTANCE, persistSession: true } } : {});
+// الخروج بيطلّع هالنافذة بس (النوافذ الثانية بتضل داخلة)
+export const signOutHere = () => sb.auth.signOut({ scope: 'local' });
 
 // ---------------------------------------------------------------------
 //  الحالة العامة

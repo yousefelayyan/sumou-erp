@@ -24,11 +24,11 @@ a{color:var(--brand)}
 
 /* ---------- Layout ---------- */
 .layout{display:grid;grid-template-columns:260px 1fr;min-height:100vh}
-.sidebar{background:#2a1540;color:#e9ddf5;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow:auto}
+.sidebar{background:#2a1540;color:#e9ddf5;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow:hidden}
 .side-brand{display:flex;align-items:center;gap:10px;padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
 .side-brand img{width:34px;height:34px}
 .side-brand b{font-size:18px;color:#fff}
-.nav{padding:10px 8px 20px;flex:1}
+.nav{padding:10px 8px 20px;flex:1;overflow:auto}
 .nav-group{margin-top:4px}
 .nav-title{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;font:inherit;font-size:14.5px;font-weight:600;color:#d9c6ee;padding:10px 12px;border-radius:9px;cursor:pointer;text-align:start}
 .nav-title:hover{background:rgba(255,255,255,.07);color:#fff}
@@ -186,3 +186,10 @@ table.t{width:100%;border-collapse:collapse}
 .post-item{display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line,#e5e0ee);border-radius:10px;background:#faf8fd;font-size:14px}
 .post-item.done{background:#eefaf2;border-color:#bfe8cd}
 .post-item .pi-ico{font-size:16px}
+
+/* كبسات أسفل القائمة: الرئيسية، تبديل الشركة، تبديل المستخدم، مثيل جديد، خروج */
+.side-tools{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px;border-top:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.15)}
+.side-tools button{display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;color:#e9ddf5;font:inherit;cursor:pointer;padding:6px 2px;border-radius:8px}
+.side-tools button:hover{background:rgba(255,255,255,.1);color:#fff}
+.side-tools button span{font-size:19px;line-height:1}
+.side-tools button small{font-size:10.5px;line-height:1.2;text-align:center}
