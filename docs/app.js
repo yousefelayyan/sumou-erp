@@ -122,7 +122,7 @@ const NAV = () => [
   ]},
   { title: 'المالية', items: [
     { r: 'accounts', i: '🌳', l: 'دليل الحسابات', show: () => S.company && can('accounts', 'view') },
-    { r: 'account-center', i: '🎛️', l: 'مركز تحكم الحسابات', show: () => S.company && can('reports', 'view') },
+    { r: 'account-center', i: '📗', l: 'الأستاذ العام للحسابات', show: () => S.company && can('reports', 'view') },
     { r: 'opening', i: '🧮', l: 'الأرصدة الافتتاحية', show: () => S.company && can('opening_balances', 'view') },
     { r: 'journal', i: '📒', l: 'سندات القيد', show: () => S.company && can('journal_entries', 'view') },
     { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
@@ -136,9 +136,17 @@ const NAV = () => [
   { title: 'الموظفين والرواتب', items: [
     { r: 'employees', i: '👷', l: 'الموظفين', show: () => S.company && can('payroll', 'view') },
     { r: 'payroll', i: '💵', l: 'الرواتب والضمان', show: () => S.company && can('payroll', 'view') },
+    { r: 'employee-center', i: '📒', l: 'أستاذ مساعد الموظفين', show: () => S.company && can('payroll', 'view') },
   ]},
   { title: 'الأصول الثابتة', items: [
     { r: 'assets', i: '🏢', l: 'الأصول الثابتة والاستهلاك', show: () => S.company && can('fixed_assets', 'view') },
+    { r: 'asset-center', i: '📒', l: 'أستاذ مساعد الأصول الثابتة', show: () => S.company && can('fixed_assets', 'view') },
+  ]},
+  { title: 'المصاريف', items: [
+    { r: 'expenses', i: '💸', l: 'بطاقات المصاريف', show: () => S.company && can('expense_cards', 'view') },
+    { r: 'party-center?type=expense', i: '📒', l: 'أستاذ مساعد المصاريف', show: () => S.company && can('reports', 'view') },
+    { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
+    { r: 'party-categories?type=expense', i: '🗂️', l: 'فئات المصاريف', show: () => S.company && can('expense_cards', 'view') },
   ]},
   { title: 'المخزون', items: [
     { r: 'items', i: '🏷️', l: 'الأصناف والخدمات', show: () => S.company && can('items', 'view') },
@@ -150,14 +158,14 @@ const NAV = () => [
   ]},
   { title: 'العملاء والذمم المدينة', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
-    { r: 'party-center?type=customer', i: '🎛️', l: 'مركز تحكم العملاء', show: () => S.company && can('reports', 'view') },
+    { r: 'party-center?type=customer', i: '📒', l: 'أستاذ مساعد العملاء', show: () => S.company && can('reports', 'view') },
     { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'sales?t=sale_return', i: '↩️', l: 'مردودات المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'party-categories?type=customer', i: '🗂️', l: 'فئات العملاء', show: () => S.company && can('customers', 'view') },
   ]},
   { title: 'الموردين والذمم الدائنة', items: [
     { r: 'suppliers', i: '🏭', l: 'الموردين', show: () => S.company && can('suppliers', 'view') },
-    { r: 'party-center?type=supplier', i: '🎛️', l: 'مركز تحكم الموردين', show: () => S.company && can('reports', 'view') },
+    { r: 'party-center?type=supplier', i: '📒', l: 'أستاذ مساعد الموردين', show: () => S.company && can('reports', 'view') },
     { r: 'purchases?t=purchase', i: '🛒', l: 'فواتير المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'purchases?t=purchase_return', i: '↩️', l: 'مردودات المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'party-categories?type=supplier', i: '🗂️', l: 'فئات الموردين', show: () => S.company && can('suppliers', 'view') },
@@ -186,7 +194,7 @@ const NAV = () => [
   ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));

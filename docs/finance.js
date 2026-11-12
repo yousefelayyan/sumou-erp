@@ -582,7 +582,7 @@ async function viewOpening(v, ctx) {
     <div class="tab-panel" data-tab="par"><div class="card table-wrap"><table class="t lines" id="obp">
       <thead><tr><th style="width:90px">الرقم</th><th>الاسم</th><th>النوع</th><th>الحساب</th><th style="width:160px">مدين</th><th style="width:160px">دائن</th></tr></thead>
       <tbody>${plist.map(p => `<tr data-row="p:${p.id}" data-s="${esc((p.code + ' ' + p.name).toLowerCase())}">
-        <td>${esc(p.code)}</td><td>${esc(p.name)}</td><td>${p.party_type === 'customer' ? 'عميل' : 'مورد'}</td><td class="muted">${esc(accs.find(a => a.id === p.account_id)?.name || '')}</td>
+        <td>${esc(p.code)}</td><td>${esc(p.name)}</td><td>${p.party_type === 'customer' ? 'عميل' : p.party_type === 'supplier' ? 'مورد' : 'مصروف'}</td><td class="muted">${esc(accs.find(a => a.id === p.account_id)?.name || '')}</td>
         <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="d" value="${pvals[p.id]?.d || ''}" ${dis}></td>
         <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="c" value="${pvals[p.id]?.c || ''}" ${dis}></td></tr>`).join('')}</tbody></table></div>
       <p class="muted" style="font-size:13px">رصيد العميل عادة مدين (إله علينا نحصّله)، ورصيد المورد عادة دائن.</p></div>

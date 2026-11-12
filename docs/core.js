@@ -48,6 +48,7 @@ export const SCREENS = [
   { key: 'bank_recon',       label: 'التسوية البنكية',      group: 'المالية' },
   { key: 'customers',        label: 'العملاء',              group: 'العملاء والموردين' },
   { key: 'suppliers',        label: 'الموردين',             group: 'العملاء والموردين' },
+  { key: 'expense_cards',    label: 'بطاقات المصاريف',      group: 'العملاء والموردين' },
   { key: 'reports',          label: 'التقارير المالية',     group: 'التقارير' },
   { key: 'obligations',      label: 'متابعة إقرارات العملاء', group: 'المكتب' },
 ];

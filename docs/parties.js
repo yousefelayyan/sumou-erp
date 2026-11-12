@@ -10,6 +10,7 @@ import { printDoc } from './print.js';
 export const PARTY = {
   customer: { label: 'عميل', plural: 'العملاء', screen: 'customers', route: 'customers', icon: '🧑‍💼', accType: 'customer', side: 1 },
   supplier: { label: 'مورد', plural: 'الموردين', screen: 'suppliers', route: 'suppliers', icon: '🏭', accType: 'supplier', side: -1 },
+  expense:  { label: 'مصروف', plural: 'المصاريف', screen: 'expense_cards', route: 'expenses', icon: '💸', accType: null, accCat: 'expenses', side: 1 },
 };
 
 export async function loadParties(force = false) {
@@ -99,9 +100,10 @@ function partyList(type) {
 function partyForm(type, p, accs, ctx, cats = []) {
   const P = PARTY[type], isNew = !p;
   const leaves = leafAccounts(accs);
-  const def = leaves.find(a => a.account_type === P.accType);
-  p = p || { name: '', code: masterCode(type === 'customer' ? 'm_customer' : 'm_supplier', (S.parties || []).filter(x => x.party_type === type).map(x => x.code)) || '', account_id: def?.id, credit_limit: 0, payment_terms_days: 0, is_active: true };
-  const sorted = [...leaves].sort((a, b) => (b.account_type === P.accType) - (a.account_type === P.accType) || a.code.localeCompare(b.code, 'en', { numeric: true }));
+  const okAcc = (a) => P.accCat ? a.category === P.accCat : a.account_type === P.accType;
+  const def = leaves.find(okAcc);
+  p = p || { name: '', code: masterCode(type === 'customer' ? 'm_customer' : type === 'supplier' ? 'm_supplier' : 'm_expense', (S.parties || []).filter(x => x.party_type === type).map(x => x.code)) || '', account_id: def?.id, credit_limit: 0, payment_terms_days: 0, is_active: true };
+  const sorted = [...leaves].filter(a => !P.accCat || okAcc(a)).sort((a, b) => okAcc(b) - okAcc(a) || a.code.localeCompare(b.code, 'en', { numeric: true }));
   const m = modal({ title: isNew ? `${P.label} جديد` : `تعديل ${P.label}: ${p.name}`, body: `
     <form id="p-form">
       <div class="tabs"><div class="tab active" data-tab="g">عام</div><div class="tab" data-tab="c">الاتصال والعنوان</div><div class="tab" data-tab="f">المالية</div></div>
@@ -122,7 +124,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
         <div class="field"><label>العنوان</label><input name="address" value="${esc(p.address)}"></div></div>
       <div class="tab-panel" data-tab="f"><div class="grid cols-2">
         <div class="field" style="grid-column:span 2"><label>الحساب بدليل الحسابات *</label><select name="account_id">
-          ${sorted.map(a => `<option value="${a.id}" ${a.id === p.account_id ? 'selected' : ''}>${esc(accLabel(a))}${a.account_type === P.accType ? ' ★' : ''}</option>`).join('')}</select>
+          ${sorted.map(a => `<option value="${a.id}" ${a.id === p.account_id ? 'selected' : ''}>${esc(accLabel(a))}${okAcc(a) ? ' ★' : ''}</option>`).join('')}</select>
           <span class="hint">عادة «${type === 'customer' ? 'الذمم المدينة (العملاء)' : 'الذمم الدائنة (الموردين)'}». كل ${P.plural} بيتجمّعوا على هالحساب، وكل واحد إله كشف لحاله.</span></div>
         <div class="field"><label>سقف الائتمان</label><input name="credit_limit" value="${p.credit_limit || ''}" inputmode="decimal" dir="ltr" placeholder="0 = بدون سقف"></div>
         <div class="field"><label>مدة السداد (أيام)</label><input name="payment_terms_days" value="${p.payment_terms_days || ''}" inputmode="numeric" dir="ltr"></div></div>
@@ -269,7 +271,7 @@ async function loadPartyCats(type) {
 }
 async function viewPartyCategories(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
-  const type = new URLSearchParams(location.hash.split('?')[1] || '').get('type') === 'supplier' ? 'supplier' : 'customer';
+  const type = ['supplier', 'expense'].includes(new URLSearchParams(location.hash.split('?')[1] || '').get('type')) ? new URLSearchParams(location.hash.split('?')[1] || '').get('type') : 'customer';
   const P = PARTY[type];
   const [cats, parties] = await Promise.all([loadPartyCats(type), loadParties(true), loadNumbering(true)]);
   const used = (id) => parties.filter(p => p.category_id === id).length;
@@ -287,7 +289,7 @@ async function viewPartyCategories(v, ctx) {
   };
   draw();
   v.querySelector('#c-add')?.addEventListener('click', async () => {
-    const code = masterCode(type === 'customer' ? 'm_customer_category' : 'm_supplier_category', cats.map(c => c.code)) ?? String(Math.max(0, ...cats.map(c => parseInt(c.code, 10) || 0)) + 1);
+    const code = masterCode(type === 'customer' ? 'm_customer_category' : type === 'supplier' ? 'm_supplier_category' : 'm_expense_category', cats.map(c => c.code)) ?? String(Math.max(0, ...cats.map(c => parseInt(c.code, 10) || 0)) + 1);
     const { data, error } = await sb.from('party_categories').insert({ company_id: S.company.id, party_type: type, code, name: 'فئة جديدة' }).select().single();
     if (error) return toast(arError(error), 'err');
     cats.push(data); await log('إضافة', 'party_categories', data.id, { type }); draw(); v.querySelector(`[data-id="${data.id}"] [data-f=name]`)?.select();
@@ -309,6 +311,6 @@ async function viewPartyCategories(v, ctx) {
 }
 
 export const PARTY_ROUTES = {
-  'customers': partyList('customer'), 'suppliers': partyList('supplier'), 'party-categories': viewPartyCategories,
+  'customers': partyList('customer'), 'suppliers': partyList('supplier'), 'expenses': partyList('expense'), 'party-categories': viewPartyCategories,
   'rep-party': viewPartyLedger, 'rep-aging': viewAging,
 };

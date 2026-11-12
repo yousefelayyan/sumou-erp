@@ -21,6 +21,8 @@ export const NUM_KINDS = [
   { key: 'm_supplier',      label: 'الموردين',             group: 'الرموز الأساسية', family: 'master' },
   { key: 'm_customer_category', label: 'فئات العملاء',     group: 'الرموز الأساسية', family: 'master' },
   { key: 'm_supplier_category', label: 'فئات الموردين',    group: 'الرموز الأساسية', family: 'master' },
+  { key: 'm_expense',       label: 'بطاقات المصاريف',      group: 'الرموز الأساسية', family: 'master' },
+  { key: 'm_expense_category', label: 'فئات المصاريف',     group: 'الرموز الأساسية', family: 'master' },
   { key: 'm_item',          label: 'الأصناف والخدمات',     group: 'الرموز الأساسية', family: 'master' },
   { key: 'm_item_category', label: 'فئات المواد',          group: 'الرموز الأساسية', family: 'master' },
   { key: 'm_warehouse',     label: 'المستودعات',           group: 'الرموز الأساسية', family: 'master' },

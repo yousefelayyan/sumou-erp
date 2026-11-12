@@ -1,5 +1,5 @@
 // =====================================================================
-//  السمو ERP — مراكز التحكم: الحسابات، العملاء، الموردين
+//  السمو ERP — الأستاذ العام والأستاذ المساعد: الحسابات، العملاء، الموردين، المصاريف، الموظفين، الأصول
 //  بتحدد فترة، وبيطلعلك لكل حساب/عميل/مورد: رصيد أول المدة، مدين ودائن الفترة، والرصيد آخر المدة.
 //  كبسة على أي سطر بتفتح كشف حسابه تحته (نفس مبدأ كشف الحساب).
 // =====================================================================
@@ -70,7 +70,7 @@ async function viewAccountCenter(v) {
   const accs = await loadAccounts();
   const byId = Object.fromEntries(accs.map(a => [a.id, a]));
   const groups = accs.filter(a => a.is_group);
-  v.innerHTML = `<div class="page-head"><h2>🎛️ مركز تحكم الحسابات</h2><div class="spacer"></div><span class="muted">${esc(S.company.name)} — ${esc(S.fy.name || S.fy.code)}</span></div>
+  v.innerHTML = `<div class="page-head"><h2>📗 الأستاذ العام للحسابات</h2><div class="spacer"></div><span class="muted">${esc(S.company.name)} — ${esc(S.fy.name || S.fy.code)}</span></div>
     ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>`;
   v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>تحت حساب</label><select data-f="par"><option value="">كل الحسابات</option>${groups.map(g => `<option value="${g.id}">${esc(g.code)} — ${esc(g.name)}</option>`).join('')}</select></div>
     <div class="field"><label>المستوى</label><select data-f="lvl"><option value="0">كل المستويات</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>`;
@@ -114,7 +114,7 @@ async function viewAccountCenter(v) {
       return `<div class="stmt-head"><b>كشف حساب: ${esc(byId[id].code)} — ${esc(byId[id].name)}</b></div>` + statementHTML(num(ob.data), mv.data || [], from, to);
     });
   });
-  f('csv').onclick = () => downloadCSV('مركز تحكم الحسابات.csv', [['الرمز', 'الحساب', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة']].concat(out));
+  f('csv').onclick = () => downloadCSV('الأستاذ العام.csv', [['الرمز', 'الحساب', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة']].concat(out));
   run();
 }
 
@@ -123,12 +123,12 @@ async function viewAccountCenter(v) {
 // ---------------------------------------------------------------------
 async function viewPartyCenter(v) {
   if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
-  const type = new URLSearchParams(location.hash.split('?')[1] || '').get('type') === 'customer' ? 'customer' : 'supplier';
+  const qt = new URLSearchParams(location.hash.split('?')[1] || '').get('type'); const type = ['customer', 'expense'].includes(qt) ? qt : 'supplier';
   const P = PARTY[type];
   const [parties, catR] = await Promise.all([loadParties(true), sb.from('party_categories').select('*').eq('company_id', S.company.id).eq('party_type', type).order('code')]);
   const list0 = parties.filter(p => p.party_type === type);
   const cats = catR.data || [], catById = Object.fromEntries(cats.map(c => [c.id, c]));
-  v.innerHTML = `<div class="page-head"><h2>🎛️ مركز تحكم ${P.plural}</h2><div class="spacer"></div><a class="btn sm no-print" href="#/${P.route}">${P.icon} ${P.plural}</a><a class="btn sm no-print" href="#/rep-aging">⏳ أعمار الذمم</a></div>
+  v.innerHTML = `<div class="page-head"><h2>📒 أستاذ مساعد ${P.plural}</h2><div class="spacer"></div><a class="btn sm no-print" href="#/${P.route}">${P.icon} ${P.plural}</a>${type === 'expense' ? '' : '<a class="btn sm no-print" href="#/rep-aging">⏳ أعمار الذمم</a>'}</div>
     ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>`;
   v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>الفئة</label><select data-f="cat"><option value="">كل الفئات</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="-">بدون فئة</option></select></div>
     <div class="field"><label>الرصيد</label><select data-f="side"><option value="">الكل</option><option value="dr">مدين بس</option><option value="cr">دائن بس</option><option value="over">فوق سقف الائتمان</option></select></div>`;
@@ -154,7 +154,7 @@ async function viewPartyCenter(v) {
     const dr = list.reduce((s, p) => s + Math.max(0, close(p)), 0), cr = list.reduce((s, p) => s + Math.max(0, -close(p)), 0);
     const kp = (l, x, s = '') => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span>${s ? `<span class="muted" style="font-size:12px">${s}</span>` : ''}</div>`;
     v.querySelector('#kp').innerHTML = kp(`عدد ${P.plural}`, list.length) + kp('مجموع الأرصدة المدينة', fmtNum(dr)) + kp('مجموع الأرصدة الدائنة', fmtNum(cr))
-      + kp('صافي الرصيد', bal(dr - cr), type === 'supplier' ? 'الدائن = مستحق للموردين' : 'المدين = مستحق على العملاء');
+      + kp('صافي الرصيد', bal(dr - cr), type === 'supplier' ? 'الدائن = مستحق للموردين' : type === 'customer' ? 'المدين = مستحق على العملاء' : 'المدين = مصاريف الفترة');
     out = list.map(p => [p.code, p.name, catById[p.category_id]?.name || '', p.phone || '', balTxt(t[p.id].o), amt(t[p.id].d), amt(t[p.id].c), balTxt(close(p)), t[p.id].last || '']);
     v.querySelector('#tb').innerHTML = `<thead><tr><th>الرمز</th><th>الاسم</th><th>الفئة</th><th>الهاتف</th><th>رصيد أول المدة</th><th>مدين الفترة</th><th>دائن الفترة</th><th>الرصيد آخر المدة</th><th>آخر حركة</th></tr></thead>
       <tbody>${list.map(p => { const over = num(p.credit_limit) > 0 && Math.abs(close(p)) > num(p.credit_limit);
@@ -177,8 +177,117 @@ async function viewPartyCenter(v) {
         <a class="btn sm" href="#/rep-party" style="margin-inline-start:auto">كشف الحساب الكامل (طباعة وواتساب)</a></div>` + statementHTML(num(ob.data), mv.data || [], from, to);
     });
   });
-  f('csv').onclick = () => downloadCSV(`مركز تحكم ${P.plural}.csv`, [['الرمز', 'الاسم', 'الفئة', 'الهاتف', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة', 'آخر حركة']].concat(out));
+  f('csv').onclick = () => downloadCSV(`أستاذ مساعد ${P.plural}.csv`, [['الرمز', 'الاسم', 'الفئة', 'الهاتف', 'رصيد أول المدة', 'مدين الفترة', 'دائن الفترة', 'الرصيد آخر المدة', 'آخر حركة']].concat(out));
   run();
 }
 
-export const CENTER_ROUTES = { 'account-center': viewAccountCenter, 'party-center': viewPartyCenter };
+// ---------------------------------------------------------------------
+//  أستاذ مساعد الموظفين — من مسيّرات الرواتب المرحّلة
+// ---------------------------------------------------------------------
+const ym = (d) => d.slice(0, 7);
+async function viewEmployeeCenter(v) {
+  if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
+  const [eR, rR] = await Promise.all([sb.from('employees').select('*').eq('company_id', S.company.id).order('code'),
+    sb.from('payroll_runs').select('*').eq('company_id', S.company.id).eq('status', 'posted').order('period')]);
+  if (eR.error || rR.error) return toast(arError(eR.error || rR.error), 'err');
+  const emps = eR.data || [], runs = rR.data || [], runById = Object.fromEntries(runs.map(r => [r.id, r]));
+  let lines = [];
+  if (runs.length) { const lR = await sb.from('payroll_lines').select('*').in('run_id', runs.map(r => r.id)); if (lR.error) return toast(arError(lR.error), 'err'); lines = lR.data || []; }
+  const depts = [...new Set(emps.map(e => e.department).filter(Boolean))];
+  v.innerHTML = `<div class="page-head"><h2>📒 أستاذ مساعد الموظفين</h2><div class="spacer"></div><a class="btn sm no-print" href="#/employees">👷 الموظفين</a><a class="btn sm no-print" href="#/payroll">💵 الرواتب</a></div>
+    ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>
+    <p class="muted" style="font-size:12px">بيحسب من مسيّرات الرواتب المرحّلة بس. «المتراكم قبل الفترة» = صافي الرواتب من أول السنة لقبل الفترة.</p>`;
+  v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>القسم</label><select data-f="dep"><option value="">كل الأقسام</option>${depts.map(d => `<option>${esc(d)}</option>`).join('')}</select></div>`;
+  const f = wirePeriod(v.querySelector('#pc'), () => run());
+  ['dep', 'moving'].forEach(n => f(n).onchange = () => run());
+  let out = [];
+  const K = ['gross', 'ss_employee', 'income_tax', 'advances', 'other_ded', 'net', 'ss_employer'];
+  function run() {
+    const from = ym(f('from').value), to = ym(f('to').value), fyFrom = ym(S.fy.start_date);
+    const t = {}; emps.forEach(e => { t[e.id] = { o: 0, m: [] }; K.forEach(k => t[e.id][k] = 0); });
+    lines.forEach(l => { const r = runById[l.run_id], s = t[l.employee_id]; if (!r || !s) return;
+      if (r.period >= fyFrom && r.period < from) s.o += num(l.net);
+      else if (r.period >= from && r.period <= to) { K.forEach(k => s[k] += num(l[k])); s.m.push({ ...l, period: r.period }); } });
+    const dep = f('dep').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
+    const list = emps.filter(e => (!dep || e.department === dep) && (!q || [e.code, e.name, e.job_title].some(x => (x || '').toLowerCase().includes(q)))
+      && (!moving || t[e.id].m.length || t[e.id].o));
+    const tot = (k) => list.reduce((s, e) => s + t[e.id][k], 0);
+    const kp = (l, x) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`;
+    v.querySelector('#kp').innerHTML = kp('عدد الموظفين', list.length) + kp('إجمالي الرواتب', fmtNum(tot('gross'))) + kp('صافي المدفوع', fmtNum(tot('net'))) + kp('ضمان المنشأة', fmtNum(tot('ss_employer')));
+    out = list.map(e => [e.code, e.name, e.department || '', amt(t[e.id].o), ...K.map(k => amt(t[e.id][k])), amt(t[e.id].o + t[e.id].net)]);
+    v.querySelector('#tb').innerHTML = `<thead><tr><th>الرمز</th><th>الموظف</th><th>القسم</th><th>المتراكم قبل الفترة</th><th>الإجمالي</th><th>ضمان الموظف</th><th>ضريبة الدخل</th><th>سلف</th><th>خصومات أخرى</th><th>الصافي</th><th>ضمان المنشأة</th><th>المتراكم آخر المدة</th></tr></thead>
+      <tbody>${list.map(e => `<tr class="clickable" data-e="${e.id}"><td dir="ltr" style="text-align:right">${esc(e.code)}</td><td>${esc(e.name)} <span class="muted" style="font-size:11px">▾ تفاصيل</span>${e.is_active === false ? ' <span class="badge">غير فعّال</span>' : ''}</td><td>${esc(e.department || '')}</td>
+        <td class="n">${amt(t[e.id].o)}</td>${K.map(k => `<td class="n">${k === 'net' ? `<b>${amt(t[e.id][k])}</b>` : amt(t[e.id][k])}</td>`).join('')}<td class="n"><b>${amt(t[e.id].o + t[e.id].net)}</b></td></tr>`).join('')
+        || '<tr><td colspan="12" class="empty">ما في موظفين بهالفلتر</td></tr>'}</tbody>
+      <tfoot><tr class="tot"><td colspan="3">المجموع</td><td class="n">${fmtNum(tot('o'))}</td>${K.map(k => `<td class="n">${fmtNum(tot(k))}</td>`).join('')}<td class="n">${fmtNum(tot('o') + tot('net'))}</td></tr></tfoot>`;
+    v.querySelector('#tb')._t = t;
+  }
+  v.querySelector('#tb').addEventListener('click', (ev) => {
+    const tr = ev.target.closest('tr.clickable[data-e]'); if (!tr) return;
+    const s = v.querySelector('#tb')._t[tr.dataset.e];
+    toggleStatement(tr, 12, async () => {
+      const rows = s.m.sort((a, b) => a.period.localeCompare(b.period));
+      return `<table class="t rep stmt"><thead><tr><th>الشهر</th><th>الأساسي</th><th>العلاوات</th><th>إضافي</th><th>إضافات أخرى</th><th>الإجمالي</th><th>ضمان الموظف</th><th>ضريبة</th><th>سلف</th><th>خصومات</th><th>الصافي</th></tr></thead>
+        <tbody>${rows.map(l => `<tr><td>${esc(l.period)}</td>${['basic', 'allowances', 'overtime', 'other_add', 'gross', 'ss_employee', 'income_tax', 'advances', 'other_ded', 'net'].map(k => `<td class="n">${amt(num(l[k]))}</td>`).join('')}</tr>`).join('')
+        || '<tr><td colspan="11" class="empty">ما في رواتب مرحّلة بهالفترة</td></tr>'}</tbody></table>`;
+    });
+  });
+  f('csv').onclick = () => downloadCSV('أستاذ مساعد الموظفين.csv', [['الرمز', 'الموظف', 'القسم', 'المتراكم قبل الفترة', 'الإجمالي', 'ضمان الموظف', 'ضريبة الدخل', 'سلف', 'خصومات أخرى', 'الصافي', 'ضمان المنشأة', 'المتراكم آخر المدة']].concat(out));
+  run();
+}
+
+// ---------------------------------------------------------------------
+//  أستاذ مساعد الأصول الثابتة — الكلفة ومجمع الاستهلاك والقيمة الدفترية
+// ---------------------------------------------------------------------
+async function viewAssetCenter(v) {
+  if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
+  const [aR, rR] = await Promise.all([sb.from('fixed_assets').select('*').eq('company_id', S.company.id).order('code'),
+    sb.from('depreciation_runs').select('*').eq('company_id', S.company.id).eq('status', 'posted')]);
+  if (aR.error || rR.error) return toast(arError(aR.error || rR.error), 'err');
+  const assets = aR.data || [], runs = rR.data || [];
+  let lines = [];
+  if (runs.length) { const lR = await sb.from('depreciation_lines').select('*').in('run_id', runs.map(r => r.id)); if (lR.error) return toast(arError(lR.error), 'err'); lines = lR.data || []; }
+  const cats = [...new Set(assets.map(a => a.category).filter(Boolean))];
+  v.innerHTML = `<div class="page-head"><h2>📒 أستاذ مساعد الأصول الثابتة</h2><div class="spacer"></div><a class="btn sm no-print" href="#/assets">🏢 الأصول والاستهلاك</a></div>
+    ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>
+    <p class="muted" style="font-size:12px">بيحسب من دورات الاستهلاك المرحّلة، ومجمع الاستهلاك السابق المسجّل على بطاقة الأصل.</p>`;
+  v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>الفئة</label><select data-f="cat"><option value="">كل الفئات</option>${cats.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>`;
+  const f = wirePeriod(v.querySelector('#pc'), () => run());
+  ['cat', 'moving'].forEach(n => f(n).onchange = () => run());
+  let out = [], T = {};
+  function run() {
+    const from = f('from').value, to = f('to').value;
+    T = {}; assets.forEach(a => T[a.id] = { o: num(a.opening_accum), p: 0, m: [] });
+    lines.forEach(l => { const s = T[l.asset_id]; if (!s) return;
+      if (l.to_date < from) s.o += num(l.amount); else if (l.to_date <= to) { s.p += num(l.amount); s.m.push(l); } });
+    const cat = f('cat').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
+    const list = assets.filter(a => a.purchase_date <= to && (!cat || a.category === cat)
+      && (!q || [a.code, a.name, a.serial_no, a.location].some(x => (x || '').toLowerCase().includes(q)))
+      && (!moving || a.status === 'active' || T[a.id].p));
+    const cl = (a) => T[a.id].o + T[a.id].p, sum = (fn) => list.reduce((s, a) => s + fn(a), 0);
+    const kp = (l, x) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`;
+    v.querySelector('#kp').innerHTML = kp('عدد الأصول', list.length) + kp('الكلفة', fmtNum(sum(a => num(a.cost)))) + kp('استهلاك الفترة', fmtNum(sum(a => T[a.id].p))) + kp('القيمة الدفترية', fmtNum(sum(a => num(a.cost) - cl(a))));
+    out = list.map(a => [a.code, a.name, a.category || '', a.purchase_date, amt(num(a.cost)), amt(T[a.id].o), amt(T[a.id].p), amt(cl(a)), amt(num(a.cost) - cl(a))]);
+    v.querySelector('#tb').innerHTML = `<thead><tr><th>الرمز</th><th>الأصل</th><th>الفئة</th><th>تاريخ الشراء</th><th>الكلفة</th><th>مجمع الاستهلاك أول المدة</th><th>استهلاك الفترة</th><th>مجمع الاستهلاك آخر المدة</th><th>القيمة الدفترية</th></tr></thead>
+      <tbody>${list.map(a => `<tr class="clickable" data-a="${a.id}"><td dir="ltr" style="text-align:right">${esc(a.code)}</td><td>${esc(a.name)} <span class="muted" style="font-size:11px">▾ تفاصيل</span>${a.status === 'disposed' ? ' <span class="badge">مستبعد</span>' : ''}</td>
+        <td>${esc(a.category || '')}</td><td>${fmtDate(a.purchase_date)}</td><td class="n">${amt(num(a.cost))}</td><td class="n">${amt(T[a.id].o)}</td><td class="n">${amt(T[a.id].p)}</td><td class="n">${amt(cl(a))}</td><td class="n"><b>${amt(num(a.cost) - cl(a))}</b></td></tr>`).join('')
+        || '<tr><td colspan="9" class="empty">ما في أصول بهالفلتر</td></tr>'}</tbody>
+      <tfoot><tr class="tot"><td colspan="4">المجموع</td><td class="n">${fmtNum(sum(a => num(a.cost)))}</td><td class="n">${fmtNum(sum(a => T[a.id].o))}</td><td class="n">${fmtNum(sum(a => T[a.id].p))}</td><td class="n">${fmtNum(sum(cl))}</td><td class="n">${fmtNum(sum(a => num(a.cost) - cl(a)))}</td></tr></tfoot>`;
+  }
+  v.querySelector('#tb').addEventListener('click', (ev) => {
+    const tr = ev.target.closest('tr.clickable[data-a]'); if (!tr) return;
+    const a = assets.find(x => x.id === tr.dataset.a), s = T[a.id];
+    toggleStatement(tr, 9, async () => {
+      let acc = s.o;
+      const rows = s.m.sort((x, y) => x.to_date.localeCompare(y.to_date)).map(l => { acc += num(l.amount);
+        return `<tr><td>${fmtDate(l.from_date)}</td><td>${fmtDate(l.to_date)}</td><td class="n">${l.months}</td><td class="n">${fmtNum(l.amount)}</td><td class="n">${fmtNum(acc)}</td><td class="n">${fmtNum(num(a.cost) - acc)}</td></tr>`; }).join('');
+      return `<div class="stmt-head"><b>${esc(a.code)} — ${esc(a.name)}</b> <span class="muted">العمر ${a.life_months} شهر، الخردة ${fmtNum(a.salvage)}</span></div>
+        <table class="t rep stmt"><thead><tr><th>من</th><th>إلى</th><th>الشهور</th><th>الاستهلاك</th><th>المجمع</th><th>القيمة الدفترية</th></tr></thead>
+        <tbody><tr class="grp"><td colspan="4">أول المدة</td><td class="n">${fmtNum(s.o)}</td><td class="n">${fmtNum(num(a.cost) - s.o)}</td></tr>${rows || '<tr><td colspan="6" class="empty">ما في استهلاك مرحّل بهالفترة</td></tr>'}</tbody></table>`;
+    });
+  });
+  f('csv').onclick = () => downloadCSV('أستاذ مساعد الأصول.csv', [['الرمز', 'الأصل', 'الفئة', 'تاريخ الشراء', 'الكلفة', 'مجمع أول المدة', 'استهلاك الفترة', 'مجمع آخر المدة', 'القيمة الدفترية']].concat(out));
+  run();
+}
+
+export const CENTER_ROUTES = { 'account-center': viewAccountCenter, 'party-center': viewPartyCenter, 'employee-center': viewEmployeeCenter, 'asset-center': viewAssetCenter };
