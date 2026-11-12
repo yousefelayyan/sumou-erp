@@ -424,20 +424,37 @@ async function saveCompany(form, id) {
 // ---------------------------------------------------------------------
 //  بيانات الشركة الحالية
 // ---------------------------------------------------------------------
-async function viewCompany(v) {
+async function viewCompany(v, ctx, editing = false) {
   if (!S.company) return viewHome(v);
   const editable = can('companies', 'edit');
+  editing = editing && editable;
   v.innerHTML = `
-    <div class="page-head"><h2>بيانات الشركة</h2><div class="spacer"></div>
-      ${can('companies', 'print') ? `<button class="btn no-print" id="print">🖨️ طباعة</button>` : ''}
-      ${editable ? `<button class="btn primary no-print" id="save">💾 حفظ</button>` : ''}</div>
-    <div class="card">${companyFormHTML(S.company, !editable)}</div>`;
-  setupTabs(v); wireLogo(v);
+    <div class="page-head"><h2>بيانات الشركة</h2>${editing ? '<span class="badge warn">وضع التعديل</span>' : ''}<div class="spacer"></div>
+      ${isAdmin() && !editing ? `<button class="btn no-print" id="new">➕ شركة جديدة</button>` : ''}
+      ${can('companies', 'print') && !editing ? `<button class="btn no-print" id="print">🖨️ طباعة</button>` : ''}
+      ${editable && !editing ? `<button class="btn primary no-print" id="edit">✏️ تعديل</button>` : ''}
+      ${editing ? `<button class="btn no-print" id="cancel">إلغاء</button><button class="btn primary no-print" id="save">💾 حفظ</button>` : ''}</div>
+    <div class="card">${companyFormHTML(S.company, !editing)}</div>`;
+  setupTabs(v); if (editing) wireLogo(v);
   v.querySelector('#print')?.addEventListener('click', () => { v.querySelectorAll('.tab-panel').forEach(p => p.classList.add('active')); window.print(); v.querySelectorAll('.tab-panel:not([data-tab=general])').forEach(p => p.classList.remove('active')); });
+  v.querySelector('#new')?.addEventListener('click', () => openCompanyForm(null));
+  v.querySelector('#edit')?.addEventListener('click', () => viewCompany(v, ctx, true));
+  v.querySelector('#cancel')?.addEventListener('click', () => viewCompany(v, ctx, false));
   v.querySelector('#save')?.addEventListener('click', async () => {
     const saved = await saveCompany(v.querySelector('#company-form'), S.company.id);
     if (saved) { Object.assign(S.company, saved); const i = S.companies.findIndex(c => c.id === saved.id); if (i > -1) S.companies[i] = saved; renderShell(); route_(); }
   });
+}
+
+// نموذج شركة جديدة أو تعديل شركة (نافذة)
+function openCompanyForm(c) {
+  const m = modal({ title: c ? 'تعديل شركة: ' + c.name : 'شركة جديدة', body: companyFormHTML(c || {}),
+    foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+  setupTabs(m.el); wireLogo(m.el);
+  m.el.querySelector('[data-save]').onclick = async () => {
+    const saved = await saveCompany(m.el.querySelector('#company-form'), c?.id);
+    if (saved) { m.close(); await loadContext(); if (!S.company) S.company = saved; renderShell(); route_(); }
+  };
 }
 
 // ---------------------------------------------------------------------
@@ -466,15 +483,7 @@ async function viewCompanies(v) {
   };
   draw();
   v.querySelector('#q').oninput = (e) => draw(e.target.value);
-  const open = (c) => {
-    const m = modal({ title: c ? 'تعديل شركة: ' + c.name : 'شركة جديدة', body: companyFormHTML(c || {}),
-      foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
-    setupTabs(m.el); wireLogo(m.el);
-    m.el.querySelector('[data-save]').onclick = async () => {
-      const saved = await saveCompany(m.el.querySelector('#company-form'), c?.id);
-      if (saved) { m.close(); await loadContext(); if (!S.company) S.company = saved; renderShell(); route_(); }
-    };
-  };
+  const open = openCompanyForm;
   v.querySelector('#add').onclick = () => open(null);
   v.querySelector('#rows').onclick = async (e) => {
     const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
