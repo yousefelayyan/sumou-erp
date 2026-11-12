@@ -114,7 +114,10 @@ async function viewSettings(v, ctx) {
     <h3 style="margin:16px 0 6px">📦 طريقة قيد المخزون</h3>
     <label class="check"><input type="checkbox" name="perpetual_inventory" ${st.perpetual_inventory ? 'checked' : ''} ${editable ? '' : 'disabled'}> <b>جرد مستمر</b>: كلفة البضاعة المباعة بتنقيّد لحالها مع كل فاتورة بيع، والمشتريات بتروح لحساب المخزون</label>
     <p class="muted" style="font-size:13px;margin:4px 0 8px">إذا مش مأشّر (جرد دوري): المشتريات بتنقيّد مصروف، وقيمة المخزون آخر السنة بتاخذها من تقرير رصيد المخزون. الأفضل تختار الطريقة أول السنة وما تغيّرها بنصّها.</p>
-    <div class="grid cols-2">${sel('inventory_account_id', 'حساب المخزون')}${sel('cogs_account_id', 'حساب كلفة البضاعة المباعة (وفروقات الجرد)')}</div>
+    <div class="grid cols-2">${sel('inventory_account_id', 'حساب المخزون')}${sel('cogs_account_id', 'حساب كلفة البضاعة المباعة (وفروقات الجرد)')}
+      ${sel('wip_account_id', 'الإنتاج تحت التشغيل (لأوامر الإنتاج)')}
+      <div class="field"><label>&nbsp;</label>${editable && !st.wip_account_id ? '<button type="button" class="btn sm" id="mk-wip">➕ اعمل حساب «الإنتاج تحت التشغيل» لحاله</button>' : ''}</div></div>
+    <p class="muted" style="font-size:12px;margin:4px 0 8px">أمر الإنتاج: إخراج المواد من ح/ الإنتاج تحت التشغيل إلى ح/ المخزون، وإدخال المنتج من ح/ المخزون إلى ح/ الإنتاج تحت التشغيل. قيّد الأجور والتشغيل على نفس الحساب بسند قيد عشان يتصفّر.</p>
     <h3 style="margin:16px 0 6px">💵 الرواتب والضمان</h3>
     <div class="grid cols-3">
       <div class="field"><label>ضمان الموظف %</label><input name="ss_employee_rate" value="${st.ss_employee_rate ?? 7.5}" inputmode="decimal" dir="ltr" ${editable ? '' : 'disabled'}></div>
@@ -131,6 +134,10 @@ async function viewSettings(v, ctx) {
     const { error } = await sb.from('company_settings').upsert(d);
     if (error) return toast(arError(error), 'err');
     await log('تعديل', 'settings', S.company.id); toast('تم الحفظ', 'ok');
+  });
+  v.querySelector('#mk-wip')?.addEventListener('click', async () => {
+    const { error } = await sb.rpc('ensure_wip_account', { p_company: S.company.id }); if (error) return toast(arError(error), 'err');
+    toast('انعمل الحساب وانربط', 'ok'); S.accounts = null; viewSettings(v);
   });
 }
 
