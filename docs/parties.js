@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — المرحلة 4: الزبائن والموردين
 // =====================================================================
+import { loadLookups, lookupDatalistSync } from './lookups.js';
 import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -42,7 +43,7 @@ function partyList(type) {
   return async function (v, ctx) {
     if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
     const P = PARTY[type];
-    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type)]);
+    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups()]);
     const catById = Object.fromEntries(cats.map(c => [c.id, c]));
     let bal = {};
     if (S.fy) {
@@ -120,7 +121,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
         <div class="field"><label>الموبايل</label><input name="mobile" value="${esc(p.mobile)}" dir="ltr"></div>
         <div class="field"><label>الهاتف</label><input name="phone" value="${esc(p.phone)}" dir="ltr"></div>
         <div class="field"><label>الإيميل</label><input name="email" type="email" value="${esc(p.email)}" dir="ltr"></div>
-        <div class="field"><label>المدينة</label><input name="city" value="${esc(p.city)}"></div></div>
+        <div class="field"><label>المدينة</label><input name="city" list="lk-city" value="${esc(p.city)}">${lookupDatalistSync('lk-city', ['region', 'country'])}</div></div>
         <div class="field"><label>العنوان</label><input name="address" value="${esc(p.address)}"></div></div>
       <div class="tab-panel" data-tab="f"><div class="grid cols-2">
         <div class="field" style="grid-column:span 2"><label>الحساب بدليل الحسابات *</label><select name="account_id">

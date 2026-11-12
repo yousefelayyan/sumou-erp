@@ -16,6 +16,9 @@ import { PRINTSET_ROUTES } from './printset.js';
 import { NUMBERING_ROUTES } from './numbering.js';
 import { POSTING_ROUTES } from './posting.js';
 import { CENTER_ROUTES } from './centers.js';
+import { DEPARTMENT_ROUTES } from './departments.js';
+import { permEditor } from './perms.js';
+import { LOOKUP_ROUTES } from './lookups.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
@@ -114,11 +117,21 @@ const NAV = () => [
   { title: 'ملف', items: [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
+    { r: 'departments', i: '🏛️', l: 'الدوائر', show: () => S.company && can('departments', 'view') },
     { r: 'settings', i: '🔗', l: 'حسابات الربط والضريبة', show: () => S.company && can('companies', 'edit') },
     { r: 'import', i: '📥', l: 'الاستيراد من إكسل', show: () => S.company && ['customers', 'suppliers', 'items', 'accounts', 'opening_balances', 'payroll'].some(x => can(x, 'add') || can(x, 'edit')) },
     { r: 'companies', i: '🗂️', l: 'الشركات', show: isAdmin },
     { r: 'users', i: '👥', l: 'المستخدمين', show: isAdmin },
     { r: 'groups', i: '🔐', l: 'المجموعات والصلاحيات', show: isAdmin },
+  ]},
+  { title: 'إعداد', items: [
+    { r: 'setup?k=payment_method', i: '💳', l: 'وسائل الدفع', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=bank', i: '🏦', l: 'البنوك', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=bank_branch', i: '🏧', l: 'فروع البنوك', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=cheque_type', i: '🧾', l: 'أنواع الأوراق التجارية', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=country', i: '🌍', l: 'الدول / البلاد', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=region', i: '🗺️', l: 'المناطق / الأقاليم', show: () => S.company && can('lookups', 'view') },
+    { r: 'cost-centers', i: '💱', l: 'العملات وأسعار التحويل', show: () => S.company && can('accounts', 'view') },
   ]},
   { title: 'المالية', items: [
     { r: 'accounts', i: '🌳', l: 'دليل الحسابات', show: () => S.company && can('accounts', 'view') },
@@ -194,7 +207,7 @@ const NAV = () => [
   ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'إعداد': '⚙️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
@@ -358,7 +371,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -606,6 +619,47 @@ async function viewCompanies(v) {
 // ---------------------------------------------------------------------
 //  السنوات المالية
 // ---------------------------------------------------------------------
+// فترات السنة: قفل للمالية/للمخزون
+async function periodsDialog(y) {
+  const load = async () => (await sb.from('fiscal_periods').select('*').eq('fiscal_year_id', y.id).order('start_date')).data || [];
+  let rows = await load();
+  const canLock = can('fiscal_years', 'edit'), canOpen = isAdmin() || can('fiscal_years', 'unpost');
+  const m = modal({ title: `📆 فترات ${y.name || y.code}`, body: '<div id="pd"></div>', foot: '<button class="btn" data-close>إغلاق</button>' });
+  m.el.querySelector('.modal').style.maxWidth = '760px';
+  const box = m.el.querySelector('#pd');
+  const draw = () => {
+    box.innerHTML = rows.length ? `
+      ${canLock ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn sm" data-all="gl_locked:1">🔒 قفل الكل للمالية</button><button class="btn sm" data-all="stock_locked:1">🔒 قفل الكل للمخزون</button>
+        ${canOpen ? '<button class="btn sm" data-all="gl_locked:0">🔓 فتح الكل للمالية</button><button class="btn sm" data-all="stock_locked:0">🔓 فتح الكل للمخزون</button>' : ''}</div>` : ''}
+      <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>رمز الفترة</th><th>من</th><th>إلى</th><th>مقفولة للمالية</th><th>مقفولة للمخزون</th><th>آخر تغيير</th></tr></thead>
+      <tbody>${rows.map((p, i) => `<tr><td class="muted">${i + 1}</td><td dir="ltr" style="text-align:right"><b>${esc(p.code)}</b></td><td>${fmtDate(p.start_date)}</td><td>${fmtDate(p.end_date)}</td>
+        ${['gl_locked', 'stock_locked'].map(k => `<td style="text-align:center"><input type="checkbox" data-id="${p.id}" data-k="${k}" ${p[k] ? 'checked' : ''}
+          ${(!canLock || (p[k] && !canOpen)) ? 'disabled' : ''} style="width:18px;height:18px;accent-color:var(--brand)"></td>`).join('')}
+        <td class="muted" style="font-size:12px">${p.locked_at ? fmtDateTime(p.locked_at) : ''}</td></tr>`).join('')}</tbody></table></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">الفترة المقفولة للمالية: ما بينرحّل عليها قيد ولا بينلغى ترحيله. المقفولة للمخزون: ما بتنضاف ولا بتنشال حركة مخزون. الحفظ والمسودات عادي.
+        القفل بصلاحية «تعديل» على السنوات المالية، والفتح من جديد بصلاحية «إلغاء ترحيل» أو للمدير.</p>`
+      : `<div class="empty">ما في فترات لهالسنة. <button class="btn sm primary" data-gen>توليد 12 فترة شهرية</button></div>`;
+    box.querySelectorAll('[data-k]').forEach(c => c.onchange = async () => {
+      const { error } = await sb.from('fiscal_periods').update({ [c.dataset.k]: c.checked }).eq('id', c.dataset.id);
+      if (error) { c.checked = !c.checked; return toast(arError(error), 'err'); }
+      rows = await load(); draw(); toast(c.checked ? 'انقفلت الفترة' : 'انفتحت الفترة', 'ok');
+    });
+    box.querySelectorAll('[data-all]').forEach(b => b.onclick = async () => {
+      const [k, on] = b.dataset.all.split(':');
+      const { error } = await sb.from('fiscal_periods').update({ [k]: on === '1' }).eq('fiscal_year_id', y.id);
+      if (error) return toast(arError(error), 'err');
+      rows = await load(); draw(); toast('تم', 'ok');
+    });
+    box.querySelector('[data-gen]')?.addEventListener('click', async () => {
+      const { error } = await sb.rpc('ensure_fiscal_periods', { p_fy: y.id });
+      if (error) return toast(arError(error), 'err');
+      rows = await load(); draw();
+    });
+  };
+  draw();
+}
+
 async function viewFiscalYears(v) {
   if (!S.company) return viewHome(v);
   await loadFiscalYears();
@@ -621,6 +675,7 @@ async function viewFiscalYears(v) {
         <td class="actions">
           ${isAdmin() && !y.is_closed ? `<button class="btn sm primary" data-close-year="${y.id}">🔒 إغلاق وتدوير</button>` : ''}
           ${isAdmin() && y.is_closed ? `<button class="btn sm" data-reopen="${y.id}">🔓 إعادة فتح</button>` : ''}
+          <button class="btn sm" data-periods="${y.id}">📆 الفترات</button>
           ${can('fiscal_years', 'edit') && (!y.is_closed || isAdmin()) ? `<button class="btn sm" data-edit="${y.id}">تعديل</button>` : ''}
           ${can('fiscal_years', 'delete') && !y.is_closed ? `<button class="btn sm danger" data-del="${y.id}">حذف</button>` : ''}
         </td></tr>`).join('') || `<tr><td colspan="6" class="empty">ما في سنوات مالية لهالشركة</td></tr>`}</tbody></table></div>
@@ -652,6 +707,7 @@ async function viewFiscalYears(v) {
     };
   };
   v.querySelector('#add')?.addEventListener('click', () => open(null));
+  v.querySelectorAll('[data-periods]').forEach(b => b.onclick = () => periodsDialog(rows.find(y => y.id === b.dataset.periods)));
   v.querySelector('tbody').onclick = async (e) => {
     const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
     const cy = e.target.closest('[data-close-year]'), ro = e.target.closest('[data-reopen]');
@@ -715,12 +771,14 @@ async function closeYearDialog(y, years) {
 // ---------------------------------------------------------------------
 async function viewUsers(v) {
   if (!isAdmin()) return viewHome(v);
-  const [p, uc, c] = await Promise.all([
+  const [p, uc, c, dp] = await Promise.all([
     sb.from('profiles').select('*').order('created_at'),
     sb.from('user_companies').select('*'),
     sb.from('companies').select('id,code,name').order('code'),
+    sb.from('departments').select('id,company_id,code,name,kind,is_active').order('code'),
   ]);
   if (p.error) throw p.error;
+  const depts = (dp.data || []).filter(d => d.kind === 'sub');
   const users = p.data, links = uc.data || [], comps = c.data || [];
   const pending = users.filter(u => !u.is_active).length;
   const login = (u) => u.username || u.email;
@@ -740,14 +798,15 @@ async function viewUsers(v) {
           <td>${u.is_active ? '<span class="badge ok">مفعّل</span>' : '<span class="badge warn">موقوف</span>'}</td>
           <td class="actions"><button class="btn sm" data-edit="${u.id}" title="تعديل">✏️ تعديل</button></td></tr>`;
       }).join('')}</tbody></table></div>`;
-  v.querySelector('#u-add').onclick = () => userEditor(null, links, comps);
+  v.querySelector('#u-add').onclick = () => userEditor(null, links, comps, depts);
   v.querySelector('tbody').onclick = (e) => {
     const b = e.target.closest('[data-edit]'); if (!b) return;
-    userEditor(users.find(x => x.id === b.dataset.edit), links, comps);
+    userEditor(users.find(x => x.id === b.dataset.edit), links, comps, depts);
   };
 }
 
-function userEditor(u, links, comps) {
+function userEditor(u, links, comps, depts = []) {
+  const link = (cid) => (u ? links.find(l => l.user_id === u.id && l.company_id === cid) : null) || {};
   const isNew = !u, self = !!u && u.id === S.session.user.id;
   const perms = u?.permissions || {};
   const myComps = new Set(u ? links.filter(l => l.user_id === u.id).map(l => l.company_id) : comps.map(c => c.id));
@@ -774,46 +833,47 @@ function userEditor(u, links, comps) {
       <label class="check"><input type="checkbox" name="is_admin" ${u?.is_admin ? 'checked' : ''} ${self ? 'disabled' : ''}> مدير النظام (كل الصلاحيات)</label>
     </div></form>
     <div id="perm-area">
-    <div style="display:flex;align-items:center;margin:16px 0 6px"><h3 style="margin:0">🔐 الصلاحيات</h3><div class="spacer" style="flex:1"></div>
-      <button class="btn sm" type="button" data-all="1">تحديد الكل</button> <button class="btn sm" type="button" data-all="0">إلغاء الكل</button></div>
-    <p class="muted" style="font-size:13px;margin:0 0 8px">المربع الكبير = كل شي على الشاشة. وإذا بدك تحدد، أشّر بس على العمليات الصغيرة (مثلاً «عرض» و«طباعة» بس).</p>
-    <div style="display:grid;gap:12px">
-      ${groups.map(g => `<div class="card" style="padding:0;overflow:hidden">
-        <div style="padding:8px 12px;background:var(--brand-soft, #f1ebf8);font-weight:700">${esc(g)}</div>
-        ${SCREENS.filter(s => s.group === g).map(prow).join('')}</div>`).join('')}
-    </div>
+    <h3 style="margin:16px 0 6px">🔐 الصلاحيات الخاصة</h3>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">بتنضاف على صلاحيات مجموعته بكل شركة. اختار الشاشة من الشجرة وأشّر على العمليات.</p>
+    <div id="u-perms"></div>
     <h3 style="margin:16px 0 6px">🏢 الشركات اللي بيشتغل عليها</h3>
-    <div class="card" style="padding:0;overflow:hidden">${comps.map(c => row(`data-c="${c.id}"`, `${esc(c.name)} <span class="muted">(${esc(c.code)})</span>`, myComps.has(c.id))).join('') || '<p class="muted" style="padding:10px">ما في شركات</p>'}</div>
+    <div class="card" style="padding:0;overflow:hidden">${comps.map(c => { const ds = depts.filter(d => d.company_id === c.id), l = link(c.id);
+      return row(`data-c="${c.id}"`, `${esc(c.name)} <span class="muted">(${esc(c.code)})</span>`, myComps.has(c.id))
+        + (ds.length ? `<div class="uc-dept" data-ucd="${c.id}" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 12px 10px 42px;border-bottom:1px solid var(--line);font-size:13px">
+          <span class="muted">الدائرة:</span><select data-dep style="max-width:260px"><option value="">— بدون —</option>${ds.map(d => `<option value="${d.id}" ${d.id === l.department_id ? 'selected' : ''}>${esc(d.code)} — ${esc(d.name)}${d.is_active ? '' : ' (غير مفعّل)'}</option>`).join('')}</select>
+          <label class="check" style="margin:0"><input type="checkbox" data-hide ${l.hide_departments ? 'checked' : ''}> إخفاء الدوائر (ما بيغيّر الدائرة بالمستندات)</label></div>` : ''); }).join('') || '<p class="muted" style="padding:10px">ما في شركات</p>'}</div>
     </div>`,
     foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>
       ${!isNew && !self ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف المستخدم</button>` : ''}` });
-  m.el.querySelector('.modal').style.maxWidth = '860px';
+  m.el.querySelector('.modal').style.maxWidth = '920px';
+  const pe = permEditor(m.el.querySelector('#u-perms'), perms);
   const f = m.el.querySelector('#u-form');
   // كلمة السر الافتراضية = اسم المستخدم
   if (isNew) { let touched = false; f.password.oninput = () => touched = true; f.username.oninput = () => { if (!touched) f.password.value = f.username.value.trim().toLowerCase(); }; }
   const adminToggle = () => { m.el.querySelector('#perm-area').style.opacity = f.is_admin.checked ? .45 : 1; };
   f.is_admin.onchange = adminToggle; adminToggle();
-  const syncRow = (r) => { const as = [...r.querySelectorAll('[data-a]')]; const n = as.filter(x => x.checked).length; const p = r.querySelector('[data-p]');
-    p.checked = n > 0; p.indeterminate = n > 0 && n < as.length; };
-  m.el.querySelectorAll('[data-row]').forEach(r => { syncRow(r);
-    r.querySelector('[data-p]').onchange = (e) => { r.querySelectorAll('[data-a]').forEach(x => x.checked = e.target.checked); syncRow(r); };
-    r.querySelectorAll('[data-a]').forEach(x => x.onchange = () => { if (x.checked && x.dataset.a !== 'view') r.querySelector('[data-a="view"]').checked = true; syncRow(r); }); });
-  m.el.querySelectorAll('[data-all]').forEach(b => b.onclick = () => m.el.querySelectorAll('[data-row]').forEach(r => { r.querySelectorAll('[data-a]').forEach(x => x.checked = b.dataset.all === '1'); syncRow(r); }));
   m.el.querySelector('[data-save]').onclick = async (e) => {
     const d = formData(f);
     const username = (d.username || '').trim().toLowerCase();
     if (isNew && !username) return toast('اكتب اسم المستخدم', 'err');
     if (username && !/^[a-z0-9._-]{2,30}$/.test(username)) return toast('اسم المستخدم لازم يكون أحرف إنجليزي أو أرقام بدون فراغات', 'err');
     if (isNew && (d.password || '').length < 4) return toast('كلمة السر لازم تكون 4 أحرف على الأقل', 'err');
-    const permissions = {};
-    m.el.querySelectorAll('[data-row]').forEach(r => { const on = [...r.querySelectorAll('[data-a]')].filter(x => x.checked).map(x => x.dataset.a);
-      if (on.length === ACTIONS.length) permissions[r.dataset.row] = true; else if (on.length) permissions[r.dataset.row] = Object.fromEntries(on.map(a => [a, true])); });
+    const permissions = pe.user();
     const companies = [...m.el.querySelectorAll('[data-c]')].filter(x => x.checked).map(x => x.dataset.c);
     e.target.disabled = true;
     const r = isNew
       ? await sb.rpc('admin_create_user', { p_username: username, p_full_name: d.full_name, p_password: d.password, p_permissions: permissions, p_companies: companies, p_is_admin: !!d.is_admin })
       : await sb.rpc('admin_update_user', { p_id: u.id, p_username: username || null, p_full_name: d.full_name, p_password: d.password || null, p_permissions: permissions, p_companies: companies, p_is_admin: !!d.is_admin, p_is_active: !!d.is_active });
     if (r.error) { e.target.disabled = false; return toast(arError(r.error), 'err'); }
+    const uid = isNew ? r.data : u.id;
+    for (const box of m.el.querySelectorAll('[data-ucd]')) {
+      const cid = box.dataset.ucd; if (!companies.includes(cid) || !uid) continue;
+      const dep = box.querySelector('[data-dep]').value || null, hide = box.querySelector('[data-hide]').checked, l = link(cid);
+      if (!isNew && (l.department_id || null) === dep && !!l.hide_departments === hide) continue;
+      if (!dep && !hide && isNew) continue;
+      const x = await sb.from('user_companies').update({ department_id: dep, hide_departments: hide }).eq('user_id', uid).eq('company_id', cid);
+      if (x.error) toast(arError(x.error), 'err');
+    }
     toast(isNew ? `تم إنشاء المستخدم «${username}» — بيدخل باسم المستخدم وكلمة السر` : 'تم الحفظ', 'ok');
     if (self) await loadProfile();
     m.close(); route_();
@@ -849,20 +909,17 @@ async function viewGroups(v) {
       <form id="g-form"><div class="grid cols-2">
         <div class="field"><label>اسم المجموعة *</label><input name="name" required value="${esc(g.name)}"></div>
         <div class="field"><label>الوصف</label><input name="description" value="${esc(g.description)}"></div></div></form>
-      <div class="table-wrap"><table class="t perm-table">
-        <thead><tr><th>الشاشة</th>${ACTIONS.map(a => `<th>${a.label}</th>`).join('')}<th>الكل</th></tr></thead>
-        <tbody>${SCREENS.map(s => `<tr><td>${s.label}</td>
-          ${ACTIONS.map(a => `<td><input type="checkbox" data-s="${s.key}" data-a="${a.key}" ${g.permissions?.[s.key]?.[a.key] ? 'checked' : ''}></td>`).join('')}
-          <td><input type="checkbox" data-all="${s.key}"></td></tr>`).join('')}</tbody></table></div>
-      <p class="muted" style="font-size:13px">«ترحيل» يعني الموظف بيقدر يرحّل السندات ويعمل قيد عكسي. رح تنضاف شاشات جديدة هون مع كل مرحلة.</p>`,
+      <div style="display:flex;gap:6px;align-items:center;margin:4px 0 8px"><span class="muted" style="font-size:13px">نسخ الصلاحيات من مجموعة:</span>
+        <select id="g-copy"><option value="">—</option>${data.filter(x => x.id !== g.id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
+      <div id="g-perms"></div>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
-    m.el.querySelectorAll('[data-all]').forEach(cb => cb.onchange = () =>
-      m.el.querySelectorAll(`[data-s="${cb.dataset.all}"]`).forEach(x => x.checked = cb.checked));
+    m.el.querySelector('.modal').style.maxWidth = '920px';
+    const pe = permEditor(m.el.querySelector('#g-perms'), g.permissions || {});
+    m.el.querySelector('#g-copy').onchange = (e) => { const src = data.find(x => x.id === e.target.value); if (src) pe.set(src.permissions || {}); };
     m.el.querySelector('[data-save]').onclick = async () => {
       const d = formData(m.el.querySelector('#g-form'));
       if (!d.name) return toast('اسم المجموعة مطلوب', 'err');
-      const perms = {};
-      m.el.querySelectorAll('[data-s]').forEach(x => { if (x.checked) (perms[x.dataset.s] ||= {})[x.dataset.a] = true; });
+      const perms = pe.group();
       const row = { name: d.name, description: d.description, permissions: perms };
       const res = g.id ? await sb.from('user_groups').update(row).eq('id', g.id) : await sb.from('user_groups').insert(row);
       if (res.error) return toast(arError(res.error), 'err');

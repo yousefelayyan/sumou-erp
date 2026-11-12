@@ -3,6 +3,7 @@
 // =====================================================================
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
+import { loadLookups, lookupDatalistSync } from './lookups.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
@@ -17,7 +18,7 @@ async function viewCheques(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
   const dir = new URLSearchParams(location.hash.split('?')[1] || '').get('dir') === 'out' ? 'out' : 'in';
   const [{ data, error }, parties, accs] = await Promise.all([
-    sb.from('cheques').select('*').eq('company_id', S.company.id).eq('direction', dir).order('due_date').limit(5000), loadParties(), loadAccounts()]);
+    sb.from('cheques').select('*').eq('company_id', S.company.id).eq('direction', dir).order('due_date').limit(5000), loadParties(), loadAccounts(), loadLookups()]);
   if (error) throw error;
   const pName = Object.fromEntries(parties.map(p => [p.id, p.name]));
   const open = data.filter(c => c.status === (dir === 'in' ? 'portfolio' : 'issued'));
@@ -66,7 +67,7 @@ async function viewCheques(v, ctx) {
     const m = modal({ title: dir === 'in' ? 'تسجيل شيك وارد' : 'تسجيل شيك صادر', body: `<form id="c-form"><div class="grid cols-2">
       <div class="field"><label>رقم الشيك *</label><input name="cheque_no" dir="ltr"></div>
       <div class="field"><label>المبلغ *</label><input name="amount" inputmode="decimal" dir="ltr"></div>
-      <div class="field"><label>البنك</label><input name="bank_name"></div><div class="field"><label>الفرع</label><input name="branch"></div>
+      <div class="field"><label>البنك</label><input name="bank_name" list="lk-bank">${lookupDatalistSync('lk-bank', ['bank'])}</div><div class="field"><label>الفرع</label><input name="branch" list="lk-branch">${lookupDatalistSync('lk-branch', ['bank_branch'])}</div>
       <div class="field"><label>تاريخ ${dir === 'in' ? 'الاستلام' : 'الإصدار'} *</label><input type="date" name="issue_date" value="${today()}"></div>
       <div class="field"><label>تاريخ الاستحقاق *</label><input type="date" name="due_date" value="${today()}"></div>
       <div class="field" style="grid-column:span 2"><label>${dir === 'in' ? 'العميل' : 'المورد'}</label><input list="party-list" id="c-party" placeholder="اختار من القائمة…">${partyDatalist(myParties)}</div>

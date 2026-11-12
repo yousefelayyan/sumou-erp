@@ -1,0 +1,94 @@
+// =====================================================================
+//  السمو ERP — قوائم الإعداد: وسائل الدفع، البنوك وفروعها، الدول والمناطق، أنواع الأوراق التجارية
+// =====================================================================
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData } from './core.js';
+import { loadAccounts, leafAccounts, accLabel } from './finance.js';
+
+export const LK = {
+  payment_method: { label: 'وسائل الدفع', one: 'وسيلة دفع', icon: '💳', hint: 'نقدي، فيزا، تحويل بنكي… كل وسيلة مربوطة على حساب صندوق أو بنك، وبتنختار بالفاتورة والسند بدل الحساب.' },
+  bank:           { label: 'البنوك', one: 'بنك', icon: '🏦', hint: 'أسماء البنوك اللي بتطلع اختيارات جاهزة بالشيكات.' },
+  bank_branch:    { label: 'فروع البنوك', one: 'فرع بنك', icon: '🏧', parent: 'bank', parentLabel: 'البنك' },
+  country:        { label: 'الدول / البلاد', one: 'دولة', icon: '🌍' },
+  region:         { label: 'المناطق / الأقاليم', one: 'منطقة', icon: '🗺️', parent: 'country', parentLabel: 'الدولة', hint: 'المدن والمناطق بتطلع اختيارات جاهزة بعنوان العميل والمورد.' },
+  cheque_type:    { label: 'أنواع الأوراق التجارية', one: 'نوع', icon: '🧾', hint: 'شيك، كمبيالة، سند لأمر…' },
+};
+
+export async function loadLookups(force = false) {
+  if (!S.company) return [];
+  if (!force && S._lk?.cid === S.company.id) return S._lk.rows;
+  const { data, error } = await sb.from('lookups').select('*').eq('company_id', S.company.id).order('code');
+  S._lk = { cid: S.company.id, rows: error ? [] : (data || []) };
+  return S._lk.rows;
+}
+// datalist جاهزة لحقل نص (اسم البنك، المدينة…)
+export async function lookupDatalist(id, kinds) {
+  const rows = (await loadLookups()).filter(r => kinds.includes(r.kind) && r.is_active);
+  return `<datalist id="${id}">${rows.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>`;
+}
+export function lookupDatalistSync(id, kinds) {
+  const rows = (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => kinds.includes(r.kind) && r.is_active);
+  return `<datalist id="${id}">${rows.map(r => `<option value="${esc(r.name)}">`).join('')}</datalist>`;
+}
+// خيارات «وسيلة الدفع» فوق قائمة الصندوق/البنك (القيمة = حساب الوسيلة)
+export function pmOptions() {
+  const rows = (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => r.kind === 'payment_method' && r.is_active && r.account_id);
+  return rows.length ? `<optgroup label="وسائل الدفع">${rows.map(r => `<option value="${r.account_id}">💳 ${esc(r.name)}</option>`).join('')}</optgroup><optgroup label="الحسابات">` : '';
+}
+export async function paymentMethods() { return (await loadLookups()).filter(r => r.kind === 'payment_method' && r.is_active && r.account_id); }
+
+async function viewLookups(v) {
+  if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
+  const kind = LK[new URLSearchParams(location.hash.split('?')[1] || '').get('k')] ? new URLSearchParams(location.hash.split('?')[1]).get('k') : 'payment_method';
+  const [rows, accs] = await Promise.all([loadLookups(true), loadAccounts()]);
+  const K = LK[kind], byId = Object.fromEntries(rows.map(r => [r.id, r]));
+  const list = rows.filter(r => r.kind === kind);
+  const cashAccs = leafAccounts(accs).filter(a => a.category === 'assets');
+  v.innerHTML = `<div class="page-head"><h2>⚙️ الإعداد</h2><div class="spacer"></div>
+      ${can('lookups', 'add') ? `<button class="btn primary" id="add">➕ ${esc(K.one)} جديد${kind === 'payment_method' || kind === 'country' || kind === 'region' ? 'ة' : ''}</button>` : ''}</div>
+    <div class="tabs lk-tabs">${Object.entries(LK).map(([k, x]) => `<a class="tab ${k === kind ? 'active' : ''}" href="#/setup?k=${k}">${x.icon} ${esc(x.label)} <span class="muted" style="font-size:11px">${rows.filter(r => r.kind === k).length}</span></a>`).join('')}</div>
+    ${K.hint ? `<p class="muted" style="font-size:13px;margin:8px 0">${esc(K.hint)}</p>` : ''}
+    <div class="card table-wrap"><table class="t"><thead><tr><th>الرمز</th><th>الاسم</th><th>الاسم 2</th>${K.parent ? `<th>${esc(K.parentLabel)}</th>` : ''}${kind === 'payment_method' ? '<th>الحساب</th>' : ''}<th>الحالة</th><th></th></tr></thead>
+      <tbody>${list.map(r => `<tr><td dir="ltr" style="text-align:right">${esc(r.code)}</td><td><b>${esc(r.name)}</b></td><td>${esc(r.name2 || '')}</td>
+        ${K.parent ? `<td>${esc(byId[r.parent_id]?.name || '')}</td>` : ''}${kind === 'payment_method' ? `<td>${esc(accLabel(accs.find(a => a.id === r.account_id)) || '')}</td>` : ''}
+        <td>${r.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge">غير فعّال</span>'}</td>
+        <td class="actions">${can('lookups', 'edit') ? `<button class="btn sm" data-edit="${r.id}">تعديل</button>` : ''}${can('lookups', 'delete') ? `<button class="btn sm danger" data-del="${r.id}">حذف</button>` : ''}</td></tr>`).join('')
+        || `<tr><td colspan="7" class="empty">ما في ${esc(K.label)} لسا</td></tr>`}</tbody></table></div>`;
+  const open = (r) => {
+    const isNew = !r;
+    const next = String(Math.max(0, ...list.map(x => /^\d+$/.test(x.code) ? +x.code : 0)) + 1).padStart(2, '0');
+    r = r || { code: next, name: '', is_active: true };
+    const parents = K.parent ? rows.filter(x => x.kind === K.parent) : [];
+    const m = modal({ title: `${isNew ? '➕' : '✏️'} ${esc(K.one)}`, size: 'sm', body: `<form id="lk-form" autocomplete="off">
+      <div class="grid cols-2"><div class="field"><label>الرمز *</label><input name="code" dir="ltr" value="${esc(r.code)}"></div>
+        <div class="field"><label>الاسم *</label><input name="name" value="${esc(r.name)}"></div></div>
+      <div class="field"><label>الاسم 2 (إنجليزي مثلاً)</label><input name="name2" value="${esc(r.name2 || '')}"></div>
+      ${K.parent ? `<div class="field"><label>${esc(K.parentLabel)}</label><select name="parent_id"><option value="">—</option>${parents.map(p => `<option value="${p.id}" ${p.id === r.parent_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
+      ${kind === 'payment_method' ? `<div class="field"><label>الحساب (صندوق / بنك) *</label><select name="account_id"><option value="">— اختار —</option>${cashAccs.map(a => `<option value="${a.id}" ${a.id === r.account_id ? 'selected' : ''}>${esc(accLabel(a))}${['cash', 'bank'].includes(a.account_type) ? ' ★' : ''}</option>`).join('')}</select></div>` : ''}
+      <div class="field"><label>ملاحظات</label><input name="notes" value="${esc(r.notes || '')}"></div>
+      <label class="check"><input type="checkbox" name="inactive" ${r.is_active ? '' : 'checked'}> غير مفعّل</label></form>`,
+      foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
+    m.el.querySelector('[data-save]').onclick = async (e) => {
+      const d = formData(m.el.querySelector('#lk-form'));
+      if (!d.code?.trim() || !d.name?.trim()) return toast('الرمز والاسم مطلوبين', 'err');
+      if (kind === 'payment_method' && !d.account_id) return toast('اختار الحساب', 'err');
+      const rec = { code: d.code.trim(), name: d.name.trim(), name2: d.name2 || null, parent_id: d.parent_id || null, account_id: d.account_id || null, notes: d.notes || null, is_active: !d.inactive };
+      e.target.disabled = true;
+      const res = isNew ? await sb.from('lookups').insert({ ...rec, company_id: S.company.id, kind }) : await sb.from('lookups').update(rec).eq('id', r.id);
+      if (res.error) { e.target.disabled = false; return toast(/duplicate|unique/.test(res.error.message) ? 'الرمز مستعمل' : arError(res.error), 'err'); }
+      toast('انحفظ', 'ok'); m.close(); viewLookups(v);
+    };
+  };
+  v.querySelector('#add')?.addEventListener('click', () => open(null));
+  v.querySelector('table').onclick = async (e) => {
+    const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
+    if (ed) open(byId[ed.dataset.edit]);
+    if (dl) {
+      if (!(await confirmBox(`حذف «${byId[dl.dataset.del].name}»؟`))) return;
+      const { error } = await sb.from('lookups').delete().eq('id', dl.dataset.del);
+      if (error) return toast(/foreign key|violates/.test(error.message) ? 'مستعمل (إله فروع)، أوقفه بدل الحذف' : arError(error), 'err');
+      toast('انحذف', 'ok'); viewLookups(v);
+    }
+  };
+}
+
+export const LOOKUP_ROUTES = { 'setup': viewLookups };

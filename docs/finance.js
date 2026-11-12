@@ -10,6 +10,8 @@ import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
 import { recurringDialog } from './extras.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
+import { deptField, deptValue } from './departments.js';
+import { loadLookups, pmOptions } from './lookups.js';
 
 export const CATEGORIES = { assets: 'الموجودات', liabilities: 'المطلوبات', equity: 'حقوق الملكية', revenue: 'الإيرادات', expenses: 'المصاريف' };
 export const ACC_TYPES = { general: 'عام', cash: 'صندوق', bank: 'بنك', customer: 'عميل', supplier: 'مورد', employee: 'موظف', tax: 'ضريبة' };
@@ -323,6 +325,7 @@ async function voucherEditor(type, entry, ctx) {
     canPost: entry.status === 'draft' && can(T.screen, 'post') && postFlag(type, 'gl'),
     canUnpost: entry.status === 'posted' && !entry.reversal_of && !entry.reversed_by && ['journal', 'receipt', 'payment'].includes(type) && can(T.screen, 'unpost'),
     note: entry.status === 'reversed' ? 'انعمله قيد عكسي' : (!postFlag(type, 'gl') && entry.status === 'draft' ? 'هالنوع مش مفعّل ترحيله (الأدوات ← الترحيل)' : '') }]) : '';
+  const dept = await deptField(entry?.department_id, ro, !entry); await loadLookups();
   const m = modal({ title, body: `${bar}
     ${entry ? `<div style="margin:-6px 0 12px">${statusBadge(entry.status)} ${entry.reversal_of ? '<span class="badge brand">قيد عكسي</span>' : ''}
       ${entry.status !== 'draft' ? '<span class="muted" style="font-size:13px"> — القيد المرحّل ما بينعدّل. للتصحيح اعمل «قيد عكسي».</span>' : ''}</div>` : ''}
@@ -331,8 +334,9 @@ async function voucherEditor(type, entry, ctx) {
       <div class="field"><label>التاريخ *</label><input type="date" name="entry_date" value="${esc(e.entry_date)}" min="${S.fy.start_date}" max="${S.fy.end_date}" ${ro}></div>
       ${isCash ? `<div class="field"><label>${type === 'receipt' ? 'استلمنا من' : 'صرفنا إلى'}</label><input name="party_name" value="${esc(e.party_name)}" ${ro}></div>
         <div class="field"><label>${type === 'receipt' ? 'إلى حساب (الصندوق/البنك) *' : 'من حساب (الصندوق/البنك) *'}</label><select name="cash_account_id" ${ro}>
-          <option value="">— اختار —</option>${cashAccs.map(a => `<option value="${a.id}" ${a.id === e.cash_account_id ? 'selected' : ''}>${esc(accLabel(a))}${['cash', 'bank'].includes(a.account_type) ? ' ★' : ''}</option>`).join('')}</select></div>` : ''}
+          <option value="">— اختار —</option>${pmOptions()}${cashAccs.map(a => `<option value="${a.id}" ${a.id === e.cash_account_id ? 'selected' : ''}>${esc(accLabel(a))}${['cash', 'bank'].includes(a.account_type) ? ' ★' : ''}</option>`).join('')}</select></div>` : ''}
       <div class="field"><label>المرجع / رقم الشيك</label><input name="reference" value="${esc(e.reference)}" ${ro}></div>
+      ${dept}
       <div class="field" style="grid-column:span 2"><label>البيان</label><input name="description" value="${esc(e.description)}" ${ro}></div>
     </div></form>
     ${accountDatalist(accs)}${partyDatalist(parties)}
@@ -479,7 +483,7 @@ async function voucherEditor(type, entry, ctx) {
       if (post && Math.abs(d - c) > 0.0005) return toast('القيد مش متوازن، ما بينرحّل', 'err');
     }
     const header = { entry_date: h.entry_date, description: h.description, reference: h.reference,
-                     party_name: isCash ? h.party_name : null, cash_account_id: isCash ? h.cash_account_id : null,
+                     party_name: isCash ? h.party_name : null, cash_account_id: isCash ? h.cash_account_id : null, ...deptValue(m.el.querySelector('#v-form')),
                      ...(mn.value ? { entry_no: mn.value } : {}) };
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {
