@@ -310,7 +310,8 @@ create policy log_select on public.activity_log for select to authenticated
 -- =====================================================================
 --  مجموعات جاهزة للبداية (بتقدر تعدّلها من النظام)
 -- =====================================================================
-insert into public.user_groups (name, description, permissions) values
+insert into public.user_groups (name, description, permissions)
+select v.* from (values
   ('محاسب', 'إدخال وتعديل على الشركات المسموحة',
    '{"companies":{"view":true,"edit":true,"print":true},
      "fiscal_years":{"view":true,"add":true,"edit":true,"print":true}}'::jsonb),
@@ -320,7 +321,8 @@ insert into public.user_groups (name, description, permissions) values
   ('مشاهد', 'عرض وطباعة فقط',
    '{"companies":{"view":true,"print":true},
      "fiscal_years":{"view":true,"print":true}}'::jsonb)
-on conflict (name) do nothing;
+) v(name, description, permissions)
+where not exists (select 1 from public.user_groups g where g.name = v.name);
 
 -- =====================================================================
 --  صلاحيات الوصول للجداول (الحماية الفعلية من سياسات RLS فوق)

@@ -154,7 +154,36 @@ export async function log(action, entity, entity_id = null, details = null) {
 //  الصلاحيات (للواجهة فقط — الحماية الحقيقية بقاعدة البيانات)
 // ---------------------------------------------------------------------
 export const isAdmin = () => !!(S.profile?.is_admin && S.profile?.is_active);
+export const isSuper = () => !!(S.profile?.is_super && S.profile?.is_active);
+
+// الأقسام (حسب الاشتراك) — لازم تطابق screen_module() بقاعدة البيانات
+export const MODULES = [
+  { key: 'sales',         label: 'المبيعات والعملاء' },
+  { key: 'purchases',     label: 'المشتريات والموردين' },
+  { key: 'inventory',     label: 'المستودعات وسندات المخزون' },
+  { key: 'banking',       label: 'الشيكات والتسوية البنكية' },
+  { key: 'payroll',       label: 'الموظفين والرواتب' },
+  { key: 'assets',        label: 'الأصول الثابتة' },
+  { key: 'marketing',     label: 'التسويق' },
+  { key: 'manufacturing', label: 'التصنيع' },
+  { key: 'maintenance',   label: 'الصيانة' },
+  { key: 'office',        label: 'متابعة إقرارات العملاء (للمكاتب)' },
+];
+const SCREEN_MODULE = {
+  customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales',
+  suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases',
+  inventory: 'inventory', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets',
+  marketing: 'marketing', manufacturing: 'manufacturing', maintenance: 'maintenance', obligations: 'office',
+};
+export const screenModule = (screen) => SCREEN_MODULE[screen] || 'core';
+export function moduleOn(mod) {
+  const mods = S.sub?.modules;
+  return mod === 'core' || !Array.isArray(mods) || mods.includes(mod);
+}
+export const subWritable = () => S.sub?.writable !== false;
 export function can(screen, act, companyId = S.company?.id) {
+  if (!moduleOn(screenModule(screen))) return false;
+  if (!subWritable() && !['view', 'print'].includes(act)) return false;
   if (isAdmin()) return true;
   const m = S.memberships.find(x => x.company_id === companyId);
   const up = S.profile?.permissions?.[screen];
@@ -170,6 +199,8 @@ export async function loadProfile() {
   const { data, error } = await sb.from('profiles').select('*').eq('id', S.session.user.id).maybeSingle();
   if (error) throw error;
   S.profile = data;
+  S.sub = null;
+  if (data?.is_active) { const r = await sb.rpc('my_subscription'); if (!r.error) S.sub = r.data || null; }
 }
 
 export async function loadContext() {

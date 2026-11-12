@@ -95,6 +95,17 @@ function css(cfg, { landscape, thermal, paper }) {
 
 // يفتح نافذة طباعة فيها ترويسة الشركة + المحتوى.
 // html ممكن يكون نص أو دالة (cfg, {thermal}) => نص. kind بيحدد التواقيع وحجم الورق (invoice بياخذ ورق الفواتير).
+// شريط فوق نافذة الطباعة (ما بيطلع بالورق): رجوع للبرنامج + طباعة.
+// على الآيباد والتطبيق المثبّت النافذة بتفتح على كامل الشاشة وما في زر إغلاق.
+export function printBarHTML() {
+  const app = location.origin + location.pathname;
+  return `<style>.sumou-bar{position:sticky;top:0;z-index:99;display:flex;gap:10px;justify-content:center;padding:10px;background:#f3eefa;border-bottom:1px solid #ddd;margin:-10px -10px 12px}
+    .sumou-bar button{font:700 16px Tajawal,Tahoma,Arial;padding:10px 22px;border-radius:10px;border:1px solid #5b2a86;background:#fff;color:#5b2a86;cursor:pointer}
+    .sumou-bar button.p{background:#5b2a86;color:#fff}@media print{.sumou-bar{display:none!important}}</style>
+  <div class="sumou-bar"><button type="button" onclick="(function(){window.close();setTimeout(function(){if(history.length>1)history.back();else location.href=${JSON.stringify(app).replace(/"/g, '&quot;')};},300)})()">→ رجوع للبرنامج</button>
+  <button type="button" class="p" onclick="window.print()">🖨️ طباعة</button></div>`;
+}
+
 export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null } = {}) {
   const w = preview || window.open('', '_blank');
   if (!w) { alert('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهالموقع.'); return; }
@@ -110,6 +121,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
     const doc = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
   <style>${css(cfg, { landscape, thermal, paper: paper === 'A5' ? 'A5' : 'A4' })}</style></head><body>
+  ${preview ? '' : printBarHTML()}
   ${cfg.watermark && !thermal ? `<div class="wm"><div>${esc(c.name || '')}<br>${esc(fy)}</div></div>` : ''}
   <div class="head">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}
     <div class="co"><h1>${esc(c.name || '')}</h1><div>${esc([c.address, c.city].filter(Boolean).join(' - '))}${c.phone ? ' | هاتف: ' + esc(c.phone) : ''}</div>

@@ -6,7 +6,12 @@ create extension if not exists pgcrypto with schema extensions;
 
 alter table public.profiles add column if not exists username text;
 alter table public.profiles add column if not exists permissions jsonb not null default '{}'::jsonb;  -- {"sales_invoices": true} = كل شي، أو {"customers": {"view": true, "print": true}}
-create unique index if not exists profiles_username_uq on public.profiles (lower(username)) where username is not null;
+-- بعد المرحلة 28 الاسم فريد جوّا المشترك (profiles_tenant_username_uq)
+do $$ begin
+  if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'profiles' and column_name = 'tenant_id') then
+    create unique index if not exists profiles_username_uq on public.profiles (lower(username)) where username is not null;
+  end if;
+end $$;
 
 -- الموظف ما بيقدر يغيّر صلاحياته أو اسم المستخدم
 create or replace function public.protect_profile_fields() returns trigger

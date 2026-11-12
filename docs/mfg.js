@@ -3,6 +3,7 @@
 // =====================================================================
 import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, localStorageGet, localStorageSet } from './core.js';
 import { loadItems, openInvoicePrefill } from './invoices.js';
+import { printBarHTML } from './print.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { docNo } from './numbering.js';
 import { downloadCSV } from './finance.js';
@@ -202,7 +203,7 @@ async function viewService(v, ctx) {
     });
     m.el.querySelector('[data-print]').onclick = () => {
       const w = window.open('', '_blank'); if (!w) return toast('اسمح بالنوافذ المنبثقة', 'err');
-      w.document.write(`<html dir="rtl"><head><meta charset="utf-8"><title>إيصال استلام</title><style>body{font-family:Tahoma,Arial;padding:20px;max-width:600px;margin:auto}td{padding:6px;border-bottom:1px solid #ddd}h2{margin:0}</style></head><body>
+      w.document.write(`<html dir="rtl"><head><meta charset="utf-8"><title>إيصال استلام</title><style>body{font-family:Tahoma,Arial;padding:20px;max-width:600px;margin:auto}td{padding:6px;border-bottom:1px solid #ddd}h2{margin:0}</style></head><body>${printBarHTML()}
         <h2>${esc(S.company.name)}</h2><p>إيصال استلام جهاز للصيانة رقم <b>${esc(t.ticket_no || '')}</b> — ${fmtDate(t.received_at)}</p>
         <table style="width:100%;border-collapse:collapse">${[['العميل', pById[t.party_id]?.name || t.customer_name], ['الهاتف', t.phone], ['الجهاز', t.device], ['الرقم التسلسلي', t.serial_no], ['الملحقات', t.accessories], ['المشكلة', t.problem], ['الكلفة التقديرية', num(t.estimate) ? fmtNum(t.estimate) : ''], ['موعد التسليم', t.promised_at ? fmtDate(t.promised_at) : '']].map(([a, b]) => `<tr><td><b>${a}</b></td><td>${esc(b || '')}</td></tr>`).join('')}</table>
         <p style="margin-top:40px">توقيع المستلم: ____________ &nbsp;&nbsp; توقيع العميل: ____________</p><script>print()<\/script></body></html>`); w.document.close();

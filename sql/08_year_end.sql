@@ -38,6 +38,7 @@ declare fy public.fiscal_years; nfy public.fiscal_years; ra public.accounts; dra
 begin
   if not public.is_admin() then raise exception 'إغلاق السنة لمدير النظام بس'; end if;
   select * into fy from public.fiscal_years where id = p_fy;
+  if fy.id is not null and (not public.has_company(fy.company_id) or not public.tenant_writable()) then raise exception 'ما عندك صلاحية لهالعملية'; end if;
   select * into nfy from public.fiscal_years where id = p_next_fy;
   if fy.id is null or nfy.id is null or nfy.company_id <> fy.company_id then raise exception 'اختار السنة الجديدة لنفس الشركة'; end if;
   if fy.is_closed then raise exception 'السنة مغلقة من قبل'; end if;
@@ -128,6 +129,7 @@ declare fy public.fiscal_years;
 begin
   if not public.is_admin() then raise exception 'إعادة فتح السنة لمدير النظام بس'; end if;
   select * into fy from public.fiscal_years where id = p_fy;
+  if fy.id is not null and (not public.has_company(fy.company_id) or not public.tenant_writable()) then raise exception 'ما عندك صلاحية لهالعملية'; end if;
   if fy.id is null then raise exception 'السنة غير موجودة'; end if;
   perform set_config('sumou.internal', public.internal_token(), true);
   delete from public.journal_entries where fiscal_year_id = p_fy and entry_type = 'closing';

@@ -2,7 +2,7 @@
 //  السمو ERP — محرر الصلاحيات على شكل شجرة (مثل ستاليون)
 //  يمين: مجموعات الشاشات (بتنفتح وبتتسكّر)، يسار: صلاحيات الشاشة المختارة.
 // =====================================================================
-import { SCREENS, ACTIONS, esc } from './core.js';
+import { SCREENS, ACTIONS, esc, moduleOn, screenModule } from './core.js';
 
 const HELP = {
   view: 'عرض الشاشة والسجلات اللي فيها',
@@ -28,7 +28,7 @@ export function permEditor(root, perms = {}, { compact = false } = {}) {
   const badge = (k) => { const c = n(k); return c === 0 ? '' : `<span class="pt-b ${c === ACTIONS.length ? 'full' : ''}">${c === ACTIONS.length ? 'الكل' : c}</span>`; };
   function draw() {
     const scr = SCREENS.find(s => s.key === sel);
-    const vis = (s) => !q || s.label.includes(q) || s.group.includes(q);
+    const vis = (s) => moduleOn(screenModule(s.key)) && (!q || s.label.includes(q) || s.group.includes(q));
     root.innerHTML = `<div class="ptree ${compact ? 'compact' : ''}">
       <div class="pt-tree">
         <div class="pt-tools"><input class="pt-q" placeholder="🔎 بحث عن شاشة…" value="${esc(q)}">

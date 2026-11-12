@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..27). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..28). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -47,6 +47,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   centers.js        الأستاذ العام (account-center) والأستاذ المساعد: party-center?type=customer|supplier|expense، employee-center، asset-center — فترة، أرصدة أول/آخر المدة، وتفاصيل تحت السطر (ملخص حسب نوع السند + الحركات + «احتساب» لاختيار الأنواع والرصيد المدور)
   audit.js          سجل التتبع: شريط «أدخله/آخر تعديل» + «سجل التتبع» بكل سند (attachAudit)
   posting.js        الترحيل: شريط «ترحيل للمحاسبة/للمخزون» بكل سند + شاشة الأدوات ← الترحيل
+  tenants.js        «إدارة المشتركين» (لمدير المنصة) و«اشتراكي» + شريط تنبيه الانتهاء (subBannerHTML)
   numbering.js      طريقة الترقيم (أرقام المستندات + اقتراح رموز البطاقات) + docNo()
   sw.js             كاش PWA — ارفع رقم النسخة مع كل تحديث
   pdf/              برنامج «السمو PDF» (pdf.js + pdf-lib بمجلد lib)
@@ -91,7 +92,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -115,7 +116,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.11.1)
+## اللي انبنى (لحد النسخة 4.12.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -157,7 +158,17 @@ dev/                أدوات الفحص (شوف تحت)
 
 - **الإنتاج تحت التشغيل (المرحلة 27):** `company_settings.wip_account_id`؛ سندات الإنتاج الجديدة بتاخذه كحساب مقابل (`ab_production_wip`). `ensure_wip_account(company)` بيعمل حساب «الإنتاج تحت التشغيل» أخ لحساب المخزون وبيربطه (زر بحسابات الربط). الأجور والتشغيل بتنقيّد على نفس الحساب بسند قيد عشان يتصفّر.
 
+- **المشتركين والاشتراكات (المرحلة 28):** البرنامج صار منصة بتنباع لمكاتب وشركات. جدول `tenants` (code، status active/suspended، max_users، max_companies، modules = null يعني الكل، expires_at = آخر يوم) و`tenant_payments`. `tenant_id` على profiles وcompanies وuser_groups وactivity_log (بيتعبّى من triggers `aa_company_tenant`/`aa_user_group_tenant`/`aa_activity_log_tenant`، وما بيتغيّر). المشترك الافتراضي `is_default` (رمزه `sumou`) = مكتب يوسف، كل الأقسام، بدون انتهاء.
+  - `is_admin()` صار = مدير المشترك. `is_super()` = مدير المنصة (يوسف). `my_tenant()`، `tenant_writable()`، `screen_module(screen)`.
+  - `has_company()` و`can()` بيفحصوا إنه الشركة من مشترك المستخدم والمشترك مش موقوف. `can()` كمان: القسم مفتوح، وبعد الانتهاء بس view/print. **أي دالة security definer جديدة بتاخذ شركة لازم تفحص has_company/can، مش is_admin() لحاله.** أي سياسة كتابة على has_company لازم معها `tenant_writable()`.
+  - الـ 28 بيعيد تعريف is_active_user/is_admin/has_company/can/handle_new_user/protect_profile_fields/user_names/admin_*_user وسياسات الجداول العامة؛ أي ملف بعده بيعدّلهم لازم يحافظ على شرط المشترك.
+  - الرمز فريد جوّا المشترك: companies (tenant_id, code)، user_groups (tenant_id, name)، profiles (tenant_id, lower(username)).
+  - الدخول: «رمز المشترك» + اسم المستخدم → `username@<code>.sumou.local` (الافتراضي `@sumou.local`). التسجيل الذاتي انشال من شاشة الدخول؛ وإذا صار بيروح للمشترك الافتراضي موقوف.
+  - دوال مدير المنصة: `super_tenants`، `super_save_tenant(id, jsonb)` (مجموعات جاهزة للمشترك الجديد)، `super_create_tenant_admin`، `super_tenant_users`، `super_set_user` (كلمة سر/إيقاف)، `super_add_payment` (بيمدّد من آخر يوم أو من اليوم)، `super_delete_payment`. `my_subscription()` للواجهة (الأقسام، الانتهاء، writable).
+  - الواجهة: `can()` بـ core.js بتخفي شاشات الأقسام المسكّرة وبتمنع الإدخال بعد الانتهاء؛ `MODULES`/`screenModule` لازم تطابق `screen_module()`.
+
 ## مأجّل أو ناقص
+- **قبل البيع:** خطة Supabase مدفوعة (Pro) للنسخ الاحتياطي والأداء، ودومين، وشروط استخدام وسياسة خصوصية.
 - **الفوترة الإلكترونية (جوفوترة):** مأجلة بطلب يوسف، لحد ما يتأكد إنه البرنامج شغّال 100%.
 - التسوية البنكية بتشتغل جوّا السنة المالية الواحدة.
 - النسخة التلقائية بتنحفظ جوّا نفس Supabase، فلازم ينصح يوسف ينزّل نسخة أسبوعية على جهازه.

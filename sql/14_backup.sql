@@ -47,7 +47,7 @@ declare r record; out jsonb := '{}'::jsonb; part jsonb; c public.companies;
 begin
   if not public.is_admin() then raise exception 'النسخ الاحتياطي لمدير النظام بس'; end if;
   select * into c from public.companies where id = p_company;
-  if c.id is null then raise exception 'الشركة مش موجودة'; end if;
+  if c.id is null or not public.has_company(p_company) then raise exception 'الشركة مش موجودة'; end if;
   for r in select * from public.backup_tables() order by ord loop
     execute format('select coalesce(jsonb_agg(to_jsonb(t) order by %s), ''[]''::jsonb) from public.%I t where %s', r.ordby, r.tbl, r.cond)
       into part using p_company;
@@ -62,10 +62,11 @@ language plpgsql security definer set search_path = public as $$
 declare r record; cid uuid; rows jsonb; n int; cols text;
 begin
   if not public.is_admin() then raise exception 'الاسترجاع لمدير النظام بس'; end if;
+  if to_regproc('public.tenant_writable') is not null and not public.tenant_writable() then raise exception 'الاشتراك منتهي. البرنامج للعرض والطباعة بس'; end if;
   if p_data ->> 'app' <> 'sumou-erp' or p_data -> 'tables' is null then raise exception 'الملف مش نسخة احتياطية من السمو ERP'; end if;
   cid := (p_data ->> 'company_id')::uuid;
   if exists (select 1 from public.companies where id = cid) then
-    raise exception 'الشركة «%» موجودة. الاسترجاع بيرجّع شركة انحذفت أو لقاعدة جديدة بس', p_data ->> 'company_name';
+    raise exception 'الشركة «%» موجودة. الاسترجاع بيرجّع شركة انحذفت أو لقاعدة جديدة بس', coalesce(p_data ->> 'company_name', '');
   end if;
   perform set_config('sumou.internal', public.internal_token(), true);
   for r in select * from public.backup_tables() order by ord loop
@@ -81,7 +82,7 @@ begin
     elsif r.tbl = 'companies' then   -- المستخدم اللي أنشأها ممكن ما يكون موجود بقاعدة جديدة
       rows := (select jsonb_agg(case when exists (select 1 from auth.users u where u.id::text = x ->> 'created_by') then x else jsonb_set(x, '{created_by}', 'null') end) from jsonb_array_elements(rows) x);
     elsif r.tbl = 'obligations' then
-      rows := (select jsonb_agg(case when exists (select 1 from public.profiles u where u.id::text = x ->> 'assigned_to') then x else jsonb_set(x, '{assigned_to}', 'null') end) from jsonb_array_elements(rows) x);
+      rows := (select jsonb_agg(case when exists (select 1 from public.profiles u where u.id::text = x ->> 'assigned_to' and u.tenant_id is not distinct from public.my_tenant()) then x else jsonb_set(x, '{assigned_to}', 'null') end) from jsonb_array_elements(rows) x);
     elsif r.tbl = 'accounts' then
       rows := (select jsonb_agg(x order by (x ->> 'level')::int) from jsonb_array_elements(rows) x);
     end if;
@@ -100,6 +101,31 @@ begin
    where i.id = (x ->> 'id')::uuid and x ->> 'original_invoice_id' is not null;
   update public.bank_recons b set status = x ->> 'status'
     from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'bank_recons', '[]'::jsonb)) x where b.id = (x ->> 'id')::uuid;
+  -- فحص: كل سطر بالنسخة لازم يكون تابع لهالشركة، وكل رابط لجدول شركات لازم يأشّر على نفس الشركة
+  -- (عشان ملف معدّل ما يقدر يكتب أو يربط ببيانات شركة/مشترك ثاني)
+  for r in select * from public.backup_tables() order by ord loop
+    rows := coalesce(p_data -> 'tables' -> r.tbl, '[]'::jsonb);
+    if jsonb_array_length(rows) = 0 then continue; end if;
+    execute format('select count(*) from jsonb_populate_recordset(null::public.%I, $2) t where not coalesce((%s), false)', r.tbl, r.cond)
+      into n using cid, rows;
+    if n > 0 then raise exception 'ملف النسخة مش سليم (جدول %)', r.tbl; end if;
+  end loop;
+  for r in
+    select b.tbl, a.attname as col, c.confrelid::regclass::text as ref, b.cond
+    from public.backup_tables() b
+    join pg_constraint c on c.conrelid = ('public.' || b.tbl)::regclass and c.contype = 'f' and array_length(c.conkey, 1) = 1
+    join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+    join pg_attribute ra on ra.attrelid = c.confrelid and ra.attnum = c.confkey[1] and ra.attname = 'id'
+    where c.confrelid = 'public.companies'::regclass
+       or exists (select 1 from pg_attribute x where x.attrelid = c.confrelid and x.attname = 'company_id' and not x.attisdropped)
+  loop
+    if r.ref in ('companies', 'public.companies') then
+      execute format('select count(*) from (select * from public.%I where %s) t where t.%I is not null and t.%I <> $1', r.tbl, r.cond, r.col, r.col) into n using cid;
+    else
+      execute format('select count(*) from (select * from public.%I where %s) t join %s x on x.id = t.%I where x.company_id <> $1', r.tbl, r.cond, r.ref, r.col) into n using cid;
+    end if;
+    if n > 0 then raise exception 'ملف النسخة مش سليم (رابط % بجدول %)', r.col, r.tbl; end if;
+  end loop;
   -- المدير بيوصل للشركة المسترجعة
   insert into public.user_companies (user_id, company_id) values (auth.uid(), cid) on conflict do nothing;
   perform set_config('sumou.internal', '', true);

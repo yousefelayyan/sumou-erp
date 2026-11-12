@@ -4,7 +4,7 @@
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
-import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
@@ -25,6 +25,7 @@ import { MFG_ROUTES, enhanceReportTables } from './mfg.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
+import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 
 const $app = document.getElementById('app');
 // ---------------------------------------------------------------------
@@ -38,12 +39,13 @@ function renderAuth(mode = 'login') {
       <p class="auth-sub">${titles[mode]}</p>
       <form id="auth-form">
         ${mode === 'signup' ? `<div class="field"><label>الاسم الكامل</label><input name="full_name" required></div>` : ''}
+        ${mode === 'login' ? `<div class="field"><label>رمز المشترك <span class="muted" style="font-weight:400">(إذا عندك)</span></label><input name="tenant" dir="ltr" autocomplete="organization" autocapitalize="none" value="${esc(localStorageGet('sumou.tenant') || '')}"></div>` : ''}
         <div class="field"><label>${mode === 'login' ? 'اسم المستخدم أو الإيميل' : 'الإيميل'}</label><input name="email" type="${mode === 'login' ? 'text' : 'email'}" dir="ltr" required autocomplete="username" autocapitalize="none"></div>
         ${mode !== 'reset' ? `<div class="field"><label>كلمة السر</label><input name="password" type="password" dir="ltr" required minlength="${mode === 'login' ? 4 : 6}" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}"></div>` : ''}
         <button class="btn primary block" type="submit">${mode === 'login' ? 'دخول' : mode === 'signup' ? 'إنشاء الحساب' : 'إرسال رابط تغيير كلمة السر'}</button>
       </form>
       <div class="auth-switch">
-        ${mode === 'login' ? `<a data-mode="signup">إنشاء حساب جديد</a> · <a data-mode="reset">نسيت كلمة السر؟</a>` : `<a data-mode="login">رجوع لتسجيل الدخول</a>`}
+        ${mode === 'login' ? `<a data-mode="reset">نسيت كلمة السر؟</a>` : `<a data-mode="login">رجوع لتسجيل الدخول</a>`}
       </div>
       <p class="muted" style="text-align:center;font-size:12px;margin-top:18px">الإصدار ${APP_VERSION}</p>
     </div></div>`;
@@ -55,7 +57,10 @@ function renderAuth(mode = 'login') {
     const f = formData(form);
     try {
       if (mode === 'login') {
-        const { error } = await sb.auth.signInWithPassword({ email: f.email.includes('@') ? f.email.trim() : f.email.trim().toLowerCase() + '@sumou.local', password: f.password });
+        const code = (f.tenant || '').trim().toLowerCase();
+        localStorageSet('sumou.tenant', code);
+        const domain = !code || code === 'sumou' ? 'sumou.local' : code + '.sumou.local';
+        const { error } = await sb.auth.signInWithPassword({ email: f.email.includes('@') ? f.email.trim() : f.email.trim().toLowerCase() + '@' + domain, password: f.password });
         if (error) throw error;
       } else if (mode === 'signup') {
         const { data, error } = await sb.auth.signUp({ email: f.email, password: f.password,
@@ -94,6 +99,19 @@ function renderNewPassword() {
     if (error) return toast(arError(error), 'err');
     toast('تم تغيير كلمة السر', 'ok'); history.replaceState(null, '', location.pathname + '#/home'); boot();
   };
+}
+
+function renderSuspended() {
+  $app.innerHTML = `
+    <div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
+      <div class="notice">اشتراك <b>${esc(S.sub?.name || '')}</b> موقوف حالياً. بياناتك محفوظة، وبترجع تشوفها أول ما ينفعّل الاشتراك. تواصل معنا.</div>
+      <button class="btn block" id="refresh">تحديث</button>
+      <div style="height:8px"></div>
+      <button class="btn danger block" id="logout">تسجيل خروج</button>
+    </div></div>`;
+  document.getElementById('refresh').onclick = boot;
+  document.getElementById('logout').onclick = () => signOutHere();
 }
 
 function renderPending() {
@@ -230,6 +248,8 @@ const NAV = () => [
     { r: 'backup', i: '💾', l: 'النسخ الاحتياطي', show: isAdmin },
     { r: 'print-settings', i: '🖨️', l: 'نماذج الطباعة', show: () => S.company && can('companies', 'edit') },
     { r: 'log', i: '📜', l: 'سجل النشاط', show: isAdmin },
+    { r: 'subscription', i: '🎫', l: 'اشتراكي', show: () => isAdmin() && S.sub && !S.sub.is_default },
+    { r: 'tenants', i: '🏷️', l: 'إدارة المشتركين', show: isSuper },
   ]},
 ];
 
@@ -293,6 +313,7 @@ function renderShell() {
           <button class="btn sm" id="logout">خروج</button>
         </header>
         <div class="co-tabs" id="co-tabs">${coTabsHTML()}</div>
+        ${subBannerHTML()}
         <section class="content" id="view"></section>
         <div class="watermark" id="watermark" aria-hidden="true"></div>
       </div>
@@ -397,7 +418,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -1077,6 +1098,7 @@ async function boot() {
       return;
     }
     if (!S.profile.is_active) return renderPending();
+    if (S.sub?.status === 'suspended') return renderSuspended();
     await loadContext();
     renderShell(); route_();
     setTimeout(() => autoBackup().catch(() => {}), 4000);

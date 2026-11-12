@@ -8,7 +8,7 @@ psql -h /tmp -p 5433 -U postgres -qAt -c "set role authenticated; select set_con
 psql -h /tmp -p 5433 -U postgres -qAt -c "select (select count(*) from journal_entries)||' '||(select count(*) from invoices)||' '||(select count(*) from stock_moves)||' '||(select count(*) from orders)||' '||(select count(*) from productions)||' '||(select count(*) from service_tickets)" > /tmp/before.txt
 bash "$ROOT/dev/testdb.sh" >/dev/null 2>&1
 psql -h /tmp -p 5433 -U postgres -q -v ON_ERROR_STOP=1 <<'S'
-insert into auth.users(id,email) values ('11111111-1111-1111-1111-111111111111','a@sumou.local');
+insert into auth.users(id,email) values ('11111111-1111-1111-1111-111111111111','a@x.com');
 \set bk `cat /tmp/bk.json`
 set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false) \g /dev/null
 select restore_company(:'bk'::jsonb) is not null as restored;
