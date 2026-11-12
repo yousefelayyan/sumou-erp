@@ -146,7 +146,7 @@ async function viewSalesReps(v) {
     if (iR.error) return toast(arError(iR.error), 'err');
     const repOfParty = Object.fromEntries(parties.map(p => [p.id, p.sales_rep_id]));
     const t = {}; const get = (id) => (t[id || '-'] ||= { n: 0, s: 0, r: 0, c: 0, cust: new Set() });
-    (iR.data || []).forEach(i => { const x = get(i.sales_rep_id); const net = num(i.subtotal) - num(i.discount_total);
+    (iR.data || []).forEach(i => { const x = get(i.sales_rep_id); const net = num(i.subtotal);   // subtotal بعد الخصم أصلاً
       if (i.inv_type === 'sale') { x.n++; x.s += net; } else x.r += net; if (i.party_id) x.cust.add(i.party_id); });
     (rR.data || []).forEach(l => { const x = get(repOfParty[l.party_id]); x.c += num(l.credit) - num(l.debit); });
     const list = [...reps, ...(t['-'] ? [{ id: '-', code: '', name: 'بدون مندوب', rate: 0 }] : [])]

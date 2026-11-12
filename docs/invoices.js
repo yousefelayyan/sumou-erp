@@ -5,6 +5,7 @@
 import { attachAudit } from './audit.js';
 import { deptField, deptValue } from './departments.js';
 import { loadLookups, pmOptions, repOptions, hasReps } from './lookups.js';
+import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -138,7 +139,7 @@ async function viewSettings(v, ctx) {
 async function viewItems(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
   const [items, accs, st, , catR] = await Promise.all([loadItems(true), loadAccounts(), loadSettings(), loadNumbering(true),
-    sb.from('item_categories').select('*').eq('company_id', S.company.id).order('code')]);
+    sb.from('item_categories').select('*').eq('company_id', S.company.id).order('code'), loadCustomFields()]);
   const cats = catR.data || [], catById = Object.fromEntries(cats.map(c => [c.id, c]));
   v.innerHTML = `<div class="page-head"><h2>🏷️ الأصناف والخدمات</h2><span class="badge brand">${items.length}</span><div class="spacer"></div>
       <select class="search" id="fc" style="min-width:140px"><option value="">كل الفئات</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="-">بدون فئة</option></select>
@@ -177,6 +178,7 @@ async function viewItems(v, ctx) {
       <div class="field"><label>الباركود</label><input name="barcode" value="${esc(it.barcode)}" dir="ltr"></div>
       <div class="field"><label>حساب المبيعات</label>${accSel('sales_account_id', st.sales_account_id)}</div>
       <div class="field"><label>حساب المشتريات</label>${accSel('purchase_account_id', st.purchase_account_id)}</div></div>
+      ${cfFieldsHTML('item', it.extra) ? `<h4 style="margin:12px 0 6px">🧩 حقول إضافية</h4>${cfFieldsHTML('item', it.extra)}` : ''}
       <label class="check"><input type="checkbox" name="is_active" ${it.is_active ? 'checked' : ''}> فعّال</label></form>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
     if (!isNew) attachAudit(m.el, it);
@@ -186,6 +188,7 @@ async function viewItems(v, ctx) {
       const d = formData(m.el.querySelector('#i-form'));
       if (!d.code || !d.name) return toast('الرقم والاسم مطلوبين', 'err');
       d.category_id = d.category_id || null;
+      { const ex = cfValues(m.el.querySelector('#i-form'), 'item', it.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex; }
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);
       if (isNew) d.company_id = S.company.id;
       const res = isNew ? await sb.from('items').insert(d) : await sb.from('items').update(d).eq('id', it.id);
@@ -259,6 +262,7 @@ async function invoiceEditor(type, inv, ctx) {
   if (inv) { const r = await sb.from('invoice_lines').select('*').eq('invoice_id', inv.id).order('line_no'); lines = r.data || []; }
   const myParties = parties.filter(p => p.party_type === T.partyType);
   const isSale = T.group === 'sales';
+  const promos = type === 'sale' ? ((await sb.from('promotions').select('*').eq('company_id', S.company.id).eq('is_active', true)).data || []) : [];
   const readOnly = (inv && (inv.status !== 'draft' || inv.stock_posted)) || (inv ? !can(T.screen, 'edit') : !can(T.screen, 'add'));
   const ro = readOnly ? 'disabled' : '';
   const manual = await isManual(type);
@@ -269,7 +273,8 @@ async function invoiceEditor(type, inv, ctx) {
   const pre = !inv && returnPrefill ? returnPrefill : null; returnPrefill = null;
   const i0 = inv || { inv_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, payment_type: pre?.inv.payment_type || 'credit',
     prices_include_tax: pre?.inv.prices_include_tax || false, cash_account_id: pre?.inv.cash_account_id || st.cash_account_id, party_id: pre?.inv.party_id,
-    party_name: pre?.inv.party_name, reference: pre ? `مرتجع من ${INV[pre.inv.inv_type].label} ${docNo(pre.inv)}` : '', original_invoice_id: pre?.inv.id || null };
+    party_name: pre?.inv.party_name, reference: pre ? (pre.fromOrder ? pre.ref : `مرتجع من ${INV[pre.inv.inv_type].label} ${docNo(pre.inv)}`) : '',
+    original_invoice_id: pre && !pre.fromOrder ? pre.inv.id : null, sales_rep_id: pre?.inv.sales_rep_id || null, department_id: pre?.inv.department_id || null, notes: pre?.inv.notes || '' };
   if (pre) lines = pre.lines;
   const pById = Object.fromEntries(parties.map(p => [p.id, p])), itById = Object.fromEntries(items.map(i => [i.id, i]));
   let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
@@ -343,8 +348,22 @@ async function invoiceEditor(type, inv, ctx) {
     const t = e.target; if (t.dataset.k !== 'item') return;
     const it = resolveItem(items, t.value), r = rows[+t.dataset.i];
     t.classList.toggle('bad', !!t.value && !it);
-    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale ? it.sale_price : it.purchase_price) || r.price; r.rate = num(it.tax_rate); draw(); }
+    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale ? it.sale_price : it.purchase_price) || r.price; r.rate = num(it.tax_rate);
+      r.manualDisc = false; applyPromo(r, it, true); draw(); }
   });
+  // العرض الترويجي بيتحدّث مع الكمية والسعر والتاريخ، والخصم اليدوي بيلغي العرض عن السطر
+  const applyPromo = (r, it, announce) => {
+    if (!(isSale && type === 'sale') || !it || r.manualDisc) return false;
+    const pr = bestPromo(promos, it, f.inv_date.value, num(r.qty)), had = !!r.promo;
+    r.promo = pr ? num(pr.discount_pct) : 0;
+    if (pr) { r.disc = r3(num(r.qty) * num(r.price) * r.promo / 100); if (announce) toast(`عرض «${pr.name}»: خصم ${r.promo}%`, 'ok'); }
+    else if (had) r.disc = 0;
+    return true;
+  };
+  tb.addEventListener('change', (e) => { const t = e.target, r = rows[+t.dataset.i]; if (!r) return;
+    if (t.dataset.k === 'disc') { r.manualDisc = true; r.promo = 0; return; }
+    if (['qty', 'price'].includes(t.dataset.k) && applyPromo(r, resolveItem(items, r.item), false)) draw(); });
+  f.inv_date.addEventListener('change', () => { let ch = false; rows.forEach(r => { ch = applyPromo(r, resolveItem(items, r.item), false) || ch; }); if (ch) draw(); });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) }); draw(); });
   m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) }); draw(); });
   const partyInput = m.el.querySelector('#party');
@@ -389,6 +408,7 @@ async function invoiceEditor(type, inv, ctx) {
       if (id) { const u = await sb.from('invoices').update(header).eq('id', id); if (u.error) throw u.error; const d = await sb.from('invoice_lines').delete().eq('invoice_id', id); if (d.error) throw d.error; }
       else { const ins = await sb.from('invoices').insert({ ...header, company_id: S.company.id, fiscal_year_id: S.fy.id, inv_type: type, original_invoice_id: i0.original_invoice_id || null }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; inv = ins.data; }
       const li = await sb.from('invoice_lines').insert(out.map((l, k) => ({ ...l, invoice_id: id, line_no: k + 1 }))); if (li.error) throw li.error;
+      if (pre?.onSaved && !pre.done) { pre.done = true; await pre.onSaved(id); }
       await log(inv ? 'تعديل' : 'إضافة', T.screen, id, { type });
       if (post) { const r = post === 'gl' ? await sb.rpc('post_invoice', { p_id: id }) : await sb.rpc('post_invoice_stock', { p_id: id });
         if (r.error) { toast(arError(r.error), 'err'); return reopen(id); }
@@ -428,6 +448,12 @@ async function invoiceEditor(type, inv, ctx) {
   m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('invoice', inv.id, `${T.label} رقم ${docNo(inv)}`));
 }
 let returnPrefill = null;
+// فتح فاتورة جديدة معبّاة من طلب (طلب مبيعات/تزويد)
+function bestPromo(promos, it, date, qty) {
+  return promos.filter(p => p.date_from <= date && p.date_to >= date && num(qty) >= num(p.min_qty) && (p.item_id ? p.item_id === it.id : p.category_id ? p.category_id === it.category_id : true))
+    .sort((a, b) => num(b.discount_pct) - num(a.discount_pct))[0] || null;
+}
+export function openInvoicePrefill(type, prefill, ctx) { returnPrefill = { ...prefill, fromOrder: true }; return invoiceEditor(type, null, ctx); }
 
 function printInvoice(type, inv, lines, party, st) {
   const T = INV[type], c = S.company;

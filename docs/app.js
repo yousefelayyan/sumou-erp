@@ -20,6 +20,7 @@ import { DEPARTMENT_ROUTES } from './departments.js';
 import { permEditor } from './perms.js';
 import { LOOKUP_ROUTES } from './lookups.js';
 import { DAYBOOK_ROUTES, DAYBOOKS } from './daybook.js';
+import { ORDER_ROUTES } from './orders.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
@@ -134,6 +135,7 @@ const NAV = () => [
     { r: 'setup?k=region', i: '🗺️', l: 'المناطق / الأقاليم', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=sales_rep', i: '🧑‍💼', l: 'مندوبي المبيعات', show: () => S.company && can('lookups', 'view') },
     { r: 'cost-centers', i: '💱', l: 'العملات وأسعار التحويل', show: () => S.company && can('accounts', 'view') },
+    { r: 'custom-fields', i: '🧩', l: 'الحقول الإضافية', show: () => S.company && can('lookups', 'view') },
   ]},
   { title: 'المالية', items: [
     { r: 'accounts', i: '🌳', l: 'دليل الحسابات', show: () => S.company && can('accounts', 'view') },
@@ -174,6 +176,7 @@ const NAV = () => [
   { title: 'العملاء والذمم المدينة', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
     { r: 'party-center?type=customer', i: '📒', l: 'أستاذ مساعد العملاء', show: () => S.company && can('reports', 'view') },
+    { r: 'orders?t=sales_order', i: '📝', l: 'طلبات المبيعات / عروض الأسعار', show: () => S.company && can('sales_orders', 'view') },
     { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'sales?t=sale_return', i: '↩️', l: 'مردودات المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'party-categories?type=customer', i: '🗂️', l: 'فئات العملاء', show: () => S.company && can('customers', 'view') },
@@ -181,9 +184,17 @@ const NAV = () => [
   { title: 'الموردين والذمم الدائنة', items: [
     { r: 'suppliers', i: '🏭', l: 'الموردين', show: () => S.company && can('suppliers', 'view') },
     { r: 'party-center?type=supplier', i: '📒', l: 'أستاذ مساعد الموردين', show: () => S.company && can('reports', 'view') },
+    { r: 'orders?t=purchase_order', i: '📋', l: 'طلبات التزويد', show: () => S.company && can('purchase_orders', 'view') },
     { r: 'purchases?t=purchase', i: '🛒', l: 'فواتير المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'purchases?t=purchase_return', i: '↩️', l: 'مردودات المشتريات', show: () => S.company && can('purchase_invoices', 'view') },
     { r: 'party-categories?type=supplier', i: '🗂️', l: 'فئات الموردين', show: () => S.company && can('suppliers', 'view') },
+  ]},
+  { title: 'التسويق', items: [
+    { r: 'promotions', i: '📢', l: 'العروض الترويجية', show: () => S.company && can('marketing', 'view') },
+    { r: 'loyalty', i: '💳', l: 'مركز تحكم بطاقات الولاء', show: () => S.company && can('customers', 'view') },
+    { r: 'setup?k=loyalty_type', i: '🎫', l: 'أنواع بطاقات الولاء', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=sales_rep', i: '🧑‍💼', l: 'مندوبي المبيعات', show: () => S.company && can('lookups', 'view') },
+    { r: 'rep-sales-reps', i: '📈', l: 'مبيعات وتحصيلات المندوبين', show: () => S.company && can('reports', 'view') },
   ]},
   { title: 'التقارير', items: [
     { r: 'rep-ledger', i: '📄', l: 'كشف حساب', show: () => S.company && can('reports', 'view') },
@@ -214,7 +225,7 @@ const NAV = () => [
   ]},
 ];
 
-const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'إعداد': '⚙️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'اليوميات': '📚', 'قريباً': '⏳', 'الأدوات': '🛠️' };
+const GROUP_ICONS = { 'الرئيسية': '🏠', 'ملف': '🗂️', 'إعداد': '⚙️', 'المالية': '💰', 'الموظفين والرواتب': '👷', 'الأصول الثابتة': '🏗️', 'المصاريف': '💸', 'المخزون': '📦', 'العملاء والذمم المدينة': '🧑‍💼', 'الموردين والذمم الدائنة': '🏭', 'التقارير': '📊', 'اليوميات': '📚', 'التسويق': '📢', 'قريباً': '⏳', 'الأدوات': '🛠️' };
 // القائمة الجانبية: العناوين بس، وبالضغط على العنوان بيفتح فرعه (فرع واحد مفتوح بنفس الوقت)
 function groupOfRoute(route) {
   const g = NAV().find(g => g.items.some(it => it.r && it.r.split('?')[0] === route));
@@ -378,7 +389,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

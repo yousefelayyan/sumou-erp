@@ -11,6 +11,7 @@ export const LK = {
   country:        { label: 'الدول / البلاد', one: 'دولة', icon: '🌍' },
   region:         { label: 'المناطق / الأقاليم', one: 'منطقة', icon: '🗺️', parent: 'country', parentLabel: 'الدولة', hint: 'المدن والمناطق بتطلع اختيارات جاهزة بعنوان العميل والمورد.' },
   cheque_type:    { label: 'أنواع الأوراق التجارية', one: 'نوع', icon: '🧾', hint: 'شيك، كمبيالة، سند لأمر…' },
+  loyalty_type:   { label: 'أنواع بطاقات الولاء', one: 'نوع بطاقة', icon: '💳', hint: 'مثلاً: فضية، ذهبية. «النسبة» هون = عدد النقاط لكل دينار مشتريات.' },
   sales_rep:      { label: 'مندوبي المبيعات', one: 'مندوب', icon: '🧑‍💼', hint: 'المندوب بينربط على العميل وعلى فاتورة المبيعات، وإله نسبة عمولة على صافي مبيعاته.' },
 };
 
@@ -39,6 +40,11 @@ export function repOptions(sel) {
   const rows = (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => r.kind === 'sales_rep' && (r.is_active || r.id === sel));
   return rows.map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.code)} — ${esc(r.name)}</option>`).join('');
 }
+export function loyaltyOptions(sel) {
+  const rows = (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => r.kind === 'loyalty_type' && (r.is_active || r.id === sel));
+  return rows.map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
+}
+export const hasLoyalty = () => (S._lk?.cid === S.company?.id ? S._lk.rows : []).some(r => r.kind === 'loyalty_type' && r.is_active);
 export const hasReps = () => (S._lk?.cid === S.company?.id ? S._lk.rows : []).some(r => r.kind === 'sales_rep' && r.is_active);
 export async function paymentMethods() { return (await loadLookups()).filter(r => r.kind === 'payment_method' && r.is_active && r.account_id); }
 
@@ -53,9 +59,9 @@ async function viewLookups(v) {
       ${can('lookups', 'add') ? `<button class="btn primary" id="add">➕ ${esc(K.one)} جديد${kind === 'payment_method' || kind === 'country' || kind === 'region' ? 'ة' : ''}</button>` : ''}</div>
     <div class="tabs lk-tabs">${Object.entries(LK).map(([k, x]) => `<a class="tab ${k === kind ? 'active' : ''}" href="#/setup?k=${k}">${x.icon} ${esc(x.label)} <span class="muted" style="font-size:11px">${rows.filter(r => r.kind === k).length}</span></a>`).join('')}</div>
     ${K.hint ? `<p class="muted" style="font-size:13px;margin:8px 0">${esc(K.hint)}</p>` : ''}
-    <div class="card table-wrap"><table class="t"><thead><tr><th>الرمز</th><th>الاسم</th><th>الاسم 2</th>${K.parent ? `<th>${esc(K.parentLabel)}</th>` : ''}${kind === 'payment_method' ? '<th>الحساب</th>' : ''}${kind === 'sales_rep' ? '<th>العمولة %</th>' : ''}<th>الحالة</th><th></th></tr></thead>
+    <div class="card table-wrap"><table class="t"><thead><tr><th>الرمز</th><th>الاسم</th><th>الاسم 2</th>${K.parent ? `<th>${esc(K.parentLabel)}</th>` : ''}${kind === 'payment_method' ? '<th>الحساب</th>' : ''}${kind === 'sales_rep' ? '<th>العمولة %</th>' : ''}${kind === 'loyalty_type' ? '<th>نقاط/دينار</th>' : ''}<th>الحالة</th><th></th></tr></thead>
       <tbody>${list.map(r => `<tr><td dir="ltr" style="text-align:right">${esc(r.code)}</td><td><b>${esc(r.name)}</b></td><td>${esc(r.name2 || '')}</td>
-        ${K.parent ? `<td>${esc(byId[r.parent_id]?.name || '')}</td>` : ''}${kind === 'payment_method' ? `<td>${esc(accLabel(accs.find(a => a.id === r.account_id)) || '')}</td>` : ''}${kind === 'sales_rep' ? `<td class="n">${r.rate ?? ''}</td>` : ''}
+        ${K.parent ? `<td>${esc(byId[r.parent_id]?.name || '')}</td>` : ''}${kind === 'payment_method' ? `<td>${esc(accLabel(accs.find(a => a.id === r.account_id)) || '')}</td>` : ''}${kind === 'sales_rep' || kind === 'loyalty_type' ? `<td class="n">${r.rate ?? ''}</td>` : ''}
         <td>${r.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge">غير فعّال</span>'}</td>
         <td class="actions">${can('lookups', 'edit') ? `<button class="btn sm" data-edit="${r.id}">تعديل</button>` : ''}${can('lookups', 'delete') ? `<button class="btn sm danger" data-del="${r.id}">حذف</button>` : ''}</td></tr>`).join('')
         || `<tr><td colspan="7" class="empty">ما في ${esc(K.label)} لسا</td></tr>`}</tbody></table></div>`;
@@ -70,6 +76,7 @@ async function viewLookups(v) {
       <div class="field"><label>الاسم 2 (إنجليزي مثلاً)</label><input name="name2" value="${esc(r.name2 || '')}"></div>
       ${K.parent ? `<div class="field"><label>${esc(K.parentLabel)}</label><select name="parent_id"><option value="">—</option>${parents.map(p => `<option value="${p.id}" ${p.id === r.parent_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       ${kind === 'payment_method' ? `<div class="field"><label>الحساب (صندوق / بنك) *</label><select name="account_id"><option value="">— اختار —</option>${cashAccs.map(a => `<option value="${a.id}" ${a.id === r.account_id ? 'selected' : ''}>${esc(accLabel(a))}${['cash', 'bank'].includes(a.account_type) ? ' ★' : ''}</option>`).join('')}</select></div>` : ''}
+      ${kind === 'loyalty_type' ? `<div class="field"><label>نقاط لكل دينار</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? 1}"></div>` : ''}
       ${kind === 'sales_rep' ? `<div class="field"><label>نسبة العمولة %</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? ''}"></div>` : ''}
       <div class="field"><label>ملاحظات</label><input name="notes" value="${esc(r.notes || '')}"></div>
       <label class="check"><input type="checkbox" name="inactive" ${r.is_active ? '' : 'checked'}> غير مفعّل</label></form>`,
@@ -78,7 +85,7 @@ async function viewLookups(v) {
       const d = formData(m.el.querySelector('#lk-form'));
       if (!d.code?.trim() || !d.name?.trim()) return toast('الرمز والاسم مطلوبين', 'err');
       if (kind === 'payment_method' && !d.account_id) return toast('اختار الحساب', 'err');
-      const rec = { code: d.code.trim(), name: d.name.trim(), name2: d.name2 || null, parent_id: d.parent_id || null, account_id: d.account_id || null, notes: d.notes || null, is_active: !d.inactive, ...(kind === 'sales_rep' ? { rate: d.rate === '' || d.rate == null ? null : Number(d.rate) } : {}) };
+      const rec = { code: d.code.trim(), name: d.name.trim(), name2: d.name2 || null, parent_id: d.parent_id || null, account_id: d.account_id || null, notes: d.notes || null, is_active: !d.inactive, ...(kind === 'sales_rep' || kind === 'loyalty_type' ? { rate: d.rate === '' || d.rate == null ? null : Number(d.rate) } : {}) };
       e.target.disabled = true;
       const res = isNew ? await sb.from('lookups').insert({ ...rec, company_id: S.company.id, kind }) : await sb.from('lookups').update(rec).eq('id', r.id);
       if (res.error) { e.target.disabled = false; return toast(/duplicate|unique/.test(res.error.message) ? 'الرمز مستعمل' : arError(res.error), 'err'); }

@@ -49,8 +49,11 @@ export const SCREENS = [
   { key: 'inventory',        label: 'المستودعات وسندات المخزون والجرد', group: 'المخزون' },
   { key: 'customers',        label: 'العملاء وفئاتهم',      group: 'العملاء والذمم المدينة' },
   { key: 'sales_invoices',   label: 'فواتير ومردودات المبيعات', group: 'العملاء والذمم المدينة' },
+  { key: 'sales_orders',     label: 'طلبات المبيعات وعروض الأسعار', group: 'العملاء والذمم المدينة' },
   { key: 'suppliers',        label: 'الموردين وفئاتهم',     group: 'الموردين والذمم الدائنة' },
   { key: 'purchase_invoices',label: 'فواتير ومردودات المشتريات', group: 'الموردين والذمم الدائنة' },
+  { key: 'purchase_orders',  label: 'طلبات التزويد', group: 'الموردين والذمم الدائنة' },
+  { key: 'marketing',        label: 'العروض الترويجية', group: 'التسويق' },
   { key: 'reports',          label: 'التقارير والأستاذ العام والمساعد', group: 'التقارير' },
   { key: 'obligations',      label: 'متابعة إقرارات العملاء', group: 'المكتب' },
 ];

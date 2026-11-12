@@ -1,7 +1,8 @@
 // =====================================================================
 //  السمو ERP — المرحلة 4: الزبائن والموردين
 // =====================================================================
-import { loadLookups, lookupDatalistSync, repOptions, hasReps } from './lookups.js';
+import { loadLookups, lookupDatalistSync, repOptions, hasReps, loyaltyOptions, hasLoyalty } from './lookups.js';
+import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -43,7 +44,7 @@ function partyList(type) {
   return async function (v, ctx) {
     if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
     const P = PARTY[type];
-    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups()]);
+    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups(), loadCustomFields()]);
     const catById = Object.fromEntries(cats.map(c => [c.id, c]));
     let bal = {};
     if (S.fy) {
@@ -107,7 +108,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
   const sorted = [...leaves].filter(a => !P.accCat || okAcc(a)).sort((a, b) => okAcc(b) - okAcc(a) || a.code.localeCompare(b.code, 'en', { numeric: true }));
   const m = modal({ title: isNew ? `${P.label} جديد` : `تعديل ${P.label}: ${p.name}`, body: `
     <form id="p-form">
-      <div class="tabs"><div class="tab active" data-tab="g">عام</div><div class="tab" data-tab="c">الاتصال والعنوان</div><div class="tab" data-tab="f">المالية</div></div>
+      <div class="tabs"><div class="tab active" data-tab="g">عام</div><div class="tab" data-tab="c">الاتصال والعنوان</div><div class="tab" data-tab="f">المالية</div>${cfFieldsHTML(type, p.extra) || (type === 'customer' && hasLoyalty()) ? '<div class="tab" data-tab="x">إضافي</div>' : ''}</div>
       <div class="tab-panel active" data-tab="g"><div class="grid cols-2">
         <div class="field"><label>الاسم *</label><input name="name" required value="${esc(p.name)}"></div>
         <div class="field"><label>الرقم</label><input name="code" value="${esc(p.code)}" placeholder="تلقائي" dir="ltr"></div>
@@ -118,6 +119,10 @@ function partyForm(type, p, accs, ctx, cats = []) {
         <div class="field"><label>الرقم الوطني</label><input name="national_no" value="${esc(p.national_no)}" dir="ltr"></div>
         <div class="field"><label>الشخص المسؤول</label><input name="contact_person" value="${esc(p.contact_person)}"></div></div>
         <label class="check"><input type="checkbox" name="is_active" ${p.is_active ? 'checked' : ''}> فعّال</label></div>
+      <div class="tab-panel" data-tab="x">
+        ${type === 'customer' && hasLoyalty() ? `<div class="grid cols-2"><div class="field"><label>بطاقة الولاء</label><select name="loyalty_type_id"><option value="">— بدون بطاقة —</option>${loyaltyOptions(p.loyalty_type_id)}</select></div>
+          <div class="field"><label>رقم البطاقة</label><input name="loyalty_card_no" dir="ltr" value="${esc(p.loyalty_card_no || '')}"></div></div>` : ''}
+        ${cfFieldsHTML(type, p.extra)}</div>
       <div class="tab-panel" data-tab="c"><div class="grid cols-2">
         <div class="field"><label>الموبايل</label><input name="mobile" value="${esc(p.mobile)}" dir="ltr"></div>
         <div class="field"><label>الهاتف</label><input name="phone" value="${esc(p.phone)}" dir="ltr"></div>
@@ -142,6 +147,8 @@ function partyForm(type, p, accs, ctx, cats = []) {
     const d = formData(m.el.querySelector('#p-form'));
     if (!d.name) return toast('الاسم مطلوب', 'err');
     if (!d.account_id) return toast('اختار الحساب', 'err');
+    const ex = cfValues(m.el.querySelector('#p-form'), type, p.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex;
+    if ('loyalty_type_id' in d) d.loyalty_type_id = d.loyalty_type_id || null; if ('loyalty_card_no' in d) d.loyalty_card_no = d.loyalty_card_no || null;
     d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null;
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
     else if (!d.code) delete d.code;

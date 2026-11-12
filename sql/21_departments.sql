@@ -150,8 +150,11 @@ declare cid uuid; uc public.user_companies; def uuid;
 begin
   if public.is_internal() then
     -- القيد العكسي بياخذ دائرة القيد الأصلي
-    if tg_table_name = 'journal_entries' and tg_op = 'INSERT' and new.department_id is null and new.reversal_of is not null then
-      select department_id into new.department_id from public.journal_entries where id = new.reversal_of;
+    if tg_table_name = 'journal_entries' and tg_op = 'INSERT' and new.department_id is null then
+      -- (to_jsonb عشان الدالة نفسها على الفواتير وسندات المخزون، وما فيهم reversal_of)
+      if (to_jsonb(new) ->> 'reversal_of') is not null then
+        select department_id into new.department_id from public.journal_entries where id = (to_jsonb(new) ->> 'reversal_of')::uuid;
+      end if;
     end if;
     return new;
   end if;
