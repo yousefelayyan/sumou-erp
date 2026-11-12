@@ -114,9 +114,7 @@ function renderPending() {
 //  الهيكل الرئيسي
 // ---------------------------------------------------------------------
 const NAV = () => [
-  { title: 'الرئيسية', items: [{ r: 'home', i: '🏠', l: 'لوحة التحكم' },
-    { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) },
-    { href: './pdf/', i: '📕', l: 'السمو PDF' }] },
+  { title: 'الرئيسية', items: [{ r: 'home', i: '🏠', l: 'لوحة التحكم' }] },
   { title: 'ملف', items: [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
@@ -177,6 +175,7 @@ const NAV = () => [
   ]},
   { title: 'العملاء والذمم المدينة', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
+    { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) },
     { r: 'party-center?type=customer', i: '📒', l: 'أستاذ مساعد العملاء', show: () => S.company && can('reports', 'view') },
     { r: 'orders?t=sales_order', i: '📝', l: 'طلبات المبيعات / عروض الأسعار', show: () => S.company && can('sales_orders', 'view') },
     { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
