@@ -358,7 +358,7 @@ async function voucherEditor(type, entry, ctx) {
         ${ccs.length ? '<th style="width:140px">مركز الكلفة</th>' : ''}${curs.length ? '<th style="min-width:90px">العملة</th><th style="min-width:100px">بالعملة</th><th style="min-width:80px">السعر</th>' : ''}
         ${isCash ? '<th style="width:150px">المبلغ</th>' : '<th style="width:140px">مدين</th><th style="width:140px">دائن</th>'}<th style="width:40px"></th></tr></thead>
       <tbody></tbody>
-      <tfoot><tr><td></td><td>${!readOnly ? '<button class="btn sm" id="add-line" type="button">➕ سطر</button>' : ''}</td><td></td><td style="text-align:left" colspan="${1 + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}"><b>المجموع</b></td>
+      <tfoot><tr><td></td><td>${!readOnly ? '<button class="btn sm" id="add-line" type="button">➕ سطر</button>' + (type === 'journal' ? ' <button class="btn sm" id="load-bal" type="button" title="تحميل أرصدة حسابات أو عملاء أو موردين كسطور">📥 تحميل أرصدة</button>' : '') : ''}</td><td></td><td style="text-align:left" colspan="${1 + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}"><b>المجموع</b></td>
         ${isCash ? '<td><b id="t-amt" dir="ltr"></b></td>' : '<td><b id="t-dr" dir="ltr"></b></td><td><b id="t-cr" dir="ltr"></b></td>'}<td></td></tr>
         ${!isCash ? `<tr><td></td><td></td><td></td><td style="text-align:left" colspan="${1 + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}">الفرق</td><td colspan="2"><b id="t-diff" dir="ltr"></b></td><td></td></tr>` : ''}
         <tr><td></td><td colspan="${(isCash ? 5 : 6) + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}" class="muted" id="t-words" style="font-size:13px"></td></tr></tfoot>
@@ -475,6 +475,57 @@ async function voucherEditor(type, entry, ctx) {
     if (redraw) drawRows();
   };
   m.el.querySelector('#add-line')?.addEventListener('click', () => addLine());
+  m.el.querySelector('#load-bal')?.addEventListener('click', () => loadBalancesDialog());
+  // ---- تحميل أرصدة (المرحلة 82): سطر لكل حساب/طرف برصيده لحد تاريخ، عكسه (تصفير) أو زي ما هو، ومع حساب مقابل اختياري
+  async function loadBalancesDialog() {
+    const groups = accs.filter(a => a.is_group).sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
+    const { data: cats = [] } = await sb.from('party_categories').select('id,party_type,code,name').eq('company_id', S.company.id).order('code');
+    const leaves = leafAccounts(accs);
+    const d0 = m.el.querySelector('[name=entry_date]')?.value || today();
+    const lm = modal({ stack: true, title: '📥 تحميل أرصدة على السند', body: `<div class="grid cols-2">
+      <div class="field"><label>شو بدك تحمّل</label><select id="lb-k"><option value="accounts">حسابات تحت حساب رئيسي</option><option value="customer">أرصدة العملاء</option>
+        <option value="supplier">أرصدة الموردين</option><option value="expense">بطاقات المصاريف</option><option value="employees">أرصدة الموظفين</option></select></div>
+      <div class="field"><label>لحد تاريخ</label><input type="date" id="lb-to" value="${d0}"></div>
+      <div class="field" style="grid-column:span 2" data-for="accounts"><label>الحساب الرئيسي</label><select id="lb-par">${groups.map(a => `<option value="${a.id}">${esc(a.code)} — ${esc(a.name)}</option>`).join('')}</select>
+        <label class="check" style="margin-top:6px"><input type="checkbox" id="lb-bp"> سطر لكل عميل/مورد/موظف على الحساب (مش مجمّع)</label></div>
+      <div class="field" style="grid-column:span 2;display:none" data-for="party"><label>الفئة (اختياري)</label><select id="lb-cat"><option value="">الكل</option></select></div>
+      <div class="field" style="grid-column:span 2;display:none" data-for="employees"><label>حساب الموظفين (ذمم/سلف)</label><select id="lb-ea">${leaves.filter(a => a.account_type === 'employee').concat(leaves.filter(a => a.account_type !== 'employee')).map(a => `<option value="${a.id}">${esc(accLabel(a))}</option>`).join('')}</select></div>
+      <div class="field" style="grid-column:span 2"><label>شكل السطور</label><select id="lb-m"><option value="rev">عكس الرصيد (تصفير الحسابات — للإقفال أو التحويل)</option><option value="same">نفس الرصيد (نقل الرصيد زي ما هو)</option></select></div>
+      <div class="field" style="grid-column:span 2"><label>حساب مقابل لسطر الموازنة (اختياري)</label><input list="acc-list" id="lb-ctr" placeholder="فاضي = بدون سطر مقابل"></div>
+      <label class="check" style="grid-column:span 2"><input type="checkbox" id="lb-rep" checked> استبدل السطور الفاضية بالسند</label></div>
+      <div id="lb-msg" class="muted" style="font-size:12px"></div>`,
+      foot: '<button class="btn primary" data-ok>📥 تحميل</button><button class="btn" data-close>إلغاء</button>' });
+    const $ = (x) => lm.el.querySelector(x);
+    const sync = () => {
+      const k = $('#lb-k').value, party = ['customer', 'supplier', 'expense'].includes(k);
+      lm.el.querySelectorAll('[data-for]').forEach(el => { el.style.display = el.dataset.for === (party ? 'party' : k) ? '' : 'none'; });
+      if (party) $('#lb-cat').innerHTML = '<option value="">الكل</option>' + (cats || []).filter(c => c.party_type === k).map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    };
+    $('#lb-k').onchange = sync; sync();
+    $('[data-ok]').onclick = async () => {
+      const k = $('#lb-k').value, party = ['customer', 'supplier', 'expense'].includes(k);
+      const p = party ? { kind: 'parties', type: k, category_id: $('#lb-cat').value || null }
+        : k === 'employees' ? { kind: 'employees', account: $('#lb-ea').value } : { kind: 'accounts', parent: $('#lb-par').value, by_party: $('#lb-bp').checked };
+      p.to = $('#lb-to').value;
+      const ctr = $('#lb-ctr').value.trim() ? resolveAccount(accs, $('#lb-ctr').value) : null;
+      if ($('#lb-ctr').value.trim() && !ctr) return toast('الحساب المقابل مش من القائمة', 'err');
+      const { data, error } = await sb.rpc('entry_load_balances', { p_company: S.company.id, p_fy: S.fy.id, p });
+      if (error) return toast(arError(error), 'err');
+      if (!data?.length) return void ($('#lb-msg').textContent = 'ما في أرصدة لهالاختيار.');
+      if (data.length > 500) return void ($('#lb-msg').textContent = `${data.length} سطر — كثير. ضيّق الاختيار (فئة أو حساب أصغر).`);
+      const rev = $('#lb-m').value === 'rev', desc = rev ? 'تصفير رصيد ' + p.to : 'رصيد ' + p.to;
+      if ($('#lb-rep').checked) for (let i = rows.length - 1; i >= 0; i--) { const r = rows[i]; if (!r.acc && !num(r.debit) && !num(r.credit)) rows.splice(i, 1); }
+      let net = 0;
+      for (const b of data) {
+        const v = rev ? -num(b.balance) : num(b.balance); net += v;
+        const side = b.employee_id ? empLabel(empById[b.employee_id]) : b.party_id ? partyLabel(pById[b.party_id]) : '';
+        rows.push({ acc: accLabel(byId[b.account_id]), party: side, desc, debit: v > 0 ? Math.round(v * 1000) / 1000 : 0, credit: v < 0 ? Math.round(-v * 1000) / 1000 : 0 });
+      }
+      net = Math.round(net * 1000) / 1000;
+      if (ctr && net) rows.push({ acc: accLabel(ctr), party: '', desc, debit: net < 0 ? -net : 0, credit: net > 0 ? net : 0 });
+      drawRows(); lm.close(); toast(`انحمّل ${data.length} سطر`, 'ok');
+    };
+  }
 
   // ---- الشيكات الجديدة بالسند
   const chqRows = [];
