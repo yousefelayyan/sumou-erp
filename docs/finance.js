@@ -14,6 +14,7 @@ import { deptField, deptValue } from './departments.js';
 import { loadLookups, pmOptions } from './lookups.js';
 
 export const CATEGORIES = { assets: 'الموجودات', liabilities: 'المطلوبات', equity: 'حقوق الملكية', revenue: 'الإيرادات', expenses: 'المصاريف' };
+export const NATURES = { debit: 'مدين', credit: 'دائن', both: 'مدين ودائن' };
 export const ACC_TYPES = { general: 'عام', cash: 'صندوق', bank: 'بنك', customer: 'عميل', supplier: 'مورد', employee: 'موظف', tax: 'ضريبة' };
 export const ENTRY_TYPES = {
   journal: { label: 'سند قيد', plural: 'سندات القيد', screen: 'journal_entries', route: 'journal', icon: '📒' },
@@ -140,8 +141,8 @@ async function viewAccounts(v, ctx) {
           ${a.is_group ? `<span class="tog" data-tog="${a.id}">${expanded.has(a.id) || q ? '▾' : '◂'}</span>` : '<span class="tog-sp"></span>'}
           ${a.is_group ? `<b>${esc(a.name)}</b>` : esc(a.name)} ${a.is_active ? '' : '<span class="badge bad">موقوف</span>'}</td>
         <td>${a.is_group ? '<span class="muted">رئيسي</span>' : (a.account_type !== 'general' ? `<span class="badge brand">${ACC_TYPES[a.account_type]}</span>` : 'فرعي')}</td>
-        <td>${a.nature === 'debit' ? 'مدين' : 'دائن'}</td>
-        <td dir="ltr" style="text-align:left;${a.is_group ? 'font-weight:700' : ''}">${b ? fmtNum(b) : '<span class="muted">—</span>'}</td>
+        <td>${(NATURES[a.nature] || '')}</td>
+        <td dir="ltr" style="text-align:left;${a.is_group ? 'font-weight:700' : ''}">${Math.abs(b) >= 0.0005 ? `${fmtNum(Math.abs(b))} <span class="muted" style="font-size:11px">${b > 0 ? 'مدين' : 'دائن'}</span>` : '<span class="muted">—</span>'}</td>
         <td class="actions">
           ${a.is_group && canAdd ? `<button class="btn sm" data-child="${a.id}">➕ فرعي</button>` : ''}
           ${canEdit ? `<button class="btn sm" data-edit="${a.id}">تعديل</button>` : ''}
@@ -157,12 +158,12 @@ async function viewAccounts(v, ctx) {
   v.querySelector('#add-root')?.addEventListener('click', () => accountForm(null, null, accs, ctx));
   v.querySelector('#csv').onclick = () => downloadCSV(`دليل الحسابات - ${S.company.name}.csv`,
     [['رقم الحساب', 'اسم الحساب', 'الحساب الأب', 'رئيسي', 'التصنيف', 'الطبيعة', 'النوع', 'الرصيد']].concat(
-      accs.map(a => [a.code, a.name, accs.find(p => p.id === a.parent_id)?.code || '', a.is_group ? 'نعم' : 'لا', CATEGORIES[a.category], a.nature === 'debit' ? 'مدين' : 'دائن', ACC_TYPES[a.account_type], (rolled[a.id] || 0).toFixed(3)])));
+      accs.map(a => [a.code, a.name, accs.find(p => p.id === a.parent_id)?.code || '', a.is_group ? 'نعم' : 'لا', CATEGORIES[a.category], (NATURES[a.nature] || ''), ACC_TYPES[a.account_type], (rolled[a.id] || 0).toFixed(3)])));
   v.querySelector('#prn')?.addEventListener('click', () => {
     const rows = [...accs].sort((x, y) => x.code.localeCompare(y.code, 'en', { numeric: true }));
     printDoc('دليل الحسابات', `<table class="pt"><thead><tr><th>رقم الحساب</th><th>اسم الحساب</th><th>الطبيعة</th><th>الرصيد</th></tr></thead><tbody>
       ${rows.map(a => `<tr style="${a.is_group ? 'font-weight:700;background:#f6f2fa' : ''}"><td>${esc(a.code)}</td><td style="padding-right:${(a.level - 1) * 16 + 6}px">${esc(a.name)}</td>
-      <td>${a.nature === 'debit' ? 'مدين' : 'دائن'}</td><td class="n">${rolled[a.id] ? fmtNum(rolled[a.id]) : ''}</td></tr>`).join('')}</tbody></table>`);
+      <td>${(NATURES[a.nature] || '')}</td><td class="n">${rolled[a.id] ? fmtNum(rolled[a.id]) : ''}</td></tr>`).join('')}</tbody></table>`);
   });
   v.querySelector('#rows').onclick = async (e) => {
     const t = e.target.closest('[data-tog]'), ch = e.target.closest('[data-child]'), ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
@@ -210,7 +211,7 @@ function accountForm(a, parent, accs, ctx) {
         ${Object.entries(CATEGORIES).map(([k, l]) => `<option value="${k}" ${a.category === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <span class="hint">الحساب الفرعي بياخذ تصنيف أبوه تلقائياً</span></div>
       <div class="field"><label>طبيعة الحساب</label><select name="nature">
-        <option value="debit" ${a.nature === 'debit' ? 'selected' : ''}>مدين</option><option value="credit" ${a.nature === 'credit' ? 'selected' : ''}>دائن</option></select></div>
+        <option value="debit" ${a.nature === 'debit' ? 'selected' : ''}>مدين</option><option value="credit" ${a.nature === 'credit' ? 'selected' : ''}>دائن</option><option value="both" ${a.nature === 'both' ? 'selected' : ''}>مدين ودائن (الرصيد بيظهر بجهته)</option></select></div>
       <div class="field"><label>نوع الحساب</label><select name="account_type">
         ${Object.entries(ACC_TYPES).map(([k, l]) => `<option value="${k}" ${a.account_type === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
         <span class="hint">«صندوق» و«بنك» بيظهروا أول بسندات القبض والصرف</span></div>

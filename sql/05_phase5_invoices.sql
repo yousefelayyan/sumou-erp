@@ -202,7 +202,8 @@ declare
 begin
   select * into i from public.invoices where id = p_id for update;
   if i.id is null then raise exception 'الفاتورة غير موجودة'; end if;
-  if not public.can(i.company_id, public.invoice_screen(i.inv_type), 'post') then raise exception 'ما عندك صلاحية ترحيل الفواتير'; end if;
+  if not (public.can(i.company_id, public.invoice_screen(i.inv_type), 'post')
+          or (to_regproc('public.pos_ok') is not null and public.pos_ok(i.company_id))) then raise exception 'ما عندك صلاحية ترحيل الفواتير'; end if;
   if i.status <> 'draft' then raise exception 'الفاتورة مرحّلة من قبل'; end if;
   perform public.ensure_company_settings(i.company_id);
   select * into st from public.company_settings where company_id = i.company_id;

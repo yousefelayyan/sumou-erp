@@ -18,7 +18,10 @@ const nextCode = (rows) => String(Math.max(0, ...rows.map(r => parseInt(r.code, 
 // ---------------------------------------------------------------------
 async function viewEmployees(v, ctx) {
   if (!S.company) return noCo(v);
-  const [{ data, error }, ccs] = await Promise.all([sb.from('employees').select('*').eq('company_id', S.company.id).order('code'), loadCC(), loadNumbering(true)]);
+  const [{ data, error }, ccs, , accs] = await Promise.all([sb.from('employees').select('*').eq('company_id', S.company.id).order('code'), loadCC(), loadNumbering(true), loadAccounts()]);
+  const leaves = leafAccounts(accs);
+  // الحساب المقترح للموظف الجديد: أول حساب نوعه «موظف» (ذمم الموظفين)
+  const defEmpAcc = leaves.find(a => a.account_type === 'employee')?.id || '';
   if (error) throw error;
   const act = data.filter(e => e.is_active);
   v.innerHTML = `<div class="page-head"><h2>👷 الموظفين</h2><span class="badge brand">${act.length} فعّال</span><div class="spacer"></div>
@@ -32,7 +35,7 @@ async function viewEmployees(v, ctx) {
     .concat(data.map(e => [e.code, e.name, e.national_id, e.ss_no, e.job_title, e.department, e.hire_date, e.basic_salary, e.allowances, e.ss_subject ? 'نعم' : 'لا', e.income_tax, e.bank_name, e.iban, e.mobile])));
   const open = (e) => {
     const isNew = !e, ro = can('payroll', 'edit') ? '' : 'disabled';
-    e = e || { code: masterCode('m_employee', data.map(x => x.code)) ?? nextCode(data), name: '', ss_subject: true, is_active: true, basic_salary: 0, allowances: 0, income_tax: 0, hire_date: today() };
+    e = e || { code: masterCode('m_employee', data.map(x => x.code)) ?? nextCode(data), name: '', ss_subject: true, is_active: true, basic_salary: 0, allowances: 0, income_tax: 0, hire_date: today(), account_id: defEmpAcc };
     const m = modal({ title: isNew ? 'موظف جديد' : `الموظف: ${e.name}`, body: `<form id="f"><div class="grid cols-3">
       <div class="field"><label>الرقم</label><input name="code" value="${esc(e.code)}" ${ro}></div><div class="field" style="grid-column:span 2"><label>الاسم الكامل *</label><input name="name" value="${esc(e.name)}" ${ro}></div>
       <div class="field"><label>الرقم الوطني</label><input name="national_id" value="${esc(e.national_id)}" dir="ltr" ${ro}></div><div class="field"><label>رقم الضمان</label><input name="ss_no" value="${esc(e.ss_no)}" dir="ltr" ${ro}></div>
@@ -46,6 +49,7 @@ async function viewEmployees(v, ctx) {
       <div class="field" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="ss_subject" ${e.ss_subject ? 'checked' : ''} ${ro}> مشمول بالضمان</label></div>
       <div class="field"><label>الأجر الخاضع للضمان (اختياري)</label><input name="ss_wage" value="${e.ss_wage ?? ''}" placeholder="فاضي = الأساسي + العلاوات" inputmode="decimal" dir="ltr" ${ro}></div><div></div>
       <div class="field"><label>البنك</label><input name="bank_name" value="${esc(e.bank_name)}" ${ro}></div><div class="field" style="grid-column:span 2"><label>IBAN</label><input name="iban" value="${esc(e.iban)}" dir="ltr" ${ro}></div>
+      <div class="field" style="grid-column:span 3"><label>حساب الموظف بدليل الحسابات (ذمم الموظفين، سلف…)</label><select name="account_id" ${ro}><option value="">— بدون —</option>${leaves.sort((a, b) => (b.account_type === 'employee') - (a.account_type === 'employee')).map(a => `<option value="${a.id}" ${a.id === e.account_id ? 'selected' : ''}>${esc(accLabel(a))}${a.account_type === 'employee' ? ' ★' : ''}</option>`).join('')}</select></div>
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(e.notes)}" ${ro}></div></div>
       <label class="check"><input type="checkbox" name="is_active" ${e.is_active ? 'checked' : ''} ${ro}> على رأس عمله</label></form>`,
       foot: `${!ro ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${!isNew ? '<button class="btn" data-att>📎 مرفقات</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
@@ -55,6 +59,7 @@ async function viewEmployees(v, ctx) {
       const d = formData(m.el.querySelector('#f')); if (!d.name) return toast('الاسم مطلوب', 'err');
       ['basic_salary', 'allowances', 'income_tax'].forEach(k => d[k] = num(d[k])); d.ss_wage = d.ss_wage == null ? null : num(d.ss_wage);
       if (!ccs.length) delete d.cost_center_id;
+      d.account_id = d.account_id || null;
       const res = isNew ? await sb.from('employees').insert({ ...d, company_id: S.company.id }) : await sb.from('employees').update(d).eq('id', e.id);
       if (res.error) return toast(arError(res.error), 'err'); toast('تم الحفظ', 'ok'); m.close(); ctx.rerender();
     });

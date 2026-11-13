@@ -79,9 +79,25 @@ function categoriesDialog(cats, items, ctx) {
   m.el.addEventListener('click', (e) => { if (changed && (e.target === m.el || e.target.closest('[data-close]'))) ctx.rerender(); });
 }
 
+// تصغير الصورة لـ 320 بكسل (JPEG) عشان تنحفظ مع الصنف وتفتح بسرعة بالكاشير
+export function shrinkImage(file, max = 320) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url); res(c.toDataURL('image/jpeg', 0.8));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('img')); };
+    img.src = url;
+  });
+}
+
 export async function loadItems(force = false) {
   if (!force && S.items && S.itemsCompany === S.company.id) return S.items;
-  const { data, error } = await sb.from('items').select('*').eq('company_id', S.company.id).order('code').limit(5000);
+  // بدون الصورة (ثقيلة)؛ محرر الصنف بيجيبها لحاله
+  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,category_id,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
   if (error) throw error;
   S.items = data; S.itemsCompany = S.company.id; return data;
 }
@@ -166,8 +182,9 @@ async function viewItems(v, ctx) {
   draw(); v.querySelector('#q').oninput = draw; v.querySelector('#fc').onchange = draw;
   v.querySelector('#cats').onclick = () => categoriesDialog(cats, items, ctx);
   v.querySelector('#csv').onclick = () => downloadCSV('الأصناف.csv', [['الرقم', 'الاسم', 'الفئة', 'النوع', 'الوحدة', 'الباركود', 'سعر البيع', 'سعر الشراء', 'الضريبة']].concat(items.map(i => [i.code, i.name, catById[i.category_id]?.name || '', i.item_type === 'service' ? 'خدمة' : 'سلعة', i.unit, i.barcode, i.sale_price, i.purchase_price, i.tax_rate])));
-  const open = (it) => {
+  const open = async (it) => {
     const isNew = !it;
+    if (it && it.image === undefined) { const { data: im } = await sb.from('items').select('image').eq('id', it.id).maybeSingle(); it.image = im?.image || null; }
     const suggest = (catId) => { const c = catById[catId], byCat = itemRule()?.by_category;
       return masterCode('m_item', items.filter(x => !byCat || (x.category_id || null) === (catId || null)).map(x => x.code), byCat ? c?.code || null : null)
         ?? String((items.map(x => parseInt(x.code)).filter(n => !isNaN(n)).sort((a, b) => b - a)[0] || 0) + 1); };
@@ -186,11 +203,23 @@ async function viewItems(v, ctx) {
       <div class="field"><label>الباركود</label><input name="barcode" value="${esc(it.barcode)}" dir="ltr"></div>
       <div class="field"><label>حساب المبيعات</label>${accSel('sales_account_id', st.sales_account_id)}</div>
       <div class="field"><label>حساب المشتريات</label>${accSel('purchase_account_id', st.purchase_account_id)}</div></div>
+      <div class="field"><label>صورة الصنف (لنقطة البيع)</label><div class="img-pick">
+        <span class="img-prev" id="i-img-prev">${it.image ? `<img src="${esc(it.image)}" alt="">` : '📷'}</span>
+        <label class="btn sm">اختيار صورة<input type="file" accept="image/*" id="i-img" hidden></label>
+        <button type="button" class="btn sm" id="i-img-rm" ${it.image ? '' : 'hidden'}>شيل الصورة</button></div></div>
       ${cfFieldsHTML('item', it.extra) ? `<h4 style="margin:12px 0 6px">🧩 حقول إضافية</h4>${cfFieldsHTML('item', it.extra)}` : ''}
       <label class="check"><input type="checkbox" name="is_active" ${it.is_active ? 'checked' : ''}> فعّال</label></form>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
     if (!isNew) attachAudit(m.el, it);
     applyLayout(m.el.querySelector('#i-form'), 'item');
+    let image = it.image || null;
+    const imgPrev = m.el.querySelector('#i-img-prev'), imgRm = m.el.querySelector('#i-img-rm');
+    m.el.querySelector('#i-img').onchange = async (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      try { image = await shrinkImage(f); imgPrev.innerHTML = `<img src="${image}" alt="">`; imgRm.hidden = false; }
+      catch { toast('ما قدرنا نقرأ الصورة', 'err'); }
+    };
+    imgRm.onclick = () => { image = null; imgPrev.textContent = '📷'; imgRm.hidden = true; };
     if (isNew) { let lastSug = it.code; const codeEl = m.el.querySelector('[name=code]');
       m.el.querySelector('[name=category_id]').onchange = (e) => { if (codeEl.value === lastSug) { lastSug = suggest(e.target.value || null); codeEl.value = lastSug; } }; }
     m.el.querySelector('[data-save]').onclick = async () => {
@@ -201,6 +230,7 @@ async function viewItems(v, ctx) {
       { const ex = cfValues(m.el.querySelector('#i-form'), 'item', it.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex; }
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);
       if (isNew) d.company_id = S.company.id;
+      if ((it.image || null) !== image) d.image = image;
       const res = isNew ? await sb.from('items').insert(d) : await sb.from('items').update(d).eq('id', it.id);
       if (res.error) return toast(arError(res.error), 'err');
       await log(isNew ? 'إضافة' : 'تعديل', 'items', it.id || d.code, { name: d.name }); S.items = null; toast('تم الحفظ', 'ok'); m.close(); ctx.rerender();
@@ -300,7 +330,7 @@ async function invoiceEditor(type, inv, ctx) {
       <div class="field"><label>تاريخ الاستحقاق</label><input type="date" name="due_date" value="${esc(i0.due_date)}" ${ro}></div>
       <div class="field" style="grid-column:span 2"><label>${T.partyLabel} <span id="p-req">*</span></label><input list="party-list" id="party" value="${esc(partyLabel(pById[i0.party_id]))}" placeholder="رقم أو اسم ${T.partyLabel}…" ${ro}>${partyDatalist(myParties)}</div>
       <div class="field" id="pn-box"><label>الاسم (للنقدي بدون بطاقة)</label><input name="party_name" value="${esc(i0.party_name)}" ${ro}></div>
-      <div class="field" id="cash-box"><label>الصندوق / البنك</label><select name="cash_account_id" ${ro}><option value="">— اختار —</option>${pmOptions()}${cashAccs.map(a => `<option value="${a.id}" ${a.id === i0.cash_account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>
+      <div class="field" id="cash-box"><label>الصندوق / البنك</label><select name="cash_account_id" ${ro}><option value="">— اختار —</option>${pmOptions(isSale ? 'sales' : 'purchases')}${cashAccs.map(a => `<option value="${a.id}" ${a.id === i0.cash_account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>
       <div class="field"><label>${isSale ? 'رقم الطلب / المرجع' : 'رقم فاتورة المورد'}</label><input name="reference" value="${esc(i0.reference)}" ${ro}></div>
       ${ccs.length ? `<div class="field"><label>مركز الكلفة</label><select name="cost_center_id" ${ro}><option value="">—</option>${ccs.map(c => `<option value="${c.id}" ${c.id === i0.cost_center_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : ''}
       ${dept}

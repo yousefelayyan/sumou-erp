@@ -232,7 +232,8 @@ declare i public.invoices; fy public.fiscal_years; r record;
 begin
   select * into i from public.invoices where id = p_id for update;
   if i.id is null then raise exception 'الفاتورة غير موجودة'; end if;
-  if not public.can(i.company_id, public.invoice_screen(i.inv_type), 'post') then raise exception 'ما عندك صلاحية ترحيل الفواتير'; end if;
+  if not (public.can(i.company_id, public.invoice_screen(i.inv_type), 'post')
+          or (to_regproc('public.pos_ok') is not null and public.pos_ok(i.company_id))) then raise exception 'ما عندك صلاحية ترحيل الفواتير'; end if;
   if not public.posting_flag(i.company_id, i.inv_type, 'stock') then raise exception 'هالنوع من الفواتير ما بيترحّل للمخزون (من «الأدوات ← الترحيل»)'; end if;
   if i.stock_posted then raise exception 'الفاتورة مرحّلة للمخزون من قبل'; end if;
   if i.status = 'cancelled' then raise exception 'الفاتورة ملغاة'; end if;

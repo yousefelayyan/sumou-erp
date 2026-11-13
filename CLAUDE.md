@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..28). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..30). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -47,6 +47,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   centers.js        الأستاذ العام (account-center) والأستاذ المساعد: party-center?type=customer|supplier|expense، employee-center، asset-center — فترة، أرصدة أول/آخر المدة، وتفاصيل تحت السطر (ملخص حسب نوع السند + الحركات + «احتساب» لاختيار الأنواع والرصيد المدور)
   audit.js          سجل التتبع: شريط «أدخله/آخر تعديل» + «سجل التتبع» بكل سند (attachAudit)
   posting.js        الترحيل: شريط «ترحيل للمحاسبة/للمخزون» بكل سند + شاشة الأدوات ← الترحيل
+  pos.js            نقطة البيع (route pos): فئات وأصناف بالصور، سلة ولوحة أرقام، دفع نقدي/بطاقة، وصل رول (printReceipt)، إعدادات company_settings.pos
   tenants.js        «إدارة المشتركين» (لمدير المنصة) و«اشتراكي» + شريط تنبيه الانتهاء (subBannerHTML)
   numbering.js      طريقة الترقيم (أرقام المستندات + اقتراح رموز البطاقات) + docNo()
   sw.js             كاش PWA — ارفع رقم النسخة مع كل تحديث
@@ -92,7 +93,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -116,7 +117,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.12.1)
+## اللي انبنى (لحد النسخة 4.13.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -166,6 +167,12 @@ dev/                أدوات الفحص (شوف تحت)
   - الدخول: «رمز المشترك» + اسم المستخدم → `username@<code>.sumou.local` (الافتراضي `@sumou.local`). التسجيل الذاتي انشال من شاشة الدخول؛ وإذا صار بيروح للمشترك الافتراضي موقوف.
   - دوال مدير المنصة: `super_tenants`، `super_save_tenant(id, jsonb)` (مجموعات جاهزة للمشترك الجديد)، `super_create_tenant_admin`، `super_tenant_users`، `super_set_user` (كلمة سر/إيقاف)، `super_add_payment` (بيمدّد من آخر يوم أو من اليوم)، `super_delete_payment`. `my_subscription()` للواجهة (الأقسام، الانتهاء، writable).
   - الواجهة: `can()` بـ core.js بتخفي شاشات الأقسام المسكّرة وبتمنع الإدخال بعد الانتهاء؛ `MODULES`/`screenModule` لازم تطابق `screen_module()`.
+
+- **نقاط البيع (المرحلة 29):** شاشة `pos` (قسم المبيعات). `pos_checkout(jsonb)` security **definer**: بيفحص `can(cid,'pos','add')`، بيعمل فاتورة بيع نقدية (`invoices.pos`، `pos_paid`، `pos_method` = اسم الوسيلة، `pos_method_id`) وبيرحّلها `post_invoice` + `post_invoice_stock` (إذا posting_flag) عن طريق السر `sumou.pos` = internal_token:company (`pos_ok(cid)` بالدالتين بدل صلاحية post). الكاشير ما إله إضافة/ترحيل فواتير مباشر. حقول pos ما بتنكتب إلا من pos_checkout، والمستودع بالفاتورة لازم من نفس الشركة (`ab_invoice_pos_guard`). السعر والخصم من الصنف إلا لمين معه sales_invoices edit؛ التاريخ `local_today()` (توقيت عمّان)؛ لازم سنة مفتوحة فيه؛ الوسيلة النقدية (حسابها نوعه cash) لازم المدفوع ≥ المجموع. بيرجّع سطور الفاتورة والوصل بينطبع منها.
+  - **وسائل الدفع** (`lookups` kind payment_method): name عربي، name2 إنجليزي، `pos_label` (اسم الكبسة)، `use_sales`/`use_purchases`/`use_pos`، و`account_id` أي حساب فرعي من الشجرة (الطرف المدين). `pmOptions('sales'|'purchases')` بالفواتير، `posMethods()` بالكاشير؛ إذا ما في وسائل للكاشير بتطلع نقدي/بطاقة من `company_settings.pos`.
+  - الإعدادات `company_settings.pos` (warehouse_id، cash_account_id، card_account_id، prices_include_tax، header/footer، paper 80/58، auto_print، copies). `items.image` = صورة مصغّرة data URL (≤150 ألف حرف، base64 jpeg/png/webp)، و`loadItems()` ما بيجيبها (أي عمود جديد بالأصناف لازم ينضاف لقائمته). `profiles.pos_only` (المدير بس، ومش على حاله) = `renderPosShell` بس. مجموعة «كاشير» لكل مشترك: pos + sales_invoices view/print + items/customers view. درج الكاش من إعداد طابعة الرول، والطباعة بدون نافذة بـ `--kiosk-printing`.
+- **طبيعة الحساب وحساب الموظف (المرحلة 30):** `accounts.nature` = debit/credit/both («مدين ودائن»)؛ دليل الحسابات بيعرض الرصيد بجهته (مدين/دائن). `employees.account_id` حساب فرعي من نفس الشركة (`ad_employee_account_check`)، المقترح أول حساب نوعه employee.
+- النوافذ (modal): أي تعديل جوّا form بيعلّمها «مش محفوظة»، والإغلاق بيسأل (`hasUnsavedModal()`). إغلاق تبويب شركة بيسأل، وممنوع إذا في سند مش محفوظ أو سلة نقطة بيع مش مكمّلة. «🔄 تبديل السنة المالية» بالقائمة تحت السنوات المالية وبلوحة التحكم.
 
 ## مأجّل أو ناقص
 - **قبل البيع:** خطة Supabase مدفوعة (Pro) للنسخ الاحتياطي والأداء، ودومين، وشروط استخدام وسياسة خصوصية.

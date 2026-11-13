@@ -59,6 +59,7 @@ $$;
 -- الأعمدة الجديدة + تعبئة البيانات الموجودة بالمشترك الافتراضي
 alter table public.profiles     add column if not exists tenant_id uuid references public.tenants(id);
 alter table public.profiles     add column if not exists is_super  boolean not null default false;
+alter table public.profiles     add column if not exists pos_only  boolean not null default false;  -- مستخدم نقطة بيع بس (المرحلة 29)
 alter table public.companies    add column if not exists tenant_id uuid references public.tenants(id);
 alter table public.user_groups  add column if not exists tenant_id uuid references public.tenants(id);
 alter table public.activity_log add column if not exists tenant_id uuid references public.tenants(id) on delete cascade;
@@ -132,7 +133,7 @@ $$;
 create or replace function public.screen_module(s text) returns text
 language sql immutable as $$
   select case
-    when s in ('customers','sales_invoices','sales_orders')         then 'sales'
+    when s in ('customers','sales_invoices','sales_orders','pos')   then 'sales'
     when s in ('suppliers','purchase_invoices','purchase_orders')   then 'purchases'
     when s = 'inventory'                                            then 'inventory'
     when s in ('cheques','bank_recon')                              then 'banking'
@@ -226,7 +227,7 @@ begin
   -- مدير المنصة ما حدا بيوقفه أو بيغيّر صلاحياته غيره
   if old.is_super and old.id is distinct from auth.uid() then
     new.is_admin := old.is_admin; new.is_active := old.is_active; new.email := old.email;
-    new.username := old.username; new.permissions := old.permissions;
+    new.username := old.username; new.permissions := old.permissions; new.pos_only := old.pos_only;
   end if;
   if not public.is_admin() or old.tenant_id is distinct from public.my_tenant() then
     new.is_admin    := old.is_admin;
@@ -234,7 +235,9 @@ begin
     new.email       := old.email;
     new.username    := old.username;
     new.permissions := old.permissions;
+    new.pos_only    := old.pos_only;
   end if;
+  if old.id = auth.uid() then new.pos_only := old.pos_only; end if;   -- ما حدا بيقفل/بيفك نقطة البيع على حاله
   if new.is_active and not old.is_active then perform public.tenant_user_slot_check(old.tenant_id, old.id); end if;
   return new;
 end $$;
@@ -604,7 +607,7 @@ begin
     perform set_config('sumou.internal', public.internal_token(), true);
     insert into public.user_groups (name, description, permissions, tenant_id)
     select g.name, g.description, g.permissions, tid from public.user_groups g
-     where g.tenant_id = public.default_tenant() and g.name in ('محاسب', 'مدخل بيانات', 'مشاهد');
+     where g.tenant_id = public.default_tenant() and g.name in ('محاسب', 'مدخل بيانات', 'مشاهد', 'كاشير');
     perform set_config('sumou.internal', '', true);
   else
     select * into old from public.tenants where id = tid;

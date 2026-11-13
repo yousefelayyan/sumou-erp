@@ -4,7 +4,7 @@
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
-import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
@@ -26,6 +26,7 @@ import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
+import { POS_ROUTES } from './pos.js';
 
 const $app = document.getElementById('app');
 // ---------------------------------------------------------------------
@@ -136,6 +137,7 @@ const NAV = () => [
   { title: 'ملف', items: [
     { r: 'company', i: '🏢', l: 'بيانات الشركة', show: () => S.company && can('companies', 'view') },
     { r: 'fiscal-years', i: '📅', l: 'السنوات المالية', show: () => S.company && can('fiscal_years', 'view') },
+    { act: 'year', i: '🔄', l: 'تبديل السنة المالية', show: () => S.company && S.fiscalYears.length > 0 },
     { r: 'departments', i: '🏛️', l: 'الدوائر', show: () => S.company && can('departments', 'view') },
     { r: 'settings', i: '🔗', l: 'حسابات الربط والضريبة', show: () => S.company && can('companies', 'edit') },
     { r: 'import', i: '📥', l: 'الاستيراد من إكسل', show: () => S.company && ['customers', 'suppliers', 'items', 'accounts', 'opening_balances', 'payroll'].some(x => can(x, 'add') || can(x, 'edit')) },
@@ -196,6 +198,7 @@ const NAV = () => [
     { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) },
     { r: 'party-center?type=customer', i: '📒', l: 'أستاذ مساعد العملاء', show: () => S.company && can('reports', 'view') },
     { r: 'orders?t=sales_order', i: '📝', l: 'طلبات المبيعات / عروض الأسعار', show: () => S.company && can('sales_orders', 'view') },
+    { r: 'pos', i: '🛒', l: 'نقطة البيع (الكاشير)', show: () => S.company && can('pos', 'view') },
     { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'sales?t=sale_return', i: '↩️', l: 'مردودات المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'party-categories?type=customer', i: '🗂️', l: 'فئات العملاء', show: () => S.company && can('customers', 'view') },
@@ -267,7 +270,30 @@ function setOpenGroup(title) {
   localStorageSet('sumou.nav.open', title || '');
 }
 
+// مستخدم نقطة البيع بس: شاشة الكاشير لحالها بدون قائمة
+function renderPosShell() {
+  if (location.hash !== '#/pos') history.replaceState(null, '', '#/pos');
+  const td = new Date().toLocaleDateString('en-CA');
+  if (!(S.fy && !S.fy.is_closed && td >= S.fy.start_date && td <= S.fy.end_date)) S.fy = S.fiscalYears.find(y => !y.is_closed && td >= y.start_date && td <= y.end_date) || S.fy;
+  const multi = S.companies.filter(c => c.is_active).length > 1;
+  $app.innerHTML = `
+    <div class="pos-shell">
+      <header class="pos-bar">
+        <div class="pb-brand"><img src="icons/icon.svg" alt=""><b>${esc(S.company?.name || APP_NAME)}</b></div>
+        <div class="spacer"></div>
+        <span class="pb-user">👤 ${esc(S.profile.full_name || S.profile.username || '')}</span>
+        ${multi ? '<button class="btn sm" id="pb-co">🏢 تبديل الشركة</button>' : ''}
+        <button class="btn sm" id="pb-out">🚪 خروج</button>
+      </header>
+      ${subBannerHTML()}
+      <section class="content pos-content" id="view"></section>
+    </div>`;
+  document.getElementById('pb-out').onclick = async () => { if (!(await confirmBox('بدك تطلع من الكاشير؟'))) return; await log('خروج', 'auth'); signOutHere(); };
+  document.getElementById('pb-co')?.addEventListener('click', () => switchCompanyDialog());
+}
+
 function renderShell() {
+  if (S.profile?.pos_only) return renderPosShell();
   const route = currentRoute();
   const openGroup = groupOfRoute(route) || localStorageGet('sumou.nav.open') || '';
   const initials = (S.profile.full_name || S.profile.email || '?').trim().charAt(0);
@@ -284,6 +310,7 @@ function renderShell() {
               <div class="nav-items">${items.map(it => it.soon
                 ? `<div class="soon"><span class="ico">${it.i}</span>${it.l}<small>قريباً</small></div>`
                 : it.href ? `<a href="${it.href}" target="_blank" rel="noopener"><span class="ico">${it.i}</span>${it.l} ↗</a>`
+                : it.act ? `<a href="#" data-act="${it.act}"><span class="ico">${it.i}</span>${it.l}</a>`
                 : `<a href="#/${it.r}" class="${('#/' + it.r) === location.hash ? 'active' : ''}"><span class="ico">${it.i}</span>${it.l}</a>`).join('')}
             </div></div>`;
           }).join('')}
@@ -331,7 +358,10 @@ function renderShell() {
     const x = e.target.closest('[data-close-pg]'); if (x) { e.stopPropagation(); return closePageTab(x.dataset.closePg); }
     const t = e.target.closest('[data-pg]'); if (t && t.dataset.pg !== location.hash) location.hash = t.dataset.pg;
   });
-  document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => document.getElementById('sidebar').classList.remove('open')));
+  document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', (e) => {
+    document.getElementById('sidebar').classList.remove('open');
+    if (a.dataset.act === 'year') { e.preventDefault(); switchYearDialog(); }
+  }));
   document.querySelectorAll('.nav-title').forEach(b => b.addEventListener('click', () => {
     const g = b.closest('.nav-group'); setOpenGroup(g.classList.contains('open') ? null : g.dataset.g);
   }));
@@ -356,7 +386,7 @@ function switchCompanyDialog() {
 // تبديل السنة المالية: بيدخل على نفس الشاشة بالسنة الجديدة
 function switchYearDialog() {
   if (!S.company) return;
-  const m = modal({ title: '📅 تبديل السنة المالية', size: 'sm', body: `<div style="display:grid;gap:6px">${S.fiscalYears.map(y => `
+  const m = modal({ title: '📅 تبديل السنة المالية', size: 'sm', body: `<div class="notice" style="margin:0 0 10px;font-size:13.5px">⚠️ <b>تنبيه:</b> أنت هلّق على <b>${esc(S.fy ? (S.fy.name || S.fy.code) : '—')}</b>. لما تبدّل، كل شاشات «${esc(S.company.name)}» بتصير على السنة اللي بتختارها.</div><div style="display:grid;gap:6px">${S.fiscalYears.map(y => `
       <button type="button" class="btn ${y.id === S.fy?.id ? 'primary' : ''}" data-fy="${y.id}" style="justify-content:space-between">
         <b>${esc(y.name || y.code)}</b><span class="muted" style="font-size:12px">${fmtDate(y.start_date)} ← ${fmtDate(y.end_date)}${y.is_closed ? ' · مغلقة' : ''}</span></button>`).join('')
       || '<div class="empty">ما في سنوات مالية لهالشركة</div>'}</div>`, foot: '<button class="btn" data-close>إلغاء</button>' });
@@ -441,8 +471,13 @@ function closePageTab(h) {
   if (h === curHash()) location.hash = (list[Math.max(0, i - 1)] || { h: '#/home' }).h;
   else document.getElementById('pg-tabs').innerHTML = pgTabsHTML();
 }
-function closeCompanyTab(id) {
+async function closeCompanyTab(id) {
   const t = tabsLoad(); if (t.ids.length < 2) return;
+  const c = S.companies.find(x => x.id === id);
+  if (id === S.company?.id && hasUnsavedModal()) return toast('ما بتقدر تسكّر الشركة: في سند مفتوح ومش محفوظ. احفظه أو سكّره أول', 'err');
+  let posCart = []; try { posCart = JSON.parse(localStorageGet('sumou.pos.cart.' + id) || '[]') || []; } catch {}
+  if (posCart.length) return toast(`ما بتقدر تسكّر «${c?.name || ''}»: في فاتورة بنقطة البيع مش مكمّلة (${posCart.length} صنف). كمّلها أو فرّغها أول`, 'err');
+  if (!(await confirmBox(`بدك تسكّر «${c?.name || ''}» وكل شاشاتها المفتوحة؟`))) return;
   const i = t.ids.indexOf(id); t.ids.splice(i, 1); delete t.hash[id]; if (t.pages) delete t.pages[id]; tabsSave(t);
   if (id === S.company?.id) activateCompany(t.ids[Math.max(0, i - 1)]);
   else document.getElementById('co-tabs').innerHTML = coTabsHTML();
@@ -460,12 +495,13 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
 
 async function route_() {
+  if (S.profile?.pos_only && currentRoute() !== 'pos') { location.hash = '#/pos'; return; }
   const r = currentRoute();
   const fullHash = location.hash || '#/';
   const exact = [...document.querySelectorAll('.nav a')].some(a => a.getAttribute('href') === fullHash);
@@ -495,7 +531,8 @@ async function viewHome(v) {
     <div class="page-head"><h2>${esc(c.name)}</h2><span class="badge brand">${esc(c.code)}</span></div>
     <div class="grid cols-4">
       <div class="card stat"><span class="k">السنة المالية الحالية</span><span class="v" style="font-size:18px">${esc(S.fy ? (S.fy.name || S.fy.code) : '—')}</span>
-        <span class="muted">${S.fy ? fmtDate(S.fy.start_date) + ' ← ' + fmtDate(S.fy.end_date) : 'ما في سنة مالية'}</span></div>
+        <span class="muted">${S.fy ? fmtDate(S.fy.start_date) + ' ← ' + fmtDate(S.fy.end_date) : 'ما في سنة مالية'}</span>
+        ${S.fiscalYears.length ? '<button class="btn sm" id="home-fy" style="margin-top:8px;align-self:flex-start">🔄 تبديل السنة المالية</button>' : ''}</div>
       <div class="card stat"><span class="k">نوع الشركة</span><span class="v" style="font-size:18px">${esc(c.company_type || '—')}</span></div>
       <div class="card stat"><span class="k">ضريبة المبيعات</span><span class="v" style="font-size:18px">${c.subject_to_sales_tax ? 'خاضعة' : 'غير خاضعة'}</span>
         <span class="muted">${c.subject_to_sales_tax ? (c.sales_tax_period === 'monthly' ? 'إقرار شهري' : 'إقرار كل شهرين') : ''}</span></div>
@@ -514,6 +551,7 @@ async function viewHome(v) {
         ${can('reports', 'view') ? '<a class="btn" href="#/rep-trial">⚖️ ميزان المراجعة</a>' : ''}
       </div>
     </div>`;
+  v.querySelector('#home-fy')?.addEventListener('click', switchYearDialog);
   dashboardPanel(v.querySelector('#dash')).catch(() => {});
   if (S.companies.some(c => can('obligations', 'view', c.id))) {
     obligationsSummary().then(({ late, soon }) => { const el = v.querySelector('#ob-sum'); if (!el || (!late && !soon)) return;
@@ -920,6 +958,7 @@ function userEditor(u, links, comps, depts = []) {
     <div style="display:flex;gap:18px;flex-wrap:wrap">
       <label class="check"><input type="checkbox" name="is_active" ${isNew || u.is_active ? 'checked' : ''} ${self ? 'disabled' : ''}> الحساب مفعّل</label>
       <label class="check"><input type="checkbox" name="is_admin" ${u?.is_admin ? 'checked' : ''} ${self ? 'disabled' : ''}> مدير النظام (كل الصلاحيات)</label>
+      <label class="check" title="لما يدخل بتطلعله شاشة الكاشير بس. أعطيه مجموعة «كاشير» بالشركة"><input type="checkbox" name="pos_only" ${u?.pos_only ? 'checked' : ''} ${self ? 'disabled' : ''}> 🛒 مستخدم نقطة بيع بس</label>
     </div></form>
     <div id="perm-area">
     <h3 style="margin:16px 0 6px">🔐 الصلاحيات الخاصة</h3>
@@ -955,6 +994,9 @@ function userEditor(u, links, comps, depts = []) {
       : await sb.rpc('admin_update_user', { p_id: u.id, p_username: username || null, p_full_name: d.full_name, p_password: d.password || null, p_permissions: permissions, p_companies: companies, p_is_admin: !!d.is_admin, p_is_active: !!d.is_active });
     if (r.error) { e.target.disabled = false; return toast(arError(r.error), 'err'); }
     const uid = isNew ? r.data : u.id;
+    if (uid && !self && !!d.pos_only !== !!u?.pos_only) {
+      const x = await sb.from('profiles').update({ pos_only: !!d.pos_only }).eq('id', uid); if (x.error) toast(arError(x.error), 'err');
+    }
     for (const box of m.el.querySelectorAll('[data-ucd]')) {
       const cid = box.dataset.ucd; if (!companies.includes(cid) || !uid) continue;
       const dep = box.querySelector('[data-dep]').value || null, hide = box.querySelector('[data-hide]').checked, l = link(cid);

@@ -49,6 +49,7 @@ export const SCREENS = [
   { key: 'inventory',        label: 'المستودعات وسندات المخزون والجرد', group: 'المخزون' },
   { key: 'customers',        label: 'العملاء وفئاتهم',      group: 'العملاء والذمم المدينة' },
   { key: 'sales_invoices',   label: 'فواتير ومردودات المبيعات', group: 'العملاء والذمم المدينة' },
+  { key: 'pos',              label: 'نقطة البيع (الكاشير)', group: 'العملاء والذمم المدينة' },
   { key: 'sales_orders',     label: 'طلبات المبيعات وعروض الأسعار', group: 'العملاء والذمم المدينة' },
   { key: 'suppliers',        label: 'الموردين وفئاتهم',     group: 'الموردين والذمم الدائنة' },
   { key: 'purchase_invoices',label: 'فواتير ومردودات المشتريات', group: 'الموردين والذمم الدائنة' },
@@ -111,9 +112,23 @@ export function modal({ title, body, foot = '', size = '' }) {
     </div>`;
   const back = root.firstElementChild;
   const close = () => { root.innerHTML = ''; };
-  back.addEventListener('click', e => { if (e.target === back || e.target.closest('[data-close]')) close(); });
+  // أي تعديل جوّا نموذج = شغل مش محفوظ؛ الإغلاق (× أو إلغاء أو برّا النافذة) بيسأل أول
+  back.addEventListener('input', e => { if (e.target.closest('.modal-body form')) back.dataset.dirty = '1'; }, true);
+  back.addEventListener('click', e => {
+    if (!(e.target === back || e.target.closest('[data-close]'))) return;
+    if (!back.dataset.dirty) return close();
+    e.stopImmediatePropagation();
+    if (back.querySelector('.unsaved-bar')) return;
+    const bar = document.createElement('div'); bar.className = 'unsaved-bar';
+    bar.innerHTML = '<span>⚠️ في تغييرات مش محفوظة. بدك تسكّر بدون حفظ؟</span><button class="btn sm danger" data-u-yes>نعم، سكّر</button><button class="btn sm" data-u-no>لا، رجوع</button>';
+    back.querySelector('.modal').prepend(bar);
+    bar.querySelector('[data-u-yes]').onclick = (ev) => { ev.stopPropagation(); close(); };
+    bar.querySelector('[data-u-no]').onclick = (ev) => { ev.stopPropagation(); bar.remove(); };
+  }, true);
   return { el: back, close };
 }
+
+export const hasUnsavedModal = () => !!document.querySelector('#modal-root .modal-back[data-dirty]');
 
 export function confirmBox(text) {
   return new Promise(resolve => {
@@ -170,7 +185,7 @@ export const MODULES = [
   { key: 'office',        label: 'متابعة إقرارات العملاء (للمكاتب)' },
 ];
 const SCREEN_MODULE = {
-  customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales',
+  customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales', pos: 'sales',
   suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases',
   inventory: 'inventory', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets',
   marketing: 'marketing', manufacturing: 'manufacturing', maintenance: 'maintenance', obligations: 'office',
