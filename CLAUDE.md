@@ -130,7 +130,7 @@ dev/                أدوات الفحص (شوف تحت)
 6. commit و push على main.
 7. **تنزيل SQL على Supabase:** من متصفح يوسف (Claude in Chrome)، وهو مسجّل دخول:
    - افتح محرر SQL.
-   - عبّي المحرر بالـ JS: `fetch('https://raw.githubusercontent.com/yousefelayyan/sumou-erp/main/sql/ALL_IN_ONE.sql?x='+Date.now())`، وبعدها `monaco.editor.getEditors()[0].setValue(t)`.
+   - عبّي المحرر بالـ JS: `fetch('https://raw.githubusercontent.com/yousefelayyan/sumou-erp/<commit>/sql/NN_name.sql')` لملفات المراحل الجديدة بس (مجمّعين)، وبعدها `monaco.editor.getEditors()[0].setValue(t)`. **ALL_IN_ONE صار أكبر من 1 ميغا ومحرر Supabase بيرفضه** («Query is too large»)، فبنزّل المراحل الجديدة لحالها (كل ملف آمن يتشغّل أكثر من مرة). ALL_IN_ONE للاختبار المحلي ولقاعدة جديدة بس (بتنزل على دفعات).
    - اضغط Run، وبعدها «Run query» برسالة التحذير (أو «Run without RLS» إذا طلعت رسالة «Potential issues detected»؛ جداولنا كلها عليها RLS من الملفات).
    - تأكد إنه طلع `Success`، وبعدين شغّل استعلام بيتأكد إنه الدوال أو الجداول الجديدة موجودة.
    - إذا ما في متصفح، ابعتله الملف وخلّيه يلصقه بنفسه.
