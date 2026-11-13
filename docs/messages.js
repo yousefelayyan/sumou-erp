@@ -2,7 +2,7 @@
 //  السمو ERP — الرسائل (route messages?t=campaign|log|templates)
 //  واتساب/رسالة نصية من الجهاز (wa.me / sms:) + نصوص جاهزة (company_settings.msg_templates) + سجل (message_log)
 // =====================================================================
-import { S, sb, esc, fmtNum, fmtDate, fmtDateTime, num, today, toast, arError, modal, can } from './core.js';
+import { S, sb, esc, fmtNum, fmtDate, fmtDateTime, num, today, toast, arError, modal, confirmBox, can } from './core.js';
 import { loadParties } from './parties.js';
 import { loadLookups } from './lookups.js';
 
@@ -38,8 +38,21 @@ export function sendWhatsApp(opts) {
   logMessage({ ...opts, channel: 'whatsapp' });
 }
 
+// بوابة الرسائل القصيرة (المرحلة 73)
+export async function smsGateway() {
+  const { data } = await sb.rpc('sms_config_get', { p_company: S.company.id });
+  return data || {};
+}
+export async function sendSmsGateway(opts) {
+  const { data, error } = await sb.rpc('sms_send', { p_company: S.company.id, p_phone: opts.phone, p_body: String(opts.body || '').slice(0, 1000),
+    p_party: opts.party_id || null, p_kind: opts.kind || 'other', p_ref: opts.ref_id || null, p_campaign: opts.campaign || null });
+  if (error) throw error;
+  return data;
+}
+
 async function campaignTab(v, head) {
-  const [parties, lk, tpl] = await Promise.all([loadParties(), loadLookups(), msgTemplates()]);
+  const [parties, lk, tpl, gw] = await Promise.all([loadParties(), loadLookups(), msgTemplates(), smsGateway()]);
+  const useGw = gw.enabled && gw.has_url;
   const cats = (await sb.from('party_categories').select('id,name,party_type').eq('company_id', S.company.id)).data || [];
   const { data: bals } = S.fy ? await sb.from('party_balances').select('party_id,debit,credit').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id) : { data: [] };
   const bal = Object.fromEntries((bals || []).map(b => [b.party_id, num(b.debit) - num(b.credit)]));
@@ -70,7 +83,9 @@ async function campaignTab(v, head) {
     const kind = /\[الرصيد\]/.test(body) && $('#m-bal').value === 'due' ? 'reminder' : 'campaign';
     $('#m-out').innerHTML = `<div class="card" style="margin-top:10px"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <b>${withPh.length} مستلم</b><span class="muted">(${list.length - withPh.length} بدون رقم ما انضافوا)</span><div class="spacer"></div>
-        <button class="btn sm" id="m-csv">⬇️ تنزيل الأرقام والنصوص (لبوابة الرسائل)</button></div>
+        ${useGw && can('marketing', 'add') ? `<button class="btn sm primary" id="m-all">📤 إرسال للكل بالبوابة (${withPh.length})${gw.test_mode ? ' — وضع التجربة' : ''}</button>` : ''}
+        <button class="btn sm" id="m-csv">⬇️ تنزيل الأرقام والنصوص</button></div>
+      <div id="m-prog" class="muted" style="margin-top:6px"></div>
       <p class="muted" style="font-size:12px">كبسة «واتساب» بتفتح المحادثة جاهزة؛ ابعت من الواتساب وارجع للي بعده. السطر بيتعلّم ✓ وبينسجّل بالسجل.</p>
       <div class="table-wrap"><table class="t"><thead><tr><th>الاسم</th><th>الجوال</th><th>الرصيد</th><th></th></tr></thead><tbody>
       ${withPh.map((x, i) => `<tr data-i="${i}"><td>${esc(x.p.name)}</td><td dir="ltr">${esc(x.ph)}</td><td class="n">${fmtNum(x.b)}</td>
@@ -79,10 +94,22 @@ async function campaignTab(v, head) {
     $('#m-out').onclick = (e) => {
       const w = e.target.closest('[data-wa]'), s = e.target.closest('[data-sms]'); const i = +(w?.dataset.wa ?? s?.dataset.sms); if (!(w || s)) return;
       const x = withPh[i], text = msgOf(x);
+      const done = (mark = ' ✓') => { v.querySelector(`[data-ok="${i}"]`).textContent = mark; v.querySelector(`tr[data-i="${i}"]`).style.opacity = .55; };
+      if (s && useGw) { sendSmsGateway({ party_id: x.p.id, phone: x.ph, kind, body: text, campaign: camp }).then(() => done(' 📤')).catch(er => toast(arError(er), 'err')); return; }
       if (w) window.open(waLink(x.ph, text), '_blank', 'noopener'); else location.href = smsLink(x.ph, text);
       logMessage({ party_id: x.p.id, phone: x.ph, channel: w ? 'whatsapp' : 'sms', kind, body: text, campaign: camp });
-      v.querySelector(`[data-ok="${i}"]`).textContent = ' ✓'; v.querySelector(`tr[data-i="${i}"]`).style.opacity = .55;
+      done();
     };
+    $('#m-all')?.addEventListener('click', async (e) => {
+      if (!(await confirmBox(`إرسال ${withPh.length} رسالة عن طريق البوابة${gw.test_mode ? ' (وضع التجربة: كلها بتروح لرقم التجربة)' : ''}؟`))) return;
+      e.target.disabled = true; let ok = 0, bad = 0, lastErr = '';
+      for (const [i, x] of withPh.entries()) {
+        $('#m-prog').textContent = `جاري الإرسال ${i + 1} من ${withPh.length}…`;
+        try { await sendSmsGateway({ party_id: x.p.id, phone: x.ph, kind, body: msgOf(x), campaign: camp }); ok++; v.querySelector(`[data-ok="${i}"]`).textContent = ' 📤'; v.querySelector(`tr[data-i="${i}"]`).style.opacity = .55; }
+        catch (er) { bad++; lastErr = arError(er); if (/حد الرسائل|مش مفعّلة|pg_net/.test(lastErr)) break; }
+      }
+      $('#m-prog').textContent = `انبعتت ${ok}${bad ? ` · ما زبط ${bad}: ${lastErr}` : ''} — الحالة النهائية بسجل الرسائل.`;
+    });
     $('#m-csv')?.addEventListener('click', () => {
       const rows = [['phone', 'name', 'message']].concat(withPh.map(x => [phone962(x.ph), x.p.name, msgOf(x)]));
       const csv = '﻿' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -92,12 +119,57 @@ async function campaignTab(v, head) {
 }
 
 async function logTab(v, head) {
+  await sb.rpc('sms_refresh', { p_company: S.company.id });
   const [{ data: rows = [] }, parties] = await Promise.all([sb.from('message_log').select('*').eq('company_id', S.company.id).order('sent_at', { ascending: false }).limit(500), loadParties()]);
   const pn = Object.fromEntries(parties.map(p => [p.id, p.name]));
   const K = { invoice: 'فاتورة', statement: 'كشف/رصيد', payment: 'دفعة', reminder: 'تذكير', campaign: 'حملة', other: 'أخرى' };
-  v.innerHTML = `${head}<div class="card table-wrap"><table class="t rep"><thead><tr><th>الوقت</th><th>الطرف</th><th>الجوال</th><th>القناة</th><th>النوع</th><th>الحملة</th><th>النص</th></tr></thead><tbody>
+  v.innerHTML = `${head}<div class="card table-wrap"><table class="t rep"><thead><tr><th>الوقت</th><th>الطرف</th><th>الجوال</th><th>القناة</th><th>الحالة</th><th>النوع</th><th>الحملة</th><th>النص</th></tr></thead><tbody>
     ${(rows || []).map(r => `<tr><td>${fmtDateTime(r.sent_at)}</td><td>${esc(pn[r.party_id] || '')}</td><td dir="ltr">${esc(r.phone || '')}</td><td>${r.channel === 'sms' ? '✉️ رسالة' : '💬 واتساب'}</td>
-      <td>${K[r.kind] || r.kind}</td><td>${esc(r.campaign || '')}</td><td class="muted" style="font-size:12px;max-width:380px;white-space:pre-wrap">${esc(r.body)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">ما في رسائل لسا</td></tr>'}</tbody></table></div>`;
+      <td>${ST[r.status] ? `<span class="badge ${ST[r.status][1]}" ${r.error ? `title="${esc(r.error)}"` : ''}>${ST[r.status][0]}</span>` : '<span class="muted">من الجهاز</span>'}</td>
+      <td>${K[r.kind] || r.kind}</td><td>${esc(r.campaign || '')}</td><td class="muted" style="font-size:12px;max-width:380px;white-space:pre-wrap">${esc(r.body)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">ما في رسائل لسا</td></tr>'}</tbody></table></div>`;
+}
+const ST = { queued: ['بالطريق', 'warn'], sent: ['انبعتت', 'ok'], failed: ['ما زبطت', 'bad'], test: ['تجربة', 'brand'] };
+
+async function gatewayTab(v, head) {
+  const gw = await smsGateway(), ed = can('companies', 'edit');
+  const dis = ed ? '' : 'disabled';
+  v.innerHTML = `${head}<div class="card" style="max-width:860px">
+    <h3 style="margin-top:0">📡 بوابة الرسائل القصيرة (SMS)</h3>
+    <p class="muted" style="margin-top:0">شركة الرسائل (مثلاً بالأردن) بتعطيك رابط إرسال فيه اسم الحساب وكلمة السر. الصقه هون وحط مكان الرقم <code>{phone}</code> ومكان النص <code>{msg}</code> (أو <code>{msg_hex}</code> إذا البوابة بدها النص العربي يونيكود)، ومكان اسم المرسل <code>{sender}</code>.
+      الرابط بينحفظ بقاعدة البيانات وما بيرجع يطلع على أي شاشة، والإرسال بيصير من السيرفر مش من الجهاز.</p>
+    ${gw.trial ? '<div class="notice">بوابة الرسائل مش متاحة بالنسخة التجريبية.</div>' : ''}
+    <p class="muted" style="font-size:12.5px;margin-top:0">لازم الرابط يبدأ بـ https:// وعلى دومين شركة الرسائل (مش رقم IP). الموظف اللي ما إله صلاحية التسويق بيقدر يبعت بس فاتورة أو كشف أو دفعة لرقم العميل نفسه.</p>
+    ${gw.pg_net === false ? '<div class="notice">إضافة pg_net مش مفعّلة بقاعدة البيانات، فالإرسال ما رح يشتغل لحد ما تتفعّل.</div>' : ''}
+    <form id="gw"><div class="grid cols-2">
+      <div class="field" style="grid-column:span 2"><label>رابط الإرسال ${gw.has_url ? `<span class="badge ok">محفوظ — ${esc(gw.host || '')}</span>` : '<span class="badge warn">مش محفوظ</span>'}</label>
+        <input type="password" name="url_template" dir="ltr" autocomplete="off" placeholder="${gw.has_url ? 'فاضي = بيضل الرابط المحفوظ' : 'https://…/send?user=…&pass=…&to={phone}&text={msg}&from={sender}'}" ${dis}></div>
+      <div class="field"><label>اسم المرسل (Sender ID)</label><input name="sender" dir="ltr" value="${esc(gw.sender || '')}" ${dis}></div>
+      <div class="field"><label>حد الرسائل باليوم</label><input name="daily_limit" type="number" min="1" max="20000" value="${gw.daily_limit || 500}" ${dis}><small class="muted">انبعت اليوم: ${gw.sent_today || 0}</small></div>
+      <div class="field"><label><input type="checkbox" name="enabled" ${gw.enabled ? 'checked' : ''} ${dis}> تفعيل الإرسال بالبوابة</label></div>
+      <div class="field"><label><input type="checkbox" name="test_mode" ${gw.test_mode !== false ? 'checked' : ''} ${dis}> وضع التجربة: كل الرسائل بتروح لرقم التجربة بس</label></div>
+      <div class="field"><label><input type="checkbox" name="allow_intl" ${gw.allow_intl ? 'checked' : ''} ${dis}> السماح بأرقام برّا الأردن</label></div>
+      <div class="field"><label>رقم التجربة</label><input name="test_phone" dir="ltr" value="${esc(gw.test_phone || '')}" placeholder="07…" ${dis}></div>
+    </div></form>
+    ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="gw-save">💾 حفظ</button><button class="btn" id="gw-test">📤 رسالة تجربة</button>${gw.has_url ? '<button class="btn danger" id="gw-clear">مسح الرابط</button>' : ''}</div>` : '<p class="muted">التعديل لمين إله صلاحية تعديل الشركات.</p>'}
+    <p class="muted" style="font-size:12.5px">ابدأ بوضع التجربة وتأكد إنه رسالة التجربة وصلت لجوالك، وبعدها شيل علامة التجربة. حالة كل رسالة (انبعتت / ما زبطت) بتبيّن بسجل الرسائل.</p></div>`;
+  const f = v.querySelector('#gw');
+  const payload = () => ({ enabled: f.enabled.checked, test_mode: f.test_mode.checked, test_phone: f.test_phone.value.trim(), sender: f.sender.value.trim(),
+    daily_limit: Math.max(1, Math.min(20000, parseInt(f.daily_limit.value) || 500)), allow_intl: f.allow_intl.checked, url_template: f.url_template.value.trim() || null });
+  v.querySelector('#gw-save')?.addEventListener('click', async () => {
+    const { error } = await sb.rpc('sms_config_save', { p_company: S.company.id, p: payload() });
+    if (error) return toast(arError(error), 'err');
+    toast('انحفظ إعداد البوابة', 'ok'); gatewayTab(v, head);
+  });
+  v.querySelector('#gw-test')?.addEventListener('click', async () => {
+    const ph = f.test_phone.value.trim(); if (!ph) return toast('اكتب رقم التجربة واحفظ أول', 'err');
+    try { await sendSmsGateway({ phone: ph, body: `رسالة تجربة من ${S.company.name}`, kind: 'other' }); toast('انبعتت رسالة التجربة — شوف جوالك وسجل الرسائل', 'ok'); }
+    catch (e) { toast(arError(e), 'err'); }
+  });
+  v.querySelector('#gw-clear')?.addEventListener('click', async () => {
+    if (!(await confirmBox('مسح رابط البوابة ووقف الإرسال؟'))) return;
+    const { error } = await sb.rpc('sms_config_save', { p_company: S.company.id, p: { ...payload(), url_template: null, clear_url: true } });
+    if (error) return toast(arError(error), 'err'); gatewayTab(v, head);
+  });
 }
 
 async function templatesTab(v, head) {
@@ -120,9 +192,10 @@ async function viewMessages(v) {
   if (!can('marketing', 'view')) return void (v.innerHTML = '<div class="notice">ما عندك صلاحية على التسويق</div>');
   const t = new URLSearchParams(location.hash.split('?')[1] || '').get('t') || 'campaign';
   const head = `<div class="page-head"><h2>💬 الرسائل والواتساب</h2></div>
-    <div class="tabs" style="margin-bottom:10px">${[['campaign', '📢 حملة / تذكير'], ['log', '📜 سجل الرسائل'], ['templates', '📝 النصوص الجاهزة']].map(([k, l]) => `<a class="tab ${t === k ? 'active' : ''}" href="#/messages?t=${k}">${l}</a>`).join('')}</div>`;
+    <div class="tabs" style="margin-bottom:10px">${[['campaign', '📢 حملة / تذكير'], ['log', '📜 سجل الرسائل'], ['templates', '📝 النصوص الجاهزة'], ['gateway', '📡 بوابة الرسائل']].map(([k, l]) => `<a class="tab ${t === k ? 'active' : ''}" href="#/messages?t=${k}">${l}</a>`).join('')}</div>`;
   if (t === 'log') return logTab(v, head);
   if (t === 'templates') return templatesTab(v, head);
+  if (t === 'gateway') return gatewayTab(v, head);
   return campaignTab(v, head);
 }
 
