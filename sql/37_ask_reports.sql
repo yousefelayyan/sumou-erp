@@ -119,7 +119,7 @@ begin
   for t in select * from (values ('journal_entries', 'قيود وسندات'), ('invoices', 'فواتير'), ('stock_docs', 'سندات مخزون'), ('cheques', 'شيكات'),
              ('payroll_runs', 'مسيّرات رواتب'), ('depreciation_runs', 'دورات استهلاك'), ('orders', 'طلبات بيع/شراء'), ('asset_movements', 'حركات أصول'),
              ('custody_docs', 'مستندات عهد'), ('supply_requests', 'طلبات تزويد'), ('service_tickets', 'بطاقات صيانة'), ('productions', 'أوامر إنتاج'),
-             ('stock_moves', 'حركات مخزون')) v(tbl, label) loop
+             ('stock_moves', 'حركات مخزون'), ('employee_loans', 'قروض وسلف')) v(tbl, label) loop
     if to_regclass('public.' || t.tbl) is null then continue; end if;
     execute format('select count(*) from public.%I where company_id = $1', t.tbl) into n using p_company;
     if n > 0 then r := r || jsonb_build_object(t.label, n); end if;

@@ -12,7 +12,7 @@ begin
   if new.user_id is not null then
     if new.kind <> 'sales_rep' then new.user_id := null;
     elsif not exists (select 1 from public.profiles p join public.companies c on c.id = new.company_id and c.tenant_id = p.tenant_id where p.id = new.user_id) then
-      raise exception 'المستخدم مش من نفس المشترك';
+      if public.is_internal() then new.user_id := null; else raise exception 'المستخدم مش من نفس المشترك'; end if;
     end if;
   end if;
   if new.weekdays is not null then
