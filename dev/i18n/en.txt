@@ -4330,3 +4330,98 @@ The asset is not from the same company
 You don't have permission on opening balances
 Copying balances is for head-office staff only, not branch staff
 Invalid balance type
+Thank you for your business
+Delivery note
+Goods received note
+This message was sent from Sumou ERP
+📧 Send by email
+No email on the party card. Type it below (you can save it on the card: up to 3 emails
+No email on the party card. Type it below (you can save it on the card
+up to 3 emails
+Additional email (optional
+goes to the test email only
+The email gateway is not enabled, so your email app will open with a short text. To send directly: Marketing ← Messages ← 📧 Email gateway
+The email gateway is not enabled, so your email app will open with a short text. To send directly
+Marketing ← Messages ← 📧 Email gateway
+Choose or type at least one email
+Email sent — its status shows in the message log
+Email sent
+its status shows in the message log
+📧 Email gateway
+Sending happens from the server through an email provider (Resend or Brevo). Create an account with them, verify the office domain, take the "API key" and paste it here
+The key is stored in the database and never shown on any screen. A user without marketing permission can only send a statement, invoice or payment to the party's own emails
+Provider
+Sender email
+Sender name
+Reply-to email (optional
+Daily email limit
+Test mode: all emails go to the test email only
+all emails go to the test email only
+Test email
+Clear key
+Start in test mode and make sure the test email arrived, then untick test mode
+Email gateway settings saved
+Type the test email and save first
+Test email from
+Test email
+If you received this email, the email gateway works ✅
+Test email sent — check your inbox and the message log
+Test email sent
+check your inbox and the message log
+Clear the provider key and stop sending
+Picking order no.
+Items request no.
+Second email
+Third email
+📧 Email
+e.g. 100231
+💸 Pay salaries
+Payment date
+Payment method
+💵 Cash / bank transfer
+📑 A cheque per employee
+No cash/bank accounts
+First cheque number
+Paid — voucher
+Paid
+Not paid
+No salaries
+Selected
+One payment voucher is created: cash/bank (or cheques payable) credit, and "salaries payable" debit per employee. With cheques, each cheque is added to the issued cheques portfolio
+One payment voucher is created
+cash/bank (or cheques payable) credit, and "salaries payable" debit per employee. With cheques, each cheque is added to the issued cheques portfolio
+Choose at least one employee
+Type the cheque number for
+Pay salaries of
+employees totaling
+Salary payment voucher created
+📄 Standard layout
+🧾 No letterhead (pre-printed paper
+📦 No prices (delivery note
+No letterhead and no prices
+The email gateway is not available in the trial version
+Invalid email provider
+Invalid provider key
+Invalid sender email
+Invalid test email
+Invalid reply-to email
+You don't have permission to send emails
+No email to send to
+At most 10 emails per message
+Free sending requires marketing permission; you can send an invoice, statement or payment to the party's own email only
+You can only send to the emails registered on the party card
+Email subject is empty
+Email body is empty
+The email is too large
+The email gateway is not enabled for this company
+Set the test email in the gateway settings
+Couldn't send to the email provider
+Paying salaries requires permission to post payroll and add payment vouchers
+The payroll run must be posted before paying
+Invalid payment method
+You don't have permission to add cheques
+Set the salaries payable account in linked accounts
+Set the issued cheques account in linked accounts
+No open fiscal year on the payment date
+All salaries of this run are already paid
+Salaries of this run were paid by a payment voucher; delete or reverse it before cancelling the run

@@ -15,7 +15,7 @@ import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirm
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords, loadPrintSettings } from './print.js';
-import { msgTemplates, fillTpl, sendWhatsApp } from './messages.js';
+import { msgTemplates, fillTpl, sendWhatsApp, emailDialog, emailWrap, emailTable } from './messages.js';
 import { attachFollow, followMap, followBadge, loadStatuses } from './follow.js';
 import { openAttachments } from './attach.js';
 
@@ -494,7 +494,7 @@ async function invoiceEditor(type, inv, ctx) {
       ${inv?.status === 'posted' && can(T.screen, 'post') ? '<button class="btn danger" data-cancel>⛔ إلغاء الفاتورة</button>' : ''}
       ${inv?.status === 'posted' && !type.endsWith('return') && can(T.screen, 'add') ? `<button class="btn" data-return>↩️ ${type === 'sale' ? 'مرتجع بيع' : 'مرتجع شراء'} منها</button>` : ''}
       ${inv && can(T.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
-      ${inv && inv.party_id && isSaleType(type) && inv.status !== 'cancelled' ? '<button class="btn" data-wa>💬 واتساب</button>' : ''}
+      ${inv && inv.party_id && isSaleType(type) && inv.status !== 'cancelled' ? '<button class="btn" data-wa>💬 واتساب</button><button class="btn" data-mail>📧 إيميل</button>' : ''}
       ${inv && type === 'purchase' && inv.payment_type === 'credit' ? '<button class="btn" data-splits>🏭 فواتير الموردين</button>' : ''}
       ${inv ? '<button class="btn" data-attach>📎 مرفقات</button>' : ''}
       ${inv?.status === 'draft' && !inv.stock_posted && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
@@ -754,6 +754,17 @@ async function invoiceEditor(type, inv, ctx) {
     const body = fillTpl(tpl.invoice, { name: p.name, no: docNo(inv), date: inv.inv_date, amount: inv.total, balance: b.data ? num(b.data.debit) - num(b.data.credit) : null });
     sendWhatsApp({ party_id: p.id, phone: ph, kind: 'invoice', ref_id: inv.id, body });
   });
+  m.el.querySelector('[data-mail]')?.addEventListener('click', async () => {
+    const p = pById[inv.party_id];
+    const { data: ls } = await sb.from('invoice_lines').select('item_id,description,qty,unit_price,line_total,is_bonus').eq('invoice_id', inv.id).order('line_no');
+    const rows = (ls || []).map(l => [esc(l.description || itById[l.item_id]?.name || ''), fmtQty(l.qty), l.is_bonus ? 'بونص' : fmtPrice(l.unit_price), fmtNum(l.line_total)]);
+    const foot = `<tfoot>${[['المجموع قبل الضريبة', inv.subtotal], ['الضريبة', inv.tax_total], ['الإجمالي', inv.total]].filter(x => x[1] != null)
+      .map(([k, x]) => `<tr><td colspan="3" style="border:1px solid #ddd;padding:6px"><b>${k}</b></td><td style="border:1px solid #ddd;padding:6px"><b>${fmtNum(x)}</b></td></tr>`).join('')}</tfoot>`;
+    const title = `${T.label} رقم ${docNo(inv)}`;
+    const html = emailWrap(title, `<p>التاريخ: ${fmtDate(inv.inv_date)}${inv.due_date ? ` — الاستحقاق: ${fmtDate(inv.due_date)}` : ''}<br>${esc(p?.name || '')}</p>`
+      + emailTable(['البيان', 'الكمية', 'السعر', 'المجموع'], rows, foot) + '<p>شكراً لتعاملكم معنا.</p>');
+    emailDialog({ party: p, subject: `${title} — ${S.company.name}`, html, text: `${title}\nالتاريخ: ${fmtDate(inv.inv_date)}\nالإجمالي: ${fmtNum(inv.total)} دينار\n\n${S.company.name}`, kind: 'invoice', ref_id: inv.id });
+  });
   m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('invoice', inv.id, `${T.label} رقم ${docNo(inv)}`));
   m.el.querySelector('[data-splits]')?.addEventListener('click', () => supplierSplits(inv, myParties));
 }
@@ -784,21 +795,21 @@ async function printInvoice(type, inv, lines, party, st) {
       <tr><td colspan="2"><b>${T.partyLabel}:</b> ${esc(party?.name || inv.party_name || '')} ${party?.tax_no ? ` — الرقم الضريبي: ${esc(party.tax_no)}` : ''}</td><td>${inv.due_date ? `<b>الاستحقاق:</b> ${fmtDate(inv.due_date)}` : ''}</td></tr>
       ${party?.address || party?.phone ? `<tr><td colspan="3">${esc([party.address, party.city, party.mobile || party.phone].filter(Boolean).join(' — '))}</td></tr>` : ''}
       ${inv.reference ? `<tr><td colspan="3"><b>المرجع:</b> ${esc(inv.reference)}</td></tr>` : ''}</table>
-    <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>قبل الضريبة</th><th>ض%</th><th>الضريبة</th><th>الإجمالي</th></tr></thead><tbody>
-      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:90px;max-height:80px;margin-inline-start:6px;object-fit:contain">` : ''}${esc(l.description || '')}${l.details ? `<div style="font-size:11px;color:#555">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}${l.batch_no ? `<div style="font-size:11px;color:#555">دفعة ${esc(l.batch_no)}${l.expiry_date ? ' · ينتهي ' + fmtDate(l.expiry_date) : ''}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
-        <td class="n">${fmtNum(l.subtotal)}</td><td class="n">${num(l.tax_rate)}%</td><td class="n">${fmtNum(l.tax_amount)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody></table>
-    <table class="pt" style="width:45%;margin:10px 0 0 auto;margin-inline-start:auto"><tr><td>المجموع قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr>
+    <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>البيان</th><th>الكمية</th><th class="pr">السعر</th><th class="pr">الخصم</th><th class="pr">قبل الضريبة</th><th class="pr">ض%</th><th class="pr">الضريبة</th><th class="pr">الإجمالي</th></tr></thead><tbody>
+      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:90px;max-height:80px;margin-inline-start:6px;object-fit:contain">` : ''}${esc(l.description || '')}${l.details ? `<div style="font-size:11px;color:#555">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}${l.batch_no ? `<div style="font-size:11px;color:#555">دفعة ${esc(l.batch_no)}${l.expiry_date ? ' · ينتهي ' + fmtDate(l.expiry_date) : ''}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n pr">${fmtPrice(l.unit_price)}</td><td class="n pr">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
+        <td class="n pr">${fmtNum(l.subtotal)}</td><td class="n pr">${num(l.tax_rate)}%</td><td class="n pr">${fmtNum(l.tax_amount)}</td><td class="n pr">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody></table>
+    <table class="pt pr" style="width:45%;margin:10px 0 0 auto;margin-inline-start:auto"><tr><td>المجموع قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr>
       ${num(inv.discount_total) ? `<tr><td>الخصومات</td><td class="n">${fmtNum(inv.discount_total)}</td></tr>` : ''}
       <tr><td>ضريبة المبيعات</td><td class="n">${fmtNum(inv.tax_total)}</td></tr><tr class="tot"><td>الإجمالي (دينار)</td><td class="n">${fmtNum(inv.total)}</td></tr></table>
-    <div class="amount-box">${amountToWords(inv.total)}</div>
+    <div class="amount-box pr">${amountToWords(inv.total)}</div>
     ${inv.notes ? `<p><b>ملاحظات:</b> ${esc(inv.notes)}</p>` : ''}${st.invoice_footer ? `<p style="color:#555">${esc(st.invoice_footer)}</p>` : ''}${stamp}`;
   // نسخة الورق الحراري (80 ملم)
   const slim = () => `
     <table class="meta"><tr><td><b>رقم:</b> ${esc(docNo(inv))} — ${fmtDate(inv.inv_date)} — ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
       ${party?.name || inv.party_name ? `<tr><td><b>${T.partyLabel}:</b> ${esc(party?.name || inv.party_name)}</td></tr>` : ''}</table>
-    <table class="pt" style="margin-top:6px"><thead><tr><th>الصنف</th><th>كمية</th><th>المبلغ</th></tr></thead><tbody>
-      ${lines.map(l => `<tr><td>${esc(l.description || '')}<br><small>${fmtPrice(l.unit_price)} × ${num(l.qty)}</small></td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="2">قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr><tr><td colspan="2">الضريبة</td><td class="n">${fmtNum(inv.tax_total)}</td></tr>
+    <table class="pt" style="margin-top:6px"><thead><tr><th>الصنف</th><th>كمية</th><th class="pr">المبلغ</th></tr></thead><tbody>
+      ${lines.map(l => `<tr><td>${esc(l.description || '')}<br><small class="pr">${fmtPrice(l.unit_price)} × ${num(l.qty)}</small></td><td class="n">${num(l.qty)}</td><td class="n pr">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody>
+      <tfoot class="pr"><tr><td colspan="2">قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr><tr><td colspan="2">الضريبة</td><td class="n">${fmtNum(inv.tax_total)}</td></tr>
       <tr class="tot"><td colspan="2">الإجمالي</td><td class="n">${fmtNum(inv.total)}</td></tr></tfoot></table>
     ${st.invoice_footer ? `<p style="text-align:center">${esc(st.invoice_footer)}</p>` : ''}${stamp}`;
   const arTitle = (cfg) => (type === 'sale' && cfg.invoice_title) ? cfg.invoice_title : `${T.label}${c.subject_to_sales_tax && type === 'sale' ? ' ضريبية' : ''}`;
@@ -807,7 +818,7 @@ async function printInvoice(type, inv, lines, party, st) {
       cfg, titleAr: arTitle(cfg), titleEn: cfg.invoice_title_en || (type === 'sale_return' ? 'Sales Return' : 'Sales Invoice'),
       no: docNo(inv), date: inv.inv_date, pay: inv.payment_type === 'cash' ? 'نقدي / Cash' : 'آجل / Credit', orderNo, project: inv.project,
       party, partyName: party?.name || inv.party_name, lines, sub: inv.subtotal, disc: inv.discount_total, tax: inv.tax_total, total: inv.total, notes: inv.notes, stamp,
-      footer: st.invoice_footer, images }) : full(), { kind: 'invoice', win, copies: docCopies(inv.doc_type_id), branch: inv.department_id ? sb.from('departments').select('name,address,city,phone,income_tax_no,sales_tax_no').eq('id', inv.department_id).maybeSingle().then(r => r.data || null) : null });
+      footer: st.invoice_footer, images }) : full(), { kind: 'invoice', win, npTitle: isSaleType(type) ? 'سند تسليم' : 'سند استلام', copies: docCopies(inv.doc_type_id), branch: inv.department_id ? sb.from('departments').select('name,address,city,phone,income_tax_no,sales_tax_no').eq('id', inv.department_id).maybeSingle().then(r => r.data || null) : null });
   if (isSaleType(type)) sb.from('orders').select('order_no').eq('invoice_id', inv.id).limit(1).then(({ data }) => go(data?.[0]?.order_no || '')); else go('');
 }
 const isSaleType = (t) => t === 'sale' || t === 'sale_return';
@@ -821,14 +832,14 @@ export function bilingualDoc({ cfg, titleAr, titleEn, no, date, pay, orderNo, pr
   const rows = lines.map((l, i) => { const it = itBy[l.item_id] || {};
     return `<tr><td class="c">${i + 1}</td><td class="c">${esc(it.code || '')}</td>
       <td class="desc">${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:120px;max-height:110px;margin:2px 0 2px 8px;object-fit:contain">` : ''}<b>${esc(l.description || '')}</b>${l.details ? `<div class="det">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}${l.batch_no ? `<div class="det">Batch / دفعة ${esc(l.batch_no)}${l.expiry_date ? ' · Exp ' + fmtDate(l.expiry_date) : ''}</div>` : ''}</td>
-      <td class="c">${esc(it.unit || '')}</td><td class="c">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${fmtNum(num(l.qty) * num(l.unit_price) - num(l.discount))}</td></tr>`; }).join('');
-  const filler = `<tr class="fill"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+      <td class="c">${esc(it.unit || '')}</td><td class="c">${num(l.qty)}</td><td class="n pr">${fmtPrice(l.unit_price)}</td><td class="n pr">${fmtNum(num(l.qty) * num(l.unit_price) - num(l.discount))}</td></tr>`; }).join('');
+  const filler = `<tr class="fill"><td></td><td></td><td></td><td></td><td></td><td class="pr"></td><td class="pr"></td></tr>`;
   const html = `<div class="bl">
     <div class="bl-head">
       <div class="bl-ar"><div class="nm">${esc(c.name || '')}</div><div>${esc([c.address, c.city].filter(Boolean).join(' - '))}</div></div>
       <div class="bl-logo">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}</div>
       <div class="bl-en"><div class="nm">${esc(c.name_en || c.name || '')}</div><div>${esc(c.address_en || '')}</div></div></div>
-    <div class="bl-titles"><div class="t-ar">${esc(titleAr)}</div><div class="tax">${c.sales_tax_no || c.income_tax_no ? `الرقم الضريبي: <b>${esc(c.sales_tax_no || c.income_tax_no)}</b>` : ''}</div><div class="t-en">${esc(titleEn)}</div></div>
+    <div class="bl-titles"><div class="t-ar" data-np="سند تسليم">${esc(titleAr)}</div><div class="tax">${c.sales_tax_no || c.income_tax_no ? `الرقم الضريبي: <b>${esc(c.sales_tax_no || c.income_tax_no)}</b>` : ''}</div><div class="t-en" data-np="Delivery Note">${esc(titleEn)}</div></div>
     <table class="bl-meta"><tr>
       <td class="lbl">${L('السيد / السادة:', 'Messrs:')}</td><td class="val big">${esc(partyName || '')}</td>
       <td class="lbl">${L(noLabel[0] + ':', noLabel[1] + ':')}</td><td class="val">${esc(no)}</td></tr>
@@ -839,17 +850,17 @@ export function bilingualDoc({ cfg, titleAr, titleEn, no, date, pay, orderNo, pr
       <tr><td class="lbl">${L('المشروع:', 'Project:')}</td><td class="val">${esc(project || '')}</td>
       <td class="lbl">${L('رقم الطلب:', 'Order#:')}</td><td class="val">${esc(orderNo || '')}</td></tr>
       ${party?.tax_no ? `<tr><td class="lbl">${L('رقم العميل الضريبي:', 'Customer TRN:')}</td><td class="val">${esc(party.tax_no)}</td><td></td><td></td></tr>` : ''}</table>
-    <table class="bl-lines"><thead><tr><th class="c">${L('رقم', 'No.')}</th><th class="c">${L('رقم المادة', 'Item No.')}</th><th>${L('التفاصيل', 'Description')}</th><th class="c">${L('الوحدة', 'Unit')}</th><th class="c">${L('الكمية', 'Qty.')}</th><th>${L('سعر الوحدة', 'Unit Price')}</th><th>${L('المجموع', 'Total')}</th></tr></thead>
+    <table class="bl-lines"><thead><tr><th class="c">${L('رقم', 'No.')}</th><th class="c">${L('رقم المادة', 'Item No.')}</th><th>${L('التفاصيل', 'Description')}</th><th class="c">${L('الوحدة', 'Unit')}</th><th class="c">${L('الكمية', 'Qty.')}</th><th class="pr">${L('سعر الوحدة', 'Unit Price')}</th><th class="pr">${L('المجموع', 'Total')}</th></tr></thead>
       <tbody>${rows}${filler}</tbody></table>
     <table class="bl-foot"><tr>
       <td class="sig"><div class="sg"><div>${L('اسم وتوقيع البائع', 'Prepared By')}</div><div class="ln"></div></div><div class="sg"><div>${L('اسم وتوقيع العميل', 'Authenticated By')}</div><div class="ln"></div></div></td>
-      <td class="tots"><table>
+      <td class="tots pr"><table>
         <tr><td>${L('المجموع', 'Total')}</td><td class="n">${fmtNum(num(sub) + num(disc))}</td></tr>
         <tr><td>${L('الخصم', 'Discount')}</td><td class="n">${fmtNum(disc)}</td></tr>
         <tr><td>${L('الصافي', 'Net')}</td><td class="n">${fmtNum(sub)}</td></tr>
         <tr><td>${L('الضريبة', 'VAT')}</td><td class="n">${fmtNum(tax)}</td></tr>
         <tr class="due"><td>${L('المطلوب', 'Net Due')}</td><td class="n">${fmtNum(total)}</td></tr></table></td></tr>
-      <tr><td colspan="2" class="words">${esc(amountToWords(total))}</td></tr></table>
+      <tr class="pr"><td colspan="2" class="words">${esc(amountToWords(total))}</td></tr></table>
     ${notes ? `<div class="bl-note"><b>ملاحظات / Notes:</b> ${esc(notes)}</div>` : ''}
     ${cfg.invoice_terms ? `<div class="bl-note">- ${esc(cfg.invoice_terms)}</div>` : ''}${footer ? `<div class="bl-note">${esc(footer)}</div>` : ''}${stamp}
     <div class="bl-bottom" dir="ltr">${esc([c.address_en || c.address, c.city].filter(Boolean).join(' | '))}${c.mobile ? ` | Mobile: ${esc(c.mobile)}` : ''}${c.phone ? ` | Phone: ${esc(c.phone)}` : ''}<br>${c.website ? `Website: ${esc(c.website)}` : ''}${c.email ? ` | Email: ${esc(c.email)}` : ''}</div></div>`;

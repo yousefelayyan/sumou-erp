@@ -110,6 +110,60 @@ async function viewPayroll(v, ctx) {
   });
 }
 
+// صرف الرواتب: سند صرف واحد من الصندوق/البنك، أو شيك لكل موظف (المرحلة 91)
+async function payDialog(r, E, done) {
+  const [{ data: st, error }, accs] = await Promise.all([sb.rpc('payroll_pay_status', { p_run: r.id }), loadAccounts()]);
+  if (error) return toast(arError(error), 'err');
+  const rows = (st || []).filter(x => num(x.net) > 0).sort((a, b) => (E[a.employee_id]?.code || '').localeCompare(E[b.employee_id]?.code || '', 'en', { numeric: true }));
+  const cash = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type));
+  const unpaid = rows.filter(x => !x.paid);
+  const m = modal({ title: `💸 صرف رواتب ${r.period}`, size: 'lg', body: `<form id="pp">
+    <div class="grid cols-3">
+      <div class="field"><label>تاريخ الصرف</label><input type="date" name="date" value="${today()}"></div>
+      <div class="field"><label>طريقة الصرف</label><select name="method"><option value="account">💵 نقد / تحويل بنكي</option><option value="cheques">📑 شيك لكل موظف</option></select></div>
+      <div class="field" data-for="account"><label>من حساب</label><select name="account_id">${cash.map(a => `<option value="${a.id}">${esc(accLabel(a))}</option>`).join('') || '<option value="">— ما في حسابات صندوق/بنك —</option>'}</select></div>
+      <div class="field" data-for="cheques" style="display:none"><label>البنك</label><input name="bank_name"></div>
+      <div class="field" data-for="cheques" style="display:none"><label>أول رقم شيك</label><input name="first_no" dir="ltr" placeholder="مثلاً 100231"></div>
+      <div class="field" data-for="cheques" style="display:none"><label>تاريخ الاستحقاق</label><input type="date" name="due_date" value="${today()}"></div>
+    </div>
+    <div class="table-wrap"><table class="t"><thead><tr><th style="width:30px"><input type="checkbox" id="pp-all" checked></th><th>الموظف</th><th>صافي الراتب</th><th>الحالة</th><th data-for="cheques" style="display:none">رقم الشيك</th></tr></thead><tbody>
+      ${rows.map(x => `<tr><td>${x.paid ? '' : `<input type="checkbox" data-e="${x.employee_id}" checked>`}</td><td>${esc(E[x.employee_id]?.code || '')} — ${esc(E[x.employee_id]?.name || '')}</td>
+        <td class="n">${fmtNum(x.net)}</td><td>${x.paid ? `<span class="badge ok">انصرف — سند ${esc(x.doc_code || '')}${x.entry_status === 'draft' ? ' (مسودة)' : ''}${x.cheque_no ? ' · شيك ' + esc(x.cheque_no) : ''}</span>` : '<span class="badge warn">ما انصرف</span>'}</td>
+        <td data-for="cheques" style="display:none">${x.paid ? '' : `<input class="cell" dir="ltr" data-cq="${x.employee_id}">`}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">ما في رواتب</td></tr>'}</tbody>
+      <tfoot><tr class="tot"><td></td><td>المختار</td><td class="n" id="pp-tot"></td><td colspan="2"></td></tr></tfoot></table></div>
+    <p class="muted" style="font-size:12.5px">بينعمل سند صرف واحد: الصندوق/البنك (أو الشيكات الصادرة) دائن، و«الرواتب المستحقة» مدين لكل موظف. بالشيكات بينضاف كل شيك لمحفظة الشيكات الصادرة.</p></form>`,
+    foot: unpaid.length ? '<button class="btn primary" data-go>💸 صرف</button><button class="btn" data-close>إلغاء</button>' : '<button class="btn" data-close>سكّر</button>' });
+  const f = m.el.querySelector('#pp');
+  const sel = () => [...f.querySelectorAll('[data-e]:checked')].map(x => x.dataset.e);
+  const tot = () => { const s2 = new Set(sel()); m.el.querySelector('#pp-tot').textContent = fmtNum(rows.filter(x => s2.has(x.employee_id)).reduce((t, x) => t + num(x.net), 0)); };
+  const showMeth = () => { const c = f.method.value === 'cheques'; f.querySelectorAll('[data-for]').forEach(x => x.style.display = (x.dataset.for === 'cheques') === c ? '' : 'none'); };
+  f.method.onchange = showMeth;
+  f.first_no.oninput = () => {   // ترقيم الشيكات ورا بعض من أول رقم
+    const m0 = f.first_no.value.trim().match(/^(.*?)(\d+)$/); if (!m0) return;
+    let n = BigInt(m0[2]); const w = m0[2].length;
+    f.querySelectorAll('[data-cq]').forEach(i => { if (!f.querySelector(`[data-e="${i.dataset.cq}"]`)?.checked) return; i.value = m0[1] + String(n).padStart(w, '0'); n++; });
+  };
+  m.el.querySelector('#pp-all')?.addEventListener('change', (e) => { f.querySelectorAll('[data-e]').forEach(x => x.checked = e.target.checked); tot(); });
+  f.addEventListener('change', (e) => { if (e.target.dataset.e) tot(); });
+  tot();
+  m.el.querySelector('[data-go]')?.addEventListener('click', async (e) => {
+    const emps = sel(); if (!emps.length) return toast('اختار موظف واحد على الأقل', 'err');
+    const meth = f.method.value;
+    const p = { date: f.date.value, method: meth, employees: emps };
+    if (meth === 'account') { if (!f.account_id.value) return toast('اختار حساب الصندوق أو البنك', 'err'); p.account_id = f.account_id.value; }
+    else {
+      p.bank_name = f.bank_name.value.trim();
+      p.cheques = emps.map(id => ({ employee_id: id, cheque_no: (f.querySelector(`[data-cq="${id}"]`)?.value || '').trim(), due_date: f.due_date.value }));
+      const miss = p.cheques.find(c => !c.cheque_no); if (miss) return toast(`اكتب رقم الشيك لـ ${E[miss.employee_id]?.name || ''}`, 'err');
+    }
+    if (!(await confirmBox(`صرف رواتب ${emps.length} موظف بمجموع ${m.el.querySelector('#pp-tot').textContent}؟`))) return;
+    e.target.disabled = true;
+    const { error: er } = await sb.rpc('payroll_pay', { p_run: r.id, p });
+    if (er) { e.target.disabled = false; return toast(arError(er), 'err'); }
+    m.close(); toast('انعمل سند صرف الرواتب', 'ok'); done();
+  });
+}
+
 async function payrollRun(v, ctx, id) {
   const [{ data: r, error }, ln, emps] = await Promise.all([sb.from('payroll_runs').select('*').eq('id', id).single(),
     sb.from('payroll_lines').select('*').eq('run_id', id), sb.from('employees').select('*').eq('company_id', S.company.id)]);
@@ -125,6 +179,7 @@ async function payrollRun(v, ctx, id) {
       ${ed ? '<button class="btn" id="refill">🔄 إعادة تعبئة من الموظفين</button><button class="btn" id="ss">🧮 إعادة حساب الضمان</button>' : ''}
       <button class="btn" id="prn">🖨️ كشف الرواتب</button><button class="btn" id="slips">🧾 قسائم الرواتب</button><button class="btn" id="ssr">🛡️ كشف الضمان</button><button class="btn" id="csv">⬇️ Excel</button>
       ${ed && can('payroll', 'post') ? '<button class="btn primary" id="post">✅ ترحيل</button>' : ''}
+      ${r.status === 'posted' && can('payroll', 'post') && can('payment_vouchers', 'add') ? '<button class="btn primary" id="pay">💸 صرف الرواتب</button>' : ''}
       ${r.status === 'posted' && can('payroll', 'post') ? '<button class="btn danger" id="cancel">إلغاء المسيّر</button>' : ''}
       ${r.status === 'draft' && can('payroll', 'edit') ? '<button class="btn danger" id="del">حذف</button>' : ''}</div>
     ${ed ? '<p class="muted" style="font-size:13px">عدّل الأرقام بالجدول مباشرة وبتنحفظ لحالها. «صافي الراتب» بينحسب لحاله.</p>' : ''}
@@ -144,6 +199,7 @@ async function payrollRun(v, ctx, id) {
   v.querySelector('#refill')?.addEventListener('click', async () => { if (!(await confirmBox('إعادة التعبئة بتمسح تعديلاتك على هالمسيّر. متأكد؟'))) return; const x = await sb.rpc('payroll_fill', { p_run: id }); if (x.error) return toast(arError(x.error), 'err'); rerender(); });
   v.querySelector('#ss')?.addEventListener('click', async () => { const x = await sb.rpc('payroll_recalc_ss', { p_run: id }); if (x.error) return toast(arError(x.error), 'err'); rerender(); });
   v.querySelector('#post')?.addEventListener('click', async () => { if (!(await confirmBox(`ترحيل رواتب ${r.period}؟ صافي الرواتب ${fmtNum(tot('net'))}`))) return; const x = await sb.rpc('post_payroll', { p_run: id }); if (x.error) return toast(arError(x.error), 'err'); toast('انرحّلت الرواتب وانعمل القيد', 'ok'); rerender(); });
+  v.querySelector('#pay')?.addEventListener('click', () => payDialog(r, E, rerender));
   v.querySelector('#cancel')?.addEventListener('click', async () => { const d = prompt('تاريخ قيد الإلغاء (YYYY-MM-DD):', today()); if (!d) return; const x = await sb.rpc('cancel_payroll', { p_run: id, p_date: d }); if (x.error) return toast(arError(x.error), 'err'); toast('انلغى المسيّر بقيد عكسي', 'ok'); rerender(); });
   v.querySelector('#del')?.addEventListener('click', async () => { if (!(await confirmBox('حذف المسيّر؟'))) return; const x = await sb.from('payroll_runs').delete().eq('id', id); if (x.error) return toast(arError(x.error), 'err'); location.hash = '#/payroll'; });
   v.querySelector('#csv').onclick = () => downloadCSV(`رواتب ${r.period}.csv`, [['الرقم', 'الموظف', ...cols.map(c => c[1]), 'الإجمالي', 'ضمان المنشأة', 'الصافي', 'البنك', 'IBAN']]

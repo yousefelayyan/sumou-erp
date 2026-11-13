@@ -38,6 +38,54 @@ export function sendWhatsApp(opts) {
   logMessage({ ...opts, channel: 'whatsapp' });
 }
 
+// بوابة الإيميل (المرحلة 90)
+export async function emailGateway() {
+  const { data } = await sb.rpc('email_config_get', { p_company: S.company.id });
+  return data || {};
+}
+export const partyEmails = (p) => [p?.email, p?.email2, p?.email3].map(x => String(x || '').trim()).filter(Boolean);
+// قالب HTML بسيط للإيميل (عربي، بستايل داخلي عشان برامج الإيميل)
+export function emailWrap(title, inner) {
+  const c = S.company || {};
+  return `<div dir="rtl" style="font-family:Tahoma,Arial,sans-serif;font-size:14px;color:#222;max-width:760px;margin:auto">
+    <div style="border-bottom:3px solid #5b3fa8;padding:10px 0;margin-bottom:12px"><b style="font-size:18px">${esc(c.name || '')}</b>
+      ${c.phone || c.address ? `<div style="color:#666;font-size:12px">${esc([c.address, c.phone].filter(Boolean).join(' — '))}</div>` : ''}</div>
+    <h2 style="font-size:17px;margin:0 0 10px">${esc(title)}</h2>${inner}
+    <p style="color:#888;font-size:12px;margin-top:18px">انبعتت هالرسالة من برنامج السمو ERP.</p></div>`;
+}
+export const emailTable = (head, rows, foot = '') => `<table style="border-collapse:collapse;width:100%;font-size:13px">
+  <thead><tr>${head.map(h => `<th style="background:#f1edf9;border:1px solid #ddd;padding:6px;text-align:right">${esc(h)}</th>`).join('')}</tr></thead>
+  <tbody>${rows.map(r => `<tr>${r.map(x => `<td style="border:1px solid #ddd;padding:5px 6px">${x}</td>`).join('')}</tr>`).join('')}</tbody>${foot}</table>`;
+
+// نافذة الإرسال: بتختار الإيميلات والعنوان؛ بدون بوابة بيفتح برنامج الإيميل على الجهاز
+export async function emailDialog({ party = null, subject = '', html = '', text = '', kind = 'other', ref_id = null }) {
+  const gw = await emailGateway().catch(() => ({}));
+  const list = partyEmails(party), on = gw.enabled && gw.has_key && gw.from_email;
+  const m = modal({ title: '📧 إرسال بالإيميل', size: 'sm', body: `<form id="em-f">
+    ${list.length ? `<div class="field"><label>إلى</label>${list.map((e, i) => `<label class="check"><input type="checkbox" name="to${i}" value="${esc(e)}" checked> <span dir="ltr">${esc(e)}</span></label>`).join('')}</div>`
+      : '<div class="notice">ما في إيميل ببطاقة الطرف. اكتبه تحت (وبتقدر تحفظه ببطاقته: لحد 3 إيميلات).</div>'}
+    <div class="field"><label>إيميل إضافي (اختياري)</label><input name="extra" type="email" dir="ltr" placeholder="name@example.com"></div>
+    <div class="field"><label>العنوان</label><input name="subject" value="${esc(subject)}"></div>
+    ${on ? `<p class="muted" style="font-size:12.5px">بينبعت من <span dir="ltr">${esc(gw.from_email)}</span>${gw.test_mode ? ' — <b>وضع التجربة:</b> بيروح لإيميل التجربة بس' : ''}.</p>`
+      : '<p class="muted" style="font-size:12.5px">بوابة الإيميل مش مفعّلة، فرح ينفتح برنامج الإيميل على جهازك بنص مختصر. لتفعيل الإرسال المباشر: التسويق ← الرسائل ← 📧 بوابة الإيميل.</p>'}
+    </form>`, foot: `<button class="btn primary" data-go>${on ? '📤 إرسال' : '✉️ فتح برنامج الإيميل'}</button><button class="btn" data-close>إلغاء</button>` });
+  m.el.querySelector('[data-go]').onclick = async (e) => {
+    const f = m.el.querySelector('#em-f'), to = [...f.querySelectorAll('input[type=checkbox]:checked')].map(x => x.value);
+    const ex = f.extra.value.trim(); if (ex) to.push(ex);
+    if (!to.length) return toast('اختار أو اكتب إيميل واحد على الأقل', 'err');
+    const subj = f.subject.value.trim() || subject;
+    if (!on) {
+      location.href = `mailto:${to.map(encodeURIComponent).join(',')}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(text.slice(0, 1800))}`;
+      logMessage({ party_id: party?.id || null, phone: to.join(', '), channel: 'email', kind, ref_id, body: subj + '\n' + text });
+      return m.close();
+    }
+    e.target.disabled = true;
+    const { error } = await sb.rpc('email_send', { p_company: S.company.id, p_to: to, p_subject: subj, p_html: html, p_party: party?.id || null, p_kind: kind, p_ref: ref_id, p_campaign: null });
+    if (error) { e.target.disabled = false; return toast(arError(error), 'err'); }
+    m.close(); toast('انبعت الإيميل — حالته بتبيّن بسجل الرسائل', 'ok');
+  };
+}
+
 // بوابة الرسائل القصيرة (المرحلة 73)
 export async function smsGateway() {
   const { data } = await sb.rpc('sms_config_get', { p_company: S.company.id });
@@ -172,6 +220,52 @@ async function gatewayTab(v, head) {
   });
 }
 
+async function emailTab(v, head) {
+  const gw = await emailGateway(), ed = can('companies', 'edit');
+  const dis = ed ? '' : 'disabled';
+  v.innerHTML = `${head}<div class="card" style="max-width:860px">
+    <h3 style="margin-top:0">📧 بوابة الإيميل</h3>
+    <p class="muted" style="margin-top:0">الإرسال بيصير من السيرفر عن طريق مزوّد إيميل (Resend أو Brevo). بتعمل حساب عندهم، وبتوثّق دومين المكتب، وبتاخذ «مفتاح API» وبتلصقه هون.
+      المفتاح بينحفظ بقاعدة البيانات وما بيرجع يطلع على أي شاشة. الموظف اللي ما إله صلاحية التسويق بيبعت بس كشف أو فاتورة أو دفعة لإيميلات الطرف نفسه.</p>
+    ${gw.trial ? '<div class="notice">بوابة الإيميل مش متاحة بالنسخة التجريبية.</div>' : ''}
+    ${gw.pg_net === false ? '<div class="notice">إضافة pg_net مش مفعّلة بقاعدة البيانات، فالإرسال ما رح يشتغل لحد ما تتفعّل.</div>' : ''}
+    <form id="eg"><div class="grid cols-2">
+      <div class="field"><label>المزوّد</label><select name="provider" ${dis}><option value="resend" ${gw.provider !== 'brevo' ? 'selected' : ''}>Resend</option><option value="brevo" ${gw.provider === 'brevo' ? 'selected' : ''}>Brevo</option></select></div>
+      <div class="field"><label>مفتاح API ${gw.has_key ? `<span class="badge ok">محفوظ ${esc(gw.key_hint || '')}</span>` : '<span class="badge warn">مش محفوظ</span>'}</label>
+        <input type="password" name="api_key" dir="ltr" autocomplete="off" placeholder="${gw.has_key ? 'فاضي = بيضل المحفوظ' : 're_… أو xkeysib-…'}" ${dis}></div>
+      <div class="field"><label>إيميل المرسل</label><input name="from_email" type="email" dir="ltr" value="${esc(gw.from_email || '')}" placeholder="office@yourdomain.jo" ${dis}></div>
+      <div class="field"><label>اسم المرسل</label><input name="from_name" value="${esc(gw.from_name || S.company.name || '')}" ${dis}></div>
+      <div class="field"><label>إيميل الرد (اختياري)</label><input name="reply_to" type="email" dir="ltr" value="${esc(gw.reply_to || '')}" ${dis}></div>
+      <div class="field"><label>حد الإيميلات باليوم</label><input name="daily_limit" type="number" min="1" max="10000" value="${gw.daily_limit || 300}" ${dis}><small class="muted">انبعت اليوم: ${gw.sent_today || 0}</small></div>
+      <div class="field"><label><input type="checkbox" name="enabled" ${gw.enabled ? 'checked' : ''} ${dis}> تفعيل الإرسال بالبوابة</label></div>
+      <div class="field"><label><input type="checkbox" name="test_mode" ${gw.test_mode !== false ? 'checked' : ''} ${dis}> وضع التجربة: كل الإيميلات بتروح لإيميل التجربة بس</label></div>
+      <div class="field"><label>إيميل التجربة</label><input name="test_email" type="email" dir="ltr" value="${esc(gw.test_email || '')}" ${dis}></div>
+    </div></form>
+    ${ed ? `<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="eg-save">💾 حفظ</button><button class="btn" id="eg-test">📤 إيميل تجربة</button>${gw.has_key ? '<button class="btn danger" id="eg-clear">مسح المفتاح</button>' : ''}</div>` : '<p class="muted">التعديل لمين إله صلاحية تعديل الشركات.</p>'}
+    <p class="muted" style="font-size:12.5px">ابدأ بوضع التجربة وتأكد إنه إيميل التجربة وصل، وبعدها شيل علامة التجربة.</p></div>`;
+  const f = v.querySelector('#eg');
+  const payload = () => ({ provider: f.provider.value, api_key: f.api_key.value.trim() || null, from_email: f.from_email.value.trim(), from_name: f.from_name.value.trim(),
+    reply_to: f.reply_to.value.trim(), enabled: f.enabled.checked, test_mode: f.test_mode.checked, test_email: f.test_email.value.trim(),
+    daily_limit: Math.max(1, Math.min(10000, parseInt(f.daily_limit.value) || 300)) });
+  v.querySelector('#eg-save')?.addEventListener('click', async () => {
+    const { error } = await sb.rpc('email_config_save', { p_company: S.company.id, p: payload() });
+    if (error) return toast(arError(error), 'err');
+    toast('انحفظ إعداد بوابة الإيميل', 'ok'); emailTab(v, head);
+  });
+  v.querySelector('#eg-test')?.addEventListener('click', async () => {
+    const t = f.test_email.value.trim(); if (!t) return toast('اكتب إيميل التجربة واحفظ أول', 'err');
+    const { error } = await sb.rpc('email_send', { p_company: S.company.id, p_to: [t], p_subject: 'إيميل تجربة من ' + S.company.name,
+      p_html: emailWrap('إيميل تجربة', '<p>إذا وصلك هالإيميل، فبوابة الإيميل شغّالة ✅</p>'), p_party: null, p_kind: 'other', p_ref: null, p_campaign: null });
+    if (error) return toast(arError(error), 'err');
+    toast('انبعت إيميل التجربة — شوف بريدك وسجل الرسائل', 'ok');
+  });
+  v.querySelector('#eg-clear')?.addEventListener('click', async () => {
+    if (!(await confirmBox('مسح مفتاح المزوّد ووقف الإرسال؟'))) return;
+    const { error } = await sb.rpc('email_config_save', { p_company: S.company.id, p: { ...payload(), api_key: null, clear_key: true } });
+    if (error) return toast(arError(error), 'err'); emailTab(v, head);
+  });
+}
+
 async function templatesTab(v, head) {
   const tpl = await msgTemplates(); const ed = can('companies', 'edit');
   const L = { invoice: '🧾 الفاتورة', statement: '📄 كشف الحساب / الرصيد', payment: '💵 استلام دفعة', reminder: '⏰ تذكير بالرصيد المستحق', campaign: '📢 حملة / عرض' };
@@ -192,10 +286,11 @@ async function viewMessages(v) {
   if (!can('marketing', 'view')) return void (v.innerHTML = '<div class="notice">ما عندك صلاحية على التسويق</div>');
   const t = new URLSearchParams(location.hash.split('?')[1] || '').get('t') || 'campaign';
   const head = `<div class="page-head"><h2>💬 الرسائل والواتساب</h2></div>
-    <div class="tabs" style="margin-bottom:10px">${[['campaign', '📢 حملة / تذكير'], ['log', '📜 سجل الرسائل'], ['templates', '📝 النصوص الجاهزة'], ['gateway', '📡 بوابة الرسائل']].map(([k, l]) => `<a class="tab ${t === k ? 'active' : ''}" href="#/messages?t=${k}">${l}</a>`).join('')}</div>`;
+    <div class="tabs" style="margin-bottom:10px">${[['campaign', '📢 حملة / تذكير'], ['log', '📜 سجل الرسائل'], ['templates', '📝 النصوص الجاهزة'], ['gateway', '📡 بوابة الرسائل'], ['email', '📧 بوابة الإيميل']].map(([k, l]) => `<a class="tab ${t === k ? 'active' : ''}" href="#/messages?t=${k}">${l}</a>`).join('')}</div>`;
   if (t === 'log') return logTab(v, head);
   if (t === 'templates') return templatesTab(v, head);
   if (t === 'gateway') return gatewayTab(v, head);
+  if (t === 'email') return emailTab(v, head);
   return campaignTab(v, head);
 }
 

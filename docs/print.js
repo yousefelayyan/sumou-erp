@@ -102,16 +102,25 @@ function css(cfg, { landscape, thermal, paper }) {
 // html ممكن يكون نص أو دالة (cfg, {thermal}) => نص. kind بيحدد التواقيع وحجم الورق (invoice بياخذ ورق الفواتير).
 // شريط فوق نافذة الطباعة (ما بيطلع بالورق): رجوع للبرنامج + طباعة.
 // على الآيباد والتطبيق المثبّت النافذة بتفتح على كامل الشاشة وما في زر إغلاق.
-export function printBarHTML() {
-  const app = location.origin + location.pathname;
-  return `<style>.sumou-bar{position:sticky;top:0;z-index:99;display:flex;gap:10px;justify-content:center;padding:10px;background:#f3eefa;border-bottom:1px solid #ddd;margin:-10px -10px 12px}
-    .sumou-bar button{font:700 16px Tajawal,Tahoma,Arial;padding:10px 22px;border-radius:10px;border:1px solid #5b2a86;background:#fff;color:#5b2a86;cursor:pointer}
-    .sumou-bar button.p{background:#5b2a86;color:#fff}@media print{.sumou-bar{display:none!important}}</style>
+// شريط نافذة الطباعة + «النموذج»: عادي / بدون ترويسة (ورق مطبوع) / بدون أسعار (سند تسليم) — بيتذكّر لكل نوع مستند
+//  الأعمدة والجداول اللي فيها أسعار عليها كلاس pr، والعنوان اللي بيتغيّر بدون أسعار عليه data-np
+export function printBarHTML(kind = '') {
+  const app = location.origin + location.pathname, key = 'sumou.printvar.' + (kind || 'doc');
+  return `<style>.sumou-bar{position:sticky;top:0;z-index:99;display:flex;gap:10px;justify-content:center;align-items:center;flex-wrap:wrap;padding:10px;background:#f3eefa;border-bottom:1px solid #ddd;margin:-10px -10px 12px}
+    .sumou-bar button,.sumou-bar select{font:700 16px Tajawal,Tahoma,Arial;padding:10px 18px;border-radius:10px;border:1px solid #5b2a86;background:#fff;color:#5b2a86;cursor:pointer}
+    .sumou-bar button.p{background:#5b2a86;color:#fff}@media print{.sumou-bar{display:none!important}}
+    body.v-nohead .head,body.v-nohead .wm,body.v-nohead .note-top,body.v-nohead .bl-head,body.v-nohead .bl-bottom,body.v-nohead .foot-text{visibility:hidden}
+    body.v-noprice .pr{display:none!important}</style>
   <div class="sumou-bar"><button type="button" onclick="(function(){window.close();setTimeout(function(){if(history.length>1)history.back();else location.href=${JSON.stringify(app).replace(/"/g, '&quot;')};},300)})()">→ رجوع للبرنامج</button>
-  <button type="button" class="p" onclick="window.print()">🖨️ طباعة</button></div>`;
+  <select id="sumou-var" title="النموذج" onchange="(function(v){var b=document.body;b.classList.toggle('v-nohead',v==='nohead'||v==='both');b.classList.toggle('v-noprice',v==='noprice'||v==='both');
+    document.querySelectorAll('[data-np]').forEach(function(t){if(!t.dataset.org)t.dataset.org=t.textContent;t.textContent=(v==='noprice'||v==='both')?t.dataset.np:t.dataset.org;});
+    try{localStorage.setItem('${key}',v)}catch(e){}})(this.value)">
+    <option value="">📄 نموذج عادي</option><option value="nohead">🧾 بدون ترويسة (ورق مطبوع)</option><option value="noprice">📦 بدون أسعار (سند تسليم)</option><option value="both">بدون ترويسة وبدون أسعار</option></select>
+  <button type="button" class="p" onclick="window.print()">🖨️ طباعة</button></div>
+  <script>document.addEventListener('DOMContentLoaded',function(){try{var v=localStorage.getItem('${key}')||'';if(v){var s=document.getElementById('sumou-var');s.value=v;s.onchange();}}catch(e){}});<\/script>`;
 }
 
-export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null, branch = null, copies = 1, win = null } = {}) {
+export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null, branch = null, copies = 1, win = null, npTitle = '' } = {}) {
   const w = preview || win || window.open('', '_blank');
   if (!w) { alert('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهالموقع.'); return; }
   if (!preview) { w.document.write('<p dir="rtl" style="font-family:sans-serif;padding:20px">جاري تحضير الطباعة…</p>'); }
@@ -128,7 +137,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
       const d0 = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(t0)}</title>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
   <style>${css(cfg, { landscape, thermal, paper: paper === 'A5' ? 'A5' : 'A4' })}${body.css || ''}</style></head><body>
-  ${preview ? '' : printBarHTML()}${body.html}
+  ${preview ? '' : printBarHTML(kind)}${body.html}
   ${preview ? '' : '<script>window.onload = () => setTimeout(() => window.print(), 450);<\/script>'}</body></html>`;
       w.document.open(); w.document.write(d0); w.document.close(); translateDoc(w.document); return;
     }
@@ -138,7 +147,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
     const doc = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(title)}</title>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
   <style>${css(cfg, { landscape, thermal, paper: paper === 'A5' ? 'A5' : 'A4' })}</style></head><body>
-  ${preview ? '' : printBarHTML()}
+  ${preview ? '' : printBarHTML(kind)}
   ${Array.from({ length: Math.min(Math.max(+copies || 1, 1), 5) }, (_, ci, arr) => `${ci ? '<div style="page-break-before:always"></div>' : ''}${(+copies || 1) > 1 ? `<div style="text-align:left;font-size:11px;color:#666">نسخة ${ci + 1} من ${Math.min(+copies, 5)}</div>` : ''}
   ${cfg.watermark && !thermal ? `<div class="wm"><div>${esc(c.name || '')}<br>${esc(fy)}</div></div>` : ''}
   <div class="head">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}
@@ -146,7 +155,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
       ${cfg.show_tax_numbers && (c.income_tax_no || c.sales_tax_no) ? `<div>${c.income_tax_no ? 'الرقم الضريبي: ' + esc(c.income_tax_no) : ''}${c.income_tax_no && c.sales_tax_no ? ' | ' : ''}${c.sales_tax_no ? 'رقم ضريبة المبيعات: ' + esc(c.sales_tax_no) : ''}</div>` : ''}</div>
     <div class="meta2">${esc(fy)}</div></div>
   ${cfg.header_note ? `<div class="note-top">${esc(cfg.header_note)}</div>` : ''}
-  <h2 class="title">${esc(title)}</h2>${subtitle ? `<div class="sub">${esc(subtitle)}</div>` : ''}
+  <h2 class="title"${npTitle ? ` data-np="${esc(npTitle)}"` : ''}>${esc(title)}</h2>${subtitle ? `<div class="sub">${esc(subtitle)}</div>` : ''}
   ${body}
   ${sigs.length ? `<div class="signs">${sigs.map(x => `<div>${esc(x)}</div>`).join('')}</div>` : ''}
   ${cfg.footer_text ? `<div class="foot-text">${esc(cfg.footer_text)}</div>` : ''}

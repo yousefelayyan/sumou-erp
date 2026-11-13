@@ -7,6 +7,7 @@ import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, masterCode } from './numbering.js';
+import { emailDialog, emailWrap, emailTable } from './messages.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, ENTRY_TYPES, downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
@@ -139,6 +140,8 @@ async function partyForm(type, p, accs, ctx, cats = []) {
         <div class="field"><label>الموبايل</label><input name="mobile" value="${esc(p.mobile)}" dir="ltr"></div>
         <div class="field"><label>الهاتف</label><input name="phone" value="${esc(p.phone)}" dir="ltr"></div>
         <div class="field"><label>الإيميل</label><input name="email" type="email" value="${esc(p.email)}" dir="ltr"></div>
+        <div class="field"><label>إيميل ثاني</label><input name="email2" type="email" value="${esc(p.email2 || '')}" dir="ltr"></div>
+        <div class="field"><label>إيميل ثالث</label><input name="email3" type="email" value="${esc(p.email3 || '')}" dir="ltr"></div>
         <div class="field"><label>المدينة</label><input name="city" list="lk-city" value="${esc(p.city)}">${lookupDatalistSync('lk-city', ['region', 'country'])}</div></div>
         <div class="field"><label>العنوان</label><input name="address" value="${esc(p.address)}"></div></div>
       <div class="tab-panel" data-tab="f"><div class="grid cols-2">
@@ -174,7 +177,7 @@ async function partyForm(type, p, accs, ctx, cats = []) {
     if ('loyalty_type_id' in d) d.loyalty_type_id = d.loyalty_type_id || null; if ('loyalty_card_no' in d) d.loyalty_card_no = d.loyalty_card_no || null;
     if (type === 'customer') STOPS.forEach(([k]) => d[k] = !!d[k]);
     d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null; if ('price_list_id' in d) d.price_list_id = d.price_list_id || null;
-    ['route_id', 'payment_method_id', 'department_id', 'currency', 'reference', 'name2'].forEach(k => { if (k in d) d[k] = String(d[k] || '').trim() || null; });
+    ['route_id', 'payment_method_id', 'department_id', 'currency', 'reference', 'name2', 'email2', 'email3'].forEach(k => { if (k in d) d[k] = String(d[k] || '').trim() || null; });
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
     else if (!d.code) delete d.code;
     const res = isNew ? await sb.from('parties').insert(d) : await sb.from('parties').update(d).eq('id', p.id);
@@ -197,7 +200,7 @@ async function viewPartyLedger(v) {
       <div class="field"><label>من تاريخ</label><input type="date" id="f-from" value="${S.fy.start_date}"></div>
       <div class="field"><label>إلى تاريخ</label><input type="date" id="f-to" value="${S.fy.end_date}"></div>
       <div class="field" style="justify-content:flex-end"><button class="btn primary" id="f-run">عرض التقرير</button></div>
-      <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px"><button class="btn" id="f-print">🖨️ طباعة</button><button class="btn" id="f-csv">⬇️ Excel</button><button class="btn" id="f-wa" style="background:#25d366;color:#fff;border-color:#25d366">💬 واتساب</button></div>
+      <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px"><button class="btn" id="f-print">🖨️ طباعة</button><button class="btn" id="f-csv">⬇️ Excel</button><button class="btn" id="f-wa" style="background:#25d366;color:#fff;border-color:#25d366">💬 واتساب</button><button class="btn" id="f-mail">📧 إيميل</button></div>
     </div><div id="out"><div class="empty">اختار عميل أو مورد واضغط «عرض التقرير»</div></div>`;
   let last = null;
   const run = async () => {
@@ -242,6 +245,18 @@ async function viewPartyLedger(v) {
     if (ph.startsWith('00')) ph = ph.slice(2); else if (ph.startsWith('0')) ph = '962' + ph.slice(1); else if (ph.length === 9 && ph.startsWith('7')) ph = '962' + ph;
     window.open(`https://wa.me/${ph}?text=${encodeURIComponent(txt)}`, '_blank');
     if (!ph) toast('ما في رقم موبايل للطرف — اختار الرقم من الواتساب', '');
+  };
+  v.querySelector('#f-mail').onclick = () => {
+    if (!last) return toast('اعرض الكشف أول', 'err');
+    const p = last.p; let b = last.ob, td = 0, tc = 0;
+    const fB = (x) => `${fmtNum(Math.abs(x))} ${Math.abs(x) < 0.0005 ? '' : x > 0 ? 'مدين' : 'دائن'}`;
+    const rows = [[fmtDate(last.from), 'رصيد أول المدة', '', '', '', fB(b)]].concat(last.mv.map(m => { b += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit);
+      return [fmtDate(m.entry_date), esc(`${ENTRY_TYPES[m.entry_type].label} ${docNo(m)}`), esc(m.line_description || m.description || ''), num(m.debit) ? fmtNum(m.debit) : '', num(m.credit) ? fmtNum(m.credit) : '', fB(b)]; }));
+    const foot = `<tfoot><tr><td colspan="3" style="border:1px solid #ddd;padding:6px"><b>المجموع / الرصيد النهائي</b></td><td style="border:1px solid #ddd;padding:6px"><b>${fmtNum(td)}</b></td><td style="border:1px solid #ddd;padding:6px"><b>${fmtNum(tc)}</b></td><td style="border:1px solid #ddd;padding:6px"><b>${fB(b)}</b></td></tr></tfoot>`;
+    const html = emailWrap(`كشف حساب: ${p.name}`, `<p>من ${fmtDate(last.from)} إلى ${fmtDate(last.to)}</p>` + emailTable(['التاريخ', 'السند', 'البيان', 'مدين', 'دائن', 'الرصيد'], rows, foot)
+      + `<p style="margin-top:12px"><b>الرصيد النهائي: ${fB(b)} دينار</b></p><p>للاستفسار يرجى التواصل معنا. شكراً لكم.</p>`);
+    const text = `كشف حساب: ${p.name}\nمن ${fmtDate(last.from)} إلى ${fmtDate(last.to)}\nمجموع المدين: ${fmtNum(td)}\nمجموع الدائن: ${fmtNum(tc)}\nالرصيد النهائي: ${fB(b)} دينار\n\n${S.company.name}`;
+    emailDialog({ party: p, subject: `كشف حساب ${p.name} — ${S.company.name}`, html, text, kind: 'statement' });
   };
   if (pre) run();
 }
