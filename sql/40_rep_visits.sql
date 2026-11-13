@@ -58,11 +58,12 @@ begin
   if exists (select 1 from public.sales_visits where company_id = p_company and user_id = auth.uid() and status = 'open') then
     raise exception 'عندك زيارة مفتوحة، أنهيها أول';
   end if;
-  if p_lat is not null and (p_lat not between -90 and 90 or p_lng not between -180 and 180) then raise exception 'الموقع مش صحيح'; end if;
+  if (p_lat is null) <> (p_lng is null) or (p_lat is not null and (p_lat not between -90 and 90 or p_lng not between -180 and 180)) then raise exception 'الموقع مش صحيح'; end if;
   select sales_rep_id into rep from public.parties where id = p_party;
   insert into public.sales_visits (company_id, party_id, rep_id, start_lat, start_lng, purpose)
   values (p_company, p_party, rep, p_lat, p_lng, nullif(trim(p_purpose), '')) returning id into vid;
   return vid;
+exception when unique_violation then raise exception 'عندك زيارة مفتوحة، أنهيها أول';
 end $$;
 
 create or replace function public.visit_end(p_id uuid, p_lat numeric default null, p_lng numeric default null, p_notes text default null,
@@ -75,7 +76,7 @@ begin
   if not ((v.user_id = auth.uid() and public.can(v.company_id, 'rep_visits', 'add')) or public.can(v.company_id, 'rep_visits', 'edit')) then raise exception 'ما عندك صلاحية'; end if;
   if v.status <> 'open' then raise exception 'الزيارة منتهية'; end if;
   if coalesce(p_taxi, 0) < 0 or coalesce(p_parking, 0) < 0 or coalesce(p_taxi, 0) > 1000 or coalesce(p_parking, 0) > 1000 then raise exception 'المصاريف مش منطقية'; end if;
-  if p_lat is not null and (p_lat not between -90 and 90 or p_lng not between -180 and 180) then raise exception 'الموقع مش صحيح'; end if;
+  if (p_lat is null) <> (p_lng is null) or (p_lat is not null and (p_lat not between -90 and 90 or p_lng not between -180 and 180)) then raise exception 'الموقع مش صحيح'; end if;
   update public.sales_visits set ended_at = now(), end_lat = p_lat, end_lng = p_lng, notes = nullif(trim(p_notes), ''), outcome = nullif(trim(p_outcome), ''),
          taxi_fee = round(coalesce(p_taxi, 0), 3), parking_fee = round(coalesce(p_parking, 0), 3), status = 'closed' where id = p_id;
 end $$;
@@ -98,8 +99,9 @@ declare cid uuid := (p ->> 'company_id')::uuid; pa public.parties; k text := p -
   vid uuid := nullif(p ->> 'visit_id', '')::uuid; acc uuid := nullif(p ->> 'account_id', '')::uuid; amt numeric; fy uuid; eid uuid; c jsonb; chs uuid[] := '{}'; ch uuid; tot numeric := 0; posted boolean := false;
   prev text := current_setting('sumou.internal', true);
 begin
-  select * into pa from public.parties where id = nullif(p ->> 'party_id', '')::uuid and company_id = cid and party_type = 'customer';
+  select * into pa from public.parties where id = nullif(p ->> 'party_id', '')::uuid and company_id = cid and party_type = 'customer' and is_active;
   if pa.id is null then raise exception 'اختار العميل'; end if;
+  if not public.tenant_writable() then raise exception 'الاشتراك منتهي'; end if;
   if vid is not null and not exists (select 1 from public.sales_visits where id = vid and company_id = cid and party_id = pa.id and user_id = auth.uid()) then
     raise exception 'الزيارة مش لهالعميل';
   end if;
@@ -117,9 +119,11 @@ begin
     if pa.account_id is null then raise exception 'العميل ما إله حساب'; end if;
     select id into fy from public.fiscal_years where company_id = cid and d between start_date and end_date and not is_closed order by start_date desc limit 1;
     if fy is null then raise exception 'ما في سنة مالية مفتوحة بالتاريخ'; end if;
+    perform set_config('sumou.visit', public.internal_token(), true);
     insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, party_name, cash_account_id, status, visit_id)
     values (cid, fy, 'receipt', d, coalesce(nullif(trim(p ->> 'notes'), ''), 'دفعة من ' || pa.name) || case when k = 'transfer' then ' (تحويل)' else '' end,
             nullif(trim(p ->> 'reference'), ''), pa.name, acc, 'draft', vid) returning id into eid;
+    perform set_config('sumou.visit', '', true);
     insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, 1, acc, 'دفعة ' || pa.name, amt, 0);
     insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit, party_id) values (eid, 2, pa.account_id, 'دفعة', 0, amt, pa.id);
     if public.can(cid, 'receipt_vouchers', 'post') then perform public.post_entry(eid); posted := true; end if;
@@ -151,10 +155,10 @@ begin
   select v.user_id, count(*) filter (where v.status <> 'cancelled'), count(*) filter (where v.status = 'open'),
          round(coalesce(sum(extract(epoch from (coalesce(v.ended_at, now()) - v.started_at)) / 60) filter (where v.status = 'closed'), 0), 0),
          count(distinct v.party_id), sum(v.taxi_fee), sum(v.parking_fee),
-         coalesce((select sum(e.total) from public.journal_entries e where e.visit_id = any(array_agg(v.id)) and e.status = 'posted'), 0)
-         + coalesce((select sum(ch.amount) from public.cheques ch where ch.visit_id = any(array_agg(v.id)) and ch.status <> 'cancelled'), 0)
+         coalesce((select sum(e.total) from public.journal_entries e where e.visit_id = any(array_agg(v.id)) and e.status = 'posted' and e.reversed_by is null), 0)
+         + coalesce((select sum(ch.amount) from public.cheques ch where ch.visit_id = any(array_agg(v.id)) and ch.status not in ('cancelled', 'returned')), 0)
     from public.sales_visits v
-   where v.company_id = p_company and v.started_at::date between p_from and p_to
+   where v.company_id = p_company and (v.started_at at time zone 'Asia/Amman')::date between p_from and p_to
    group by v.user_id;
 end $$;
 
@@ -162,6 +166,33 @@ revoke execute on function public.visit_start(uuid, uuid, numeric, numeric, text
   public.visit_cancel(uuid), public.mobile_payment(jsonb), public.visits_report(uuid, date, date) from public, anon;
 grant execute on function public.visit_start(uuid, uuid, numeric, numeric, text), public.visit_end(uuid, numeric, numeric, text, text, numeric, numeric),
   public.visit_cancel(uuid), public.mobile_payment(jsonb), public.visits_report(uuid, date, date) to authenticated;
+
+-- visit_id على القيود والشيكات من النظام بس (من mobile_payment)، عشان ما حدا يربط دفعات مش إله بزيارته
+create or replace function public.ab_visit_link_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.is_internal() or coalesce(current_setting('sumou.visit', true), '') = public.internal_token() then return new; end if;
+  if tg_op = 'INSERT' then
+    if new.visit_id is not null then raise exception 'ربط الدفعة بزيارة من تطبيق المندوب بس'; end if;
+  elsif new.visit_id is distinct from old.visit_id then
+    raise exception 'ربط الدفعة بزيارة من تطبيق المندوب بس';
+  end if;
+  return new;
+end $$;
+drop trigger if exists ab_visit_link_guard on public.journal_entries;
+create trigger ab_visit_link_guard before insert or update of visit_id on public.journal_entries for each row execute function public.ab_visit_link_guard();
+drop trigger if exists ab_visit_link_guard on public.cheques;
+create trigger ab_visit_link_guard before insert or update of visit_id on public.cheques for each row execute function public.ab_visit_link_guard();
+
+-- صور الزيارات لمين إله شاشة الزيارات
+create or replace function public.attachment_visible(p_company uuid, p_entity text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select case p_entity when 'employee' then public.can(p_company, 'payroll', 'view')
+                       when 'payroll'  then public.can(p_company, 'payroll', 'view')
+                       when 'asset'    then public.can(p_company, 'fixed_assets', 'view')
+                       when 'visit'    then public.can(p_company, 'rep_visits', 'view')
+                       else public.has_company(p_company) end;
+$$;
 
 -- النسخ الاحتياطي: الزيارات بعد العملاء وقبل القيود والشيكات
 create or replace function public.backup_tables() returns table (ord int, tbl text, cond text, ordby text)
@@ -236,7 +267,7 @@ $$;
 create or replace function public.set_company_numbering(p_mode text, p_digits int) returns void
 language plpgsql security definer set search_path = public as $$
 begin
-  if not public.is_admin() then raise exception 'ترقيم الشركات لمدير النظام بس'; end if;
+  if not public.is_admin() or not public.tenant_writable() then raise exception 'ترقيم الشركات لمدير النظام بس'; end if;
   if p_mode not in ('auto', 'manual') or coalesce(p_digits, 0) not between 1 and 6 then raise exception 'إعداد مش صحيح'; end if;
   update public.tenants set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{company_code}', jsonb_build_object('mode', p_mode, 'digits', p_digits))
    where id = public.my_tenant();
@@ -255,7 +286,8 @@ begin
     end if;
     perform pg_advisory_xact_lock(hashtext('cocode:' || coalesce(new.tenant_id::text, '')));
     select coalesce(max(code::bigint), 0) into mx from public.companies where tenant_id is not distinct from new.tenant_id and code ~ '^\d{1,15}$';
-    new.code := lpad((mx + 1)::text, greatest(coalesce((cfg ->> 'digits')::int, 2), 1), '0');
+    new.code := (mx + 1)::text;
+    if length(new.code) < greatest(coalesce((cfg ->> 'digits')::int, 2), 1) then new.code := lpad(new.code, greatest(coalesce((cfg ->> 'digits')::int, 2), 1), '0'); end if;
   else
     new.code := nullif(trim(new.code), '');
     if new.code is null then raise exception 'رمز الشركة مطلوب (الترقيم يدوي)'; end if;

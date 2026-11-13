@@ -23,3 +23,19 @@ select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222'
 select count(*) as emp_sees from sales_visits;
 select * from visits_report(:'C', '2000-01-01', '2100-01-01');
 reset role;
+\echo == review fixes
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false);
+\echo == direct visit link on entry (expected ERROR)
+update journal_entries set visit_id = (select id from sales_visits limit 1) where id = (select id from journal_entries where visit_id is null and status='draft' limit 1);
+\echo == direct visit link on cheque (expected ERROR)
+update cheques set visit_id = (select id from sales_visits limit 1) where id = (select id from cheques where visit_id is null limit 1);
+\echo == half location (expected ERROR)
+select visit_start('c0000000-0000-0000-0000-000000000001', (select id from parties where party_type='customer' and is_active limit 1), 31.9, null);
+select count(*) as linked_entries from journal_entries where visit_id is not null;
+reset role;
+\echo == company code beyond digits (no duplicates)
+insert into tenants(id, code, name) values ('7e000000-0000-0000-0000-000000000009','tz9','T9') on conflict do nothing;
+update tenants set settings = '{"company_code":{"mode":"auto","digits":1}}' where id='7e000000-0000-0000-0000-000000000009';
+do $$ begin for i in 1..11 loop insert into companies(name, tenant_id) values ('x'||i, '7e000000-0000-0000-0000-000000000009'); end loop; end $$;
+select string_agg(code, ',' order by code::int) as codes from companies where tenant_id='7e000000-0000-0000-0000-000000000009';
+delete from companies where tenant_id='7e000000-0000-0000-0000-000000000009'; delete from tenants where id='7e000000-0000-0000-0000-000000000009';

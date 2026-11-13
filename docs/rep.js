@@ -51,8 +51,9 @@ async function viewRep(v, ctx) {
     body = `<a class="btn sm back" href="#/rep">→ رجوع</a><input class="search" id="s" placeholder="🔎 ابحث بالاسم أو الرمز أو الهاتف…"><div id="cl"></div>`;
   } else if (tab === 'visits' || tab === 'team') {
     if (tab === 'team' && !sup) return void (v.innerHTML = '<div class="notice">هالشاشة للمشرف</div>');
-    const from = q('from') || today().slice(0, 8) + '01', to = q('to') || today();
-    let qy = sb.from('sales_visits').select('*').eq('company_id', S.company.id).gte('started_at', from).lte('started_at', to + 'T23:59:59').order('started_at', { ascending: false }).limit(500);
+    const isD = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x || '');
+    const from = isD(q('from')) ? q('from') : today().slice(0, 8) + '01', to = isD(q('to')) ? q('to') : today();
+    let qy = sb.from('sales_visits').select('*').eq('company_id', S.company.id).gte('started_at', from + 'T00:00:00+03:00').lte('started_at', to + 'T23:59:59+03:00').order('started_at', { ascending: false }).limit(500);
     if (tab === 'visits') qy = qy.eq('user_id', S.session?.user?.id);
     const [vs, rep] = await Promise.all([qy, tab === 'team' ? sb.rpc('visits_report', { p_company: S.company.id, p_from: from, p_to: to }) : { data: null }]);
     const uids = [...new Set((vs.data || []).map(x => x.user_id).concat((rep.data || []).map(x => x.user_id)))];
@@ -67,9 +68,13 @@ async function viewRep(v, ctx) {
         <div class="acts">${x.start_lat != null ? `<a class="btn sm" target="_blank" rel="noopener" href="${mapLink(x.start_lat, x.start_lng)}">📍 موقع البداية</a>` : ''}${x.end_lat != null ? `<a class="btn sm" target="_blank" rel="noopener" href="${mapLink(x.end_lat, x.end_lng)}">📍 موقع النهاية</a>` : ''}
           <button class="btn sm" data-ph="${x.id}">📷 الصور</button>${sup && x.status === 'open' ? `<button class="btn sm danger" data-vx="${x.id}">إلغاء</button>` : ''}</div></div>`).join('') || '<div class="empty">ما في زيارات بهالفترة</div>'}`;
   } else if (tab === 'payments') {
-    const ents = await sb.from('journal_entries').select('id,entry_date,total,status,party_name,description,doc_code,entry_no,created_at').eq('company_id', S.company.id).eq('entry_type', 'receipt').eq('created_by', S.session?.user?.id).order('created_at', { ascending: false }).limit(50);
+    const [ents, chq] = await Promise.all([
+      sb.from('journal_entries').select('id,entry_date,total,status,party_name,description,doc_code,entry_no,created_at,journal_lines(debit)').eq('company_id', S.company.id).eq('entry_type', 'receipt').eq('created_by', S.session?.user?.id).order('created_at', { ascending: false }).limit(50),
+      sb.from('cheques').select('id,cheque_no,amount,due_date,status,created_at,party_id,visit_id').eq('company_id', S.company.id).eq('created_by', S.session?.user?.id).order('created_at', { ascending: false }).limit(50)]);
+    const entAmt = (e) => e.status === 'posted' ? num(e.total) : (e.journal_lines || []).reduce((a, l) => a + num(l.debit), 0);
+    const chqHTML = (chq.data || []).map(c => `<div class="cc"><div class="ctop"><b style="flex:1">🧾 شيك ${esc(c.cheque_no)} — ${esc(pBy[c.party_id]?.name || '')}</b><b>${fmtNum(c.amount)}</b></div><div class="muted" style="font-size:13px">استحقاق ${fmtDate(c.due_date)}</div></div>`).join('');
     body = `<a class="btn sm back" href="#/rep">→ رجوع</a> <button class="btn primary" id="newpay" style="margin-bottom:10px">➕ دفعة جديدة</button>
-      ${(ents.data || []).map(e => `<div class="cc"><div class="ctop"><b style="flex:1">${esc(e.party_name || '')}</b><b>${fmtNum(e.total)}</b></div><div class="muted" style="font-size:13px">${fmtDate(e.entry_date)} · ${esc(e.doc_code || e.entry_no || '')} · ${e.status === 'posted' ? 'مثبت' : 'قيد الانتظار'}</div></div>`).join('') || '<div class="empty">ما في دفعات مسجّلة منك</div>'}`;
+      ${chqHTML}${(ents.data || []).map(e => `<div class="cc"><div class="ctop"><b style="flex:1">${esc(e.party_name || '')}</b><b>${fmtNum(entAmt(e))}</b></div><div class="muted" style="font-size:13px">${fmtDate(e.entry_date)} · ${esc(e.doc_code || e.entry_no || '')} · ${e.status === 'posted' ? 'مثبت' : 'قيد الانتظار'}</div></div>`).join('') || '<div class="empty">ما في دفعات مسجّلة منك</div>'}`;
   }
   v.innerHTML = head + `<div class="rep"><div class="page-head"><h2>📱 تطبيق المندوب</h2></div>${visCard}${body}</div>`;
   if (ov) { timer = setInterval(() => { const t = document.getElementById('tm'); if (!t) return clearInterval(timer); t.textContent = dur(ov.started_at); }, 1000); }
