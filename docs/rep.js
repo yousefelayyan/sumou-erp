@@ -170,6 +170,7 @@ async function payForm(ctx, party, visit, cust) {
       <div class="tabs" id="kt"><div class="tab active" data-k="cash">💵 نقد</div><div class="tab" data-k="transfer">🏦 تحويل</div>${can('cheques', 'add') ? '<div class="tab" data-k="cheques">🧾 شيكات</div>' : ''}</div>
       <div id="kb"></div>
       <div class="grid cols-2"><div class="field"><label>التاريخ</label><input type="date" name="pay_date" value="${today()}"></div><div class="field"><label>المرجع</label><input name="reference"></div></div>
+      <div class="field" id="inv-f"><label>تسديد فاتورة (اختياري)</label><select name="invoice_id"><option value="">—</option></select></div>
       <div class="field"><label>الوصف</label><input name="notes"></div></form>${visit ? '<p class="muted" style="font-size:13px">الدفعة رح تنربط بالزيارة الجارية.</p>' : ''}`,
     foot: '<button class="btn primary" data-save>💾 حفظ الدفعة</button><button class="btn" data-close>إلغاء</button>' });
   const kb = m.el.querySelector('#kb');
@@ -194,6 +195,16 @@ async function payForm(ctx, party, visit, cust) {
     kb.onclick = (e) => { const r = e.target.closest('[data-rm]'); if (r) { chqs.splice(+r.dataset.rm, 1); drawK(); } };
   };
   drawK();
+  // فواتير العميل المفتوحة (للتسديد)
+  const loadInv = async (pid) => {
+    const sel = m.el.querySelector('[name=invoice_id]'); sel.innerHTML = '<option value="">—</option>';
+    if (!pid) return;
+    const { data, error } = await sb.rpc('party_open_invoices', { p_company: S.company.id, p_party: pid });
+    if (error) { m.el.querySelector('#inv-f').style.display = 'none'; return; }
+    sel.innerHTML += (data || []).filter(x => num(x.remaining) > 0).map(x => `<option value="${x.invoice_id}" data-rem="${x.remaining}">${esc(x.doc_code || String(x.inv_no))} — ${fmtDate(x.inv_date)} — متبقي ${fmtNum(x.remaining)}</option>`).join('');
+  };
+  loadInv(visit ? visit.party_id : party?.id);
+  m.el.querySelector('[name=party_id]')?.addEventListener('change', (e) => loadInv(e.target.value));
   m.el.querySelector('#kt').onclick = (e) => { const t = e.target.closest('[data-k]'); if (!t) return; kind = t.dataset.k; m.el.querySelectorAll('#kt .tab').forEach(x => x.classList.toggle('active', x === t)); drawK(); };
   m.el.querySelector('[data-save]').onclick = async (ev) => {
     const f = Object.fromEntries(new FormData(m.el.querySelector('#f')));
@@ -207,6 +218,11 @@ async function payForm(ctx, party, visit, cust) {
     const { data, error } = await sb.rpc('mobile_payment', { p });
     ev.target.disabled = false;
     if (error) return toast(arError(error), 'err');
+    if (f.invoice_id && data.posted && data.entry_id && kind !== 'cheques') {
+      const rem = num(m.el.querySelector(`[name=invoice_id] option[value="${f.invoice_id}"]`)?.dataset.rem);
+      const r = await sb.rpc('allocate_payment', { p_entry: data.entry_id, p_party: pid, p_items: [{ invoice_id: f.invoice_id, amount: Math.min(num(data.total), rem || num(data.total)) }] });
+      if (r.error) toast('الدفعة انحفظت، بس ما انربطت بالفاتورة: ' + arError(r.error), 'err');
+    }
     const pt = cust.find(x => x.id === pid);
     const msg = `${S.company.name}\nتم استلام دفعة من ${data.party}\nالمبلغ: ${fmtNum(data.total)} دينار${kind === 'cheques' ? ` (${chqs.length} شيك)` : ''}\nالتاريخ: ${fmtDate(f.pay_date)}\nشكراً لكم.`;
     const ok = modal({ title: '✅ تم حفظ الدفعة بنجاح', size: 'sm', body: `<p style="font-size:18px;text-align:center"><b>${fmtNum(data.total)}</b> دينار من <b>${esc(data.party)}</b></p>
