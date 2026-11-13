@@ -422,7 +422,8 @@ function coTabsHTML() {
       ${t.ids.length > 1 ? `<button type="button" class="co-x" data-close-tab="${id}" title="سكّر التبويب">×</button>` : ''}</div>`; }).join('')
     + `<button type="button" class="co-add" data-add-tab title="فتح شركة بتبويب جديد">＋</button>`;
 }
-async function activateCompany(id) {
+async function activateCompany(id, closing = false) {
+  if (closing) S.company = null;   // الشركة المسكّرة ما ترجع تنضاف للتبويبات
   const t = tabsLoad();
   if (S.company) t.hash[S.company.id] = location.hash || '#/home';
   if (!t.ids.includes(id)) t.ids.push(id);
@@ -479,7 +480,7 @@ async function closeCompanyTab(id) {
   if (posCart.length) return toast(`ما بتقدر تسكّر «${c?.name || ''}»: في فاتورة بنقطة البيع مش مكمّلة (${posCart.length} صنف). كمّلها أو فرّغها أول`, 'err');
   if (!(await confirmBox(`بدك تسكّر «${c?.name || ''}» وكل شاشاتها المفتوحة؟`))) return;
   const i = t.ids.indexOf(id); t.ids.splice(i, 1); delete t.hash[id]; if (t.pages) delete t.pages[id]; tabsSave(t);
-  if (id === S.company?.id) activateCompany(t.ids[Math.max(0, i - 1)]);
+  if (id === S.company?.id) activateCompany(t.ids[Math.max(0, i - 1)], true);
   else document.getElementById('co-tabs').innerHTML = coTabsHTML();
 }
 
