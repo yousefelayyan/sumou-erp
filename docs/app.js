@@ -1575,5 +1575,18 @@ sb.auth.onAuthStateChange((event, session) => {
   if (event === 'SIGNED_OUT') { Object.assign(S, { session: null, profile: null, companies: [], company: null }); renderAuth('login'); }
 });
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  const hadCtrl = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => {
+    r.update().catch(() => {});
+    setInterval(() => r.update().catch(() => {}), 10 * 60 * 1000);   // فحص نسخة جديدة كل 10 دقايق
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadCtrl || document.getElementById('upd-bar')) return;
+    const b = document.createElement('div'); b.id = 'upd-bar'; b.className = 'upd-bar no-print';
+    b.innerHTML = '🆕 نزلت نسخة جديدة من البرنامج <button type="button" class="btn sm primary">تحديث الآن</button>';
+    b.querySelector('button').onclick = async () => { if (hasUnsavedModal() && !(await confirmBox('في شي مفتوح ومش محفوظ. بدك تحدّث وتخسره؟'))) return; location.reload(); };
+    document.body.appendChild(b);
+  });
+}
 boot();

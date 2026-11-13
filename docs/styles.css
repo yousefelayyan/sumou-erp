@@ -413,3 +413,5 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .scr-res button b{font-weight:600;flex:1}
 .scr-res button small{color:#888;font-size:12px}
 .scr-res button.on,.scr-res button:hover{background:var(--tint)}
+.upd-bar{position:fixed;bottom:16px;inset-inline-start:50%;transform:translateX(50%);z-index:9999;background:var(--brand);color:#fff;padding:10px 16px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;font-size:15px}
+html[dir=ltr] .upd-bar{transform:translateX(-50%)}

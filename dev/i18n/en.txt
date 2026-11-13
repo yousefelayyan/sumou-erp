@@ -4279,3 +4279,6 @@ Employee balances need payroll view permission
 You don't have permission to view parties
 Account balances need reports permission
 No screen found with that name
+🆕 A new version of the program is available
+Update now
+Something is open and unsaved. Update and lose it
