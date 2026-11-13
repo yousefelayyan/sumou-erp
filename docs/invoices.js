@@ -102,7 +102,7 @@ export function shrinkImage(file, max = 320) {
 export async function loadItems(force = false) {
   if (!force && S.items && S.itemsCompany === S.company.id) return S.items;
   // بدون الصورة (ثقيلة)؛ محرر الصنف بيجيبها لحاله
-  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,category_id,min_price,max_discount_pct,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
+  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,category_id,brand_id,origin_id,model,color,size,min_price,max_discount_pct,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
   if (error) throw error;
   S.items = data; S.itemsCompany = S.company.id; return data;
 }
@@ -189,23 +189,25 @@ async function viewItems(v, ctx) {
   const [items, accs, st, , catR] = await Promise.all([loadItems(true), loadAccounts(), loadSettings(), loadNumbering(true),
     sb.from('item_categories').select('*').eq('company_id', S.company.id).order('code'), loadCustomFields(), loadFieldLayout()]);
   const cats = catR.data || [], catById = Object.fromEntries(cats.map(c => [c.id, c]));
+  const lks = await loadLookups(), brands = lks.filter(l => l.kind === 'brand'), countries = lks.filter(l => l.kind === 'country'), brById = Object.fromEntries(brands.map(b => [b.id, b]));
   v.innerHTML = `<div class="page-head"><h2>🏷️ الأصناف والخدمات</h2><span class="badge brand">${items.length}</span><div class="spacer"></div>
       <select class="search" id="fc" style="min-width:140px"><option value="">كل الفئات</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}<option value="-">بدون فئة</option></select>
+      ${brands.length ? `<select class="search" id="fb" style="min-width:130px"><option value="">كل الماركات</option>${brands.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}<option value="-">بدون ماركة</option></select>` : ''}
       <input class="search" id="q" placeholder="بحث بالاسم أو الرقم أو الباركود…"><button class="btn sm" id="cats">🗂️ فئات المواد</button><button class="btn sm" id="csv">⬇️ Excel</button>
       ${can('items', 'add') ? '<button class="btn primary" id="add">➕ صنف / خدمة</button>' : ''}</div>
-    <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>الاسم</th><th>الفئة</th><th>النوع</th><th>الوحدة</th><th style="text-align:left">سعر البيع</th><th style="text-align:left">سعر الشراء</th><th>الضريبة</th><th>الحالة</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>`;
+    <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>الاسم</th><th>الفئة</th><th>الماركة</th><th>النوع</th><th>الوحدة</th><th style="text-align:left">سعر البيع</th><th style="text-align:left">سعر الشراء</th><th>الضريبة</th><th>الحالة</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>`;
   const draw = () => {
-    const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value;
-    v.querySelector('#rows').innerHTML = items.filter(i => (!fc || (fc === '-' ? !i.category_id : i.category_id === fc)) && (!q || [i.code, i.name, i.barcode].some(x => (x || '').toLowerCase().includes(q)))).map(i => `<tr>
-      <td>${esc(i.code)}</td><td><b>${esc(i.name)}</b></td><td>${esc(catById[i.category_id]?.name || '')}</td><td>${i.item_type === 'service' ? 'خدمة' : 'سلعة'}</td><td>${esc(i.unit || '')}</td>
+    const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value, fb = v.querySelector('#fb')?.value || '';
+    v.querySelector('#rows').innerHTML = items.filter(i => (!fc || (fc === '-' ? !i.category_id : i.category_id === fc)) && (!fb || (fb === '-' ? !i.brand_id : i.brand_id === fb)) && (!q || [i.code, i.name, i.barcode, i.model].some(x => (x || '').toLowerCase().includes(q)))).map(i => `<tr>
+      <td>${esc(i.code)}</td><td><b>${esc(i.name)}</b></td><td>${esc(catById[i.category_id]?.name || '')}</td><td>${esc(brById[i.brand_id]?.name || '')}</td><td>${i.item_type === 'service' ? 'خدمة' : 'سلعة'}</td><td>${esc(i.unit || '')}</td>
       <td dir="ltr" style="text-align:left">${fmtNum(i.sale_price)}</td><td dir="ltr" style="text-align:left">${fmtNum(i.purchase_price)}</td><td>${num(i.tax_rate)}%</td>
       <td>${i.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
       <td class="actions">${can('items', 'edit') ? `<button class="btn sm" data-edit="${i.id}">تعديل</button>` : ''} ${can('items', 'delete') ? `<button class="btn sm danger" data-del="${i.id}">حذف</button>` : ''}</td></tr>`).join('')
-      || '<tr><td colspan="10" class="empty">ما في أصناف. الأصناف اختيارية، بتقدر تكتب بيان السطر بالفاتورة مباشرة.</td></tr>';
+      || '<tr><td colspan="11" class="empty">ما في أصناف. الأصناف اختيارية، بتقدر تكتب بيان السطر بالفاتورة مباشرة.</td></tr>';
   };
-  draw(); v.querySelector('#q').oninput = draw; v.querySelector('#fc').onchange = draw;
+  draw(); v.querySelector('#q').oninput = draw; v.querySelector('#fc').onchange = draw; if (v.querySelector('#fb')) v.querySelector('#fb').onchange = draw;
   v.querySelector('#cats').onclick = () => categoriesDialog(cats, items, ctx);
-  v.querySelector('#csv').onclick = () => downloadCSV('الأصناف.csv', [['الرقم', 'الاسم', 'الفئة', 'النوع', 'الوحدة', 'الباركود', 'سعر البيع', 'سعر الشراء', 'الضريبة']].concat(items.map(i => [i.code, i.name, catById[i.category_id]?.name || '', i.item_type === 'service' ? 'خدمة' : 'سلعة', i.unit, i.barcode, i.sale_price, i.purchase_price, i.tax_rate])));
+  v.querySelector('#csv').onclick = () => downloadCSV('الأصناف.csv', [['الرقم', 'الاسم', 'الفئة', 'الماركة', 'الطراز', 'النوع', 'الوحدة', 'الباركود', 'سعر البيع', 'سعر الشراء', 'الضريبة']].concat(items.map(i => [i.code, i.name, catById[i.category_id]?.name || '', brById[i.brand_id]?.name || '', i.model || '', i.item_type === 'service' ? 'خدمة' : 'سلعة', i.unit, i.barcode, i.sale_price, i.purchase_price, i.tax_rate])));
   const open = async (it) => {
     const isNew = !it;
     if (it && it.image === undefined) { const { data: im } = await sb.from('items').select('image').eq('id', it.id).maybeSingle(); it.image = im?.image || null; }
@@ -229,6 +231,13 @@ async function viewItems(v, ctx) {
       <div class="field"><label>الباركود</label><input name="barcode" value="${esc(it.barcode)}" dir="ltr"></div>
       <div class="field"><label>حساب المبيعات</label>${accSel('sales_account_id', st.sales_account_id)}</div>
       <div class="field"><label>حساب المشتريات</label>${accSel('purchase_account_id', st.purchase_account_id)}</div></div>
+      <details style="margin:8px 0" ${it.brand_id || it.model || it.color || it.size || it.origin_id ? 'open' : ''}><summary style="cursor:pointer;font-weight:700">🏷️ الماركة والطراز</summary><div class="grid cols-2" style="margin-top:6px">
+      <div class="field"><label>الماركة</label><select name="brand_id"><option value="">—</option>${brands.filter(b => b.is_active !== false || b.id === it.brand_id).map(b => `<option value="${b.id}" ${b.id === it.brand_id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>الطراز / الموديل</label><input name="model" value="${esc(it.model || '')}" dir="auto"></div>
+      <div class="field"><label>بلد المنشأ</label><select name="origin_id"><option value="">—</option>${countries.filter(b => b.is_active !== false || b.id === it.origin_id).map(b => `<option value="${b.id}" ${b.id === it.origin_id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>اللون</label><input name="color" value="${esc(it.color || '')}"></div>
+      <div class="field"><label>المقاس</label><input name="size" value="${esc(it.size || '')}"></div></div>
+      ${brands.length ? '' : '<p class="muted" style="font-size:12px;margin:0">الماركات بتنضاف من «إعداد ← الماركات».</p>'}</details>
       <div class="field"><label>صورة الصنف (لنقطة البيع)</label><div class="img-pick">
         <span class="img-prev" id="i-img-prev">${it.image ? `<img src="${esc(it.image)}" alt="">` : '📷'}</span>
         <label class="btn sm">اختيار صورة<input type="file" accept="image/*" id="i-img" hidden></label>
@@ -255,7 +264,8 @@ async function viewItems(v, ctx) {
       const d = formData(m.el.querySelector('#i-form'));
       if (!d.code || !d.name) return toast('الرقم والاسم مطلوبين', 'err');
       { const rq = checkRequired(m.el.querySelector('#i-form'), 'item'); if (rq) return toast(rq, 'err'); }
-      d.category_id = d.category_id || null;
+      d.category_id = d.category_id || null; d.brand_id = d.brand_id || null; d.origin_id = d.origin_id || null;
+      ['model', 'color', 'size'].forEach(k => { d[k] = (d[k] || '').trim() || null; });
       d.qty_check_ignore = [...m.el.querySelectorAll('[data-qi]')].filter(x => x.checked).map(x => x.dataset.qi);
       { const ex = cfValues(m.el.querySelector('#i-form'), 'item', it.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex; }
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);

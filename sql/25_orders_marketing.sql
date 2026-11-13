@@ -242,7 +242,7 @@ begin
              and pg_get_constraintdef(oid) like '%kind%' and pg_get_constraintdef(oid) not like '%loyalty_type%' loop
     execute format('alter table public.lookups drop constraint %I', c.conname);
   end loop;
-  if not exists (select 1 from pg_constraint where conname in ('lookups_kind_chk2', 'lookups_kind_chk3')) then
+  if not exists (select 1 from pg_constraint where conname in ('lookups_kind_chk2', 'lookups_kind_chk3', 'lookups_kind_chk4')) then
     alter table public.lookups add constraint lookups_kind_chk2
       check (kind in ('payment_method','bank','bank_branch','country','region','cheque_type','sales_rep','loyalty_type'));
   end if;

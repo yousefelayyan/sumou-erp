@@ -214,6 +214,7 @@ const NAV = () => [
     { r: 'setup?k=region', i: '🗺️', l: 'المناطق / الأقاليم', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=sales_rep', i: '🧑‍💼', l: 'مندوبي المبيعات', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=route', i: '🛣️', l: 'المسارات', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=brand', i: '🏷️', l: 'الماركات', show: () => S.company && can('lookups', 'view') },
     { r: 'cost-centers', i: '💱', l: 'العملات وأسعار التحويل', show: () => S.company && can('accounts', 'view') },
     { r: 'custom-fields', i: '🧩', l: 'الحقول الإضافية', show: () => S.company && can('lookups', 'view') },
     { r: 'field-layout', i: '🧱', l: 'تنسيق الحقول', show: () => S.company && can('companies', 'view') },
