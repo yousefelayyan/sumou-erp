@@ -579,7 +579,9 @@ async function voucherEditor(type, entry, ctx) {
       }
       const li = await sb.from('journal_lines').insert(out.map((l, k) => ({ ...l, entry_id: id, line_no: k + 1 })));
       if (li.error) throw li.error;
-      if (ckv.rows.length) await chqSend(id, h.entry_date);
+      if (ckv.rows.length && !(await chqSend(id, h.entry_date))) {   // السند انحفظ بس الشيكات لأ: بنضل بالنافذة عشان ما تضيع
+        entry = entry || { id }; toast('السند انحفظ، بس الشيكات ما انسجّلت. صحّح واضغط حفظ مرة ثانية', 'err'); btns.forEach(b => b.disabled = false); return;
+      }
       await log(entry && entry.id === id && !post ? 'حفظ' : 'إضافة', T.screen, id, { no: entry?.entry_no });
       if (post) { const p = await sb.rpc('post_entry', { p_id: id }); if (p.error) { toast(arError(p.error), 'err'); return reopen(id); } toast('انحفظ وانرحّل للمحاسبة', 'ok'); }
       else toast('تم الحفظ', 'ok');

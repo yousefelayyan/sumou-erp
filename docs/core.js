@@ -63,6 +63,7 @@ export const SCREENS = [
   { key: 'suppliers',        label: 'الموردين وفئاتهم',     group: 'الموردين والذمم الدائنة' },
   { key: 'purchase_invoices',label: 'فواتير ومردودات المشتريات', group: 'الموردين والذمم الدائنة' },
   { key: 'purchase_orders',  label: 'طلبات التزويد', group: 'الموردين والذمم الدائنة' },
+  { key: 'landed_costs',     label: 'الكلفة المحمّلة', group: 'الموردين والذمم الدائنة' },
   { key: 'marketing',        label: 'العروض الترويجية', group: 'التسويق' },
   { key: 'manufacturing',    label: 'الوصفات وأوامر الإنتاج', group: 'التصنيع' },
   { key: 'maintenance',      label: 'بطاقات الصيانة', group: 'الصيانة' },
@@ -215,7 +216,7 @@ export const MODULES = [
 ];
 const SCREEN_MODULE = {
   customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales', pos: 'sales',
-  suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases',
+  suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases', landed_costs: 'purchases',
   inventory: 'inventory', supply_requests: 'inventory', rep_visits: 'sales', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets', asset_custody: 'assets',
   marketing: 'marketing', manufacturing: 'manufacturing', maintenance: 'maintenance', obligations: 'office',
 };

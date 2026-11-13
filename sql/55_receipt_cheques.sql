@@ -40,6 +40,9 @@ begin
     if e.status in ('reversed','cancelled') or e.reversal_of is not null or e.is_frozen then raise exception 'السند معكوس أو مجمّد'; end if;
     if not public.dept_ok(p_company, e.department_id) then raise exception 'السند مش من فرعك'; end if;
     d := e.entry_date; ref := coalesce(e.doc_code, e.entry_no::text);
+    if not exists (select 1 from public.journal_lines jl where jl.entry_id = e.id and jl.party_id = pa.id) then
+      raise exception 'صاحب الشيكات لازم يكون نفس العميل اللي بسطور السند';
+    end if;
   end if;
   if d is null then raise exception 'التاريخ مطلوب'; end if;
   if not exists (select 1 from public.fiscal_years where company_id = p_company and d between start_date and end_date and not coalesce(is_closed, false)) then
