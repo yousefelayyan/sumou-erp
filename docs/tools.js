@@ -180,7 +180,7 @@ async function viewBackup(v, ctx) {
 //  الاستيراد من إكسل
 // ---------------------------------------------------------------------
 let XLSX = null;
-async function xlsx() {
+export async function xlsx() {
   if (XLSX) return XLSX;
   await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'; s.onload = res; s.onerror = () => rej(new Error('ما قدرت أحمّل مكتبة الإكسل. تأكد من الإنترنت.')); document.head.appendChild(s); });
   return (XLSX = window.XLSX);

@@ -59,7 +59,8 @@ async function viewEmployees(v, ctx) {
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(e.notes)}" ${ro}></div>
       <div class="field" style="grid-column:span 3"><label>مستخدم البرنامج (لـ«راتبي» وطلب القروض والسلف)</label><select name="user_id" ${ro ? 'disabled' : ''}><option value="">—</option>${users.map(u => `<option value="${u.id}" ${u.id === e.user_id ? 'selected' : ''}>${esc(u.full_name || u.username || '')}${u.username ? ' (' + esc(u.username) + ')' : ''}</option>`).join('')}${e.user_id && !users.some(u => u.id === e.user_id) ? `<option value="${e.user_id}" selected>(مستخدم مربوط)</option>` : ''}</select></div>
       <div class="field" style="grid-column:span 3"><label>المناوبة / الدوام</label><select name="shift_id" ${ro ? 'disabled' : ''}><option value="">— دوام الشركة العام —</option>${(shifts || []).map(w => `<option value="${w.id}" ${w.id === e.shift_id ? 'selected' : ''}>${esc(w.name)} (${String(w.start_time).slice(0, 5)} – ${String(w.end_time).slice(0, 5)})</option>`).join('')}</select></div>
-      <div class="field" style="grid-column:span 3"><label>موقع العمل (للحضور والانصراف)</label><select name="work_location_id" ${ro ? 'disabled' : ''}><option value="">— أي موقع فعّال —</option>${(wlocs || []).map(w => `<option value="${w.id}" ${w.id === e.work_location_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div></div>
+      <div class="field" style="grid-column:span 2"><label>موقع العمل (للحضور والانصراف)</label><select name="work_location_id" ${ro ? 'disabled' : ''}><option value="">— أي موقع فعّال —</option>${(wlocs || []).map(w => `<option value="${w.id}" ${w.id === e.work_location_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>رقم البصمة (بالجهاز)</label><input name="device_code" value="${esc(e.device_code || '')}" dir="ltr" maxlength="30" placeholder="فاضي = رمز الموظف" ${ro}></div></div>
       <label class="check"><input type="checkbox" name="is_active" ${e.is_active ? 'checked' : ''} ${ro}> على رأس عمله</label></form>`,
       foot: `${!ro ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${!isNew ? '<button class="btn" data-att>📎 مرفقات</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
     m.el.querySelector('.modal').style.maxWidth = '820px';
@@ -68,7 +69,7 @@ async function viewEmployees(v, ctx) {
       const d = formData(m.el.querySelector('#f')); if (!d.name) return toast('الاسم مطلوب', 'err');
       ['basic_salary', 'allowances', 'income_tax'].forEach(k => d[k] = num(d[k])); d.ss_wage = d.ss_wage == null ? null : num(d.ss_wage);
       if (!ccs.length) delete d.cost_center_id;
-      d.account_id = d.account_id || null; d.user_id = d.user_id || null; d.work_location_id = d.work_location_id || null; d.shift_id = d.shift_id || null;
+      d.account_id = d.account_id || null; d.user_id = d.user_id || null; d.work_location_id = d.work_location_id || null; d.shift_id = d.shift_id || null; d.device_code = (d.device_code || '').trim() || null;
       if (!isNew && (d.user_id || null) === (e.user_id || null)) delete d.user_id;
       const res = isNew ? await sb.from('employees').insert({ ...d, company_id: S.company.id }) : await sb.from('employees').update(d).eq('id', e.id);
       if (res.error) return toast(arError(res.error), 'err'); toast('تم الحفظ', 'ok'); m.close(); ctx.rerender();

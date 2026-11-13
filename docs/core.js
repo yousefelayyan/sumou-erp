@@ -130,6 +130,7 @@ export function arError(err) {
   if (/Email not confirmed/i.test(m)) return 'لازم تأكد الإيميل أول. افتح الإيميل اللي وصلك واضغط رابط التأكيد';
   if (/User already registered/i.test(m)) return 'هذا الإيميل مسجّل من قبل';
   if (/Password should be at least/i.test(m)) return 'كلمة السر لازم تكون 6 أحرف أو أكثر';
+  if (/employees_device_code_uq/.test(m)) return 'رقم البصمة مستخدم لموظف ثاني';
   if (/duplicate key/i.test(m)) return 'الرمز مستخدم من قبل، اختار رمز ثاني';
   if (/row-level security|permission denied/i.test(m)) return 'ما عندك صلاحية لهالعملية';
   if (/fiscal_years_check|end_date/i.test(m)) return 'تاريخ النهاية لازم يكون بعد تاريخ البداية';

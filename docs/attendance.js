@@ -1,9 +1,10 @@
 // =====================================================================
-//  السمو ERP — الحضور والانصراف (route attendance?t=day|summary|locations|settings)
+//  السمو ERP — الحضور والانصراف (route attendance?t=day|summary|locations|shifts|import|settings)
 //  الموظف بيسجّل من «راتبي» بالموقع (attendance_punch)، والمشرف (payroll edit) بيعدّل (attendance_set)
 // =====================================================================
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, formData, can } from './core.js';
 import { printDoc } from './print.js';
+import { xlsx } from './tools.js';
 
 const hm = (t) => t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Amman' }) : '';
 const dur = (a, b) => { if (!a || !b) return ''; const m = Math.round((new Date(b) - new Date(a)) / 60000); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
@@ -77,10 +78,10 @@ async function viewAttendance(v, ctx) {
   if (!S.company) return void (v.innerHTML = '<div class="notice info">اختار شركة من فوق أول.</div>');
   if (!can('payroll', 'view')) return void (v.innerHTML = '<div class="notice">ما عندك صلاحية على الرواتب</div>');
   const t = qp().get('t') || 'day', sup = can('payroll', 'edit');
-  const tabs = [['day', '📋 يومي'], ['summary', '📊 ملخص الفترة'], ['locations', '📍 مواقع العمل'], ['shifts', '🔄 المناوبات'], ['settings', '⚙️ الدوام والجزاءات']];
+  const tabs = [['day', '📋 يومي'], ['summary', '📊 ملخص الفترة'], ['locations', '📍 مواقع العمل'], ['shifts', '🔄 المناوبات'], ['import', '📥 استيراد البصمة'], ['settings', '⚙️ الدوام والجزاءات']];
   const head = `<div class="page-head"><h2>🕘 الحضور والانصراف</h2></div>
     <div class="tabs" style="margin-bottom:10px">${tabs.map(([k, l]) => `<a class="tab ${t === k ? 'active' : ''}" href="#/attendance?t=${k}">${l}</a>`).join('')}</div>`;
-  const { data: emps = [] } = await sb.from('employees').select('id,code,name,is_active,work_location_id,shift_id').eq('company_id', S.company.id).order('code');
+  const { data: emps = [] } = await sb.from('employees').select('id,code,name,is_active,work_location_id,shift_id,device_code').eq('company_id', S.company.id).order('code');
   const eBy = Object.fromEntries((emps || []).map(e => [e.id, e]));
   const { data: locs = [] } = await sb.from('work_locations').select('*').eq('company_id', S.company.id).order('name');
   const lBy = Object.fromEntries((locs || []).map(l => [l.id, l]));
@@ -99,7 +100,7 @@ async function viewAttendance(v, ctx) {
       ${act.map(e => { const a = aBy[e.id]; return `<tr data-e="${e.id}" ${sup ? 'style="cursor:pointer"' : ''}><td>${esc(e.code)}</td><td>${esc(e.name)}</td>
         <td>${a?.check_in ? hm(a.check_in) : '<span class="badge bad">غايب</span>'}</td><td>${hm(a?.check_out)}</td><td>${dur(a?.check_in, a?.check_out)}</td>
         <td>${a ? esc(lBy[a.location_id]?.name || '') : ''}${a?.outside ? ' <span class="badge warn">برّا</span>' : ''}${a?.in_dist != null ? ` <small class="muted">${a.in_dist} م</small>` : ''}</td>
-        <td>${a ? (a.source === 'supervisor' ? 'المشرف' : 'الموظف') : ''}</td><td>${esc(a?.notes || '')}</td></tr>`; }).join('') || '<tr><td colspan="8" class="empty">ما في موظفين</td></tr>'}</tbody></table></div>`;
+        <td>${a ? ({ supervisor: 'المشرف', device: 'البصمة' }[a.source] || 'الموظف') : ''}</td><td>${esc(a?.notes || '')}</td></tr>`; }).join('') || '<tr><td colspan="8" class="empty">ما في موظفين</td></tr>'}</tbody></table></div>`;
     v.querySelector('#d').onchange = (e) => { location.hash = `#/attendance?t=day&d=${e.target.value}`; };
     v.querySelector('#add')?.addEventListener('click', () => dayForm(ctx, act.filter(e => e.is_active), { day: d }));
     if (sup) v.querySelector('tbody').onclick = (e) => { const tr = e.target.closest('[data-e]'); if (tr) dayForm(ctx, act, { ...(aBy[tr.dataset.e] || {}), employee_id: tr.dataset.e, day: d }); };
@@ -157,6 +158,8 @@ async function viewAttendance(v, ctx) {
     };
     v.querySelector('#add')?.addEventListener('click', () => form(null));
     if (sup) v.querySelector('tbody').onclick = (e) => { const tr = e.target.closest('[data-s]'); if (tr) form((shifts || []).find(x => x.id === tr.dataset.s)); };
+  } else if (t === 'import') {
+    importTab(v, head, emps || [], sup);
   } else {
     const { data: cs } = await sb.from('company_settings').select('attendance').eq('company_id', S.company.id).maybeSingle();
     const c = cs?.attendance || {};
@@ -184,6 +187,137 @@ async function viewAttendance(v, ctx) {
       if (error) return toast(arError(error), 'err'); toast('انحفظ', 'ok');
     });
   }
+}
+
+// ===== استيراد حركات البصمة =====
+// بيقبل: ملف attlog (نص) من فلاشة الجهاز، أو CSV/إكسل من برنامج البصمة. كل سطر = رقم الموظف + تاريخ ووقت البصمة
+const pad = (n) => String(n).padStart(2, '0');
+const isoD = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+// بيرجّع {d: 'YYYY-MM-DD'|null, t: 'HH:MM:SS'|null} من خلية
+function cellDT(c) {
+  if (c == null || c === '') return null;
+  if (c instanceof Date) {
+    if (isNaN(c)) return null;
+    const y = c.getFullYear(), tm = `${pad(c.getHours())}:${pad(c.getMinutes())}:${pad(c.getSeconds())}`;
+    return y < 1901 ? { d: null, t: tm } : { d: isoD(y, c.getMonth() + 1, c.getDate()), t: (c.getHours() || c.getMinutes() || c.getSeconds()) ? tm : null };
+  }
+  const x = String(c).trim().replace(/\s+/g, ' ');
+  let d = null, t = null, m;
+  if ((m = x.match(/(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) d = isoD(m[1], m[2], m[3]);
+  else if ((m = x.match(/(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/))) d = isoD(m[3], m[2], m[1]);   // يوم/شهر/سنة
+  if ((m = x.match(/(?:^|[ T])(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|ص|م)?/i))) {
+    let h = +m[1]; const ap = (m[4] || '').toUpperCase();
+    if ((ap === 'PM' || ap === 'م') && h < 12) h += 12; if ((ap === 'AM' || ap === 'ص') && h === 12) h = 0;
+    if (h < 24) t = `${pad(h)}:${m[2]}:${m[3] || '00'}`;
+  }
+  return d || t ? { d, t } : null;
+}
+// بيخمّن الأعمدة: رقم الموظف، التاريخ، الوقت
+function guessCols(rows, header) {
+  const n = Math.max(...rows.slice(0, 50).map(r => r.length)), sample = rows.slice(0, 200);
+  const share = (i, f) => sample.filter(r => f(r[i])).length / (sample.length || 1);
+  let date = -1, time = -1, code = -1;
+  for (let i = 0; i < n; i++) if (date < 0 && share(i, c => cellDT(c)?.d) > 0.7) date = i;
+  if (date >= 0 && share(date, c => cellDT(c)?.t) < 0.7) for (let i = 0; i < n; i++) if (i !== date && share(i, c => { const z = cellDT(c); return z?.t && !z.d; }) > 0.7) { time = i; break; }
+  const okCol = (i) => i !== date && i !== time && share(i, c => /^\s*[A-Za-z0-9-]{1,30}\s*$/.test(String(c ?? ''))) > 0.7;
+  if (header) for (const hk of [/(ac|enroll|user|emp|badge|pin|card|رقم الموظف|رقم البصمة|كود|رمز)/i, /(id|no|رقم)/i]) {
+    code = header.findIndex((h, i) => hk.test(String(h || '')) && okCol(i)); if (code >= 0) break;
+  }
+  if (code < 0) for (let i = 0; i < n; i++) if (i !== date && i !== time && share(i, c => /^\s*[A-Za-z0-9-]{1,30}\s*$/.test(String(c ?? '')) && !cellDT(c)) > 0.7) { code = i; break; }
+  return { code, date, time, n };
+}
+function importTab(v, head, emps, sup) {
+  if (!sup) return void (v.innerHTML = `${head}<div class="notice">استيراد البصمة لمين إله صلاحية تعديل الرواتب</div>`);
+  v.innerHTML = `${head}<div class="card" style="margin-bottom:10px">
+    <p style="margin-top:0">نزّل ملف الحركات من جهاز البصمة واستورده هون:</p>
+    <ul class="muted" style="font-size:13px;margin:0 0 10px">
+      <li>من فلاشة الجهاز: ملف <b dir="ltr">attlog.dat</b> (أو أي ملف نص فيه رقم الموظف والتاريخ والوقت بكل سطر).</li>
+      <li>من برنامج البصمة على الكمبيوتر: صدّر الحركات إكسل أو CSV.</li>
+      <li>رقم الموظف بالجهاز بيتطابق مع «رقم البصمة» ببطاقة الموظف، وإذا فاضي مع رمز الموظف.</li>
+      <li>الدخول = أول بصمة باليوم، والانصراف = آخر بصمة. البصمة الوحدة بتنحسب دخول بس.</li></ul>
+    <label class="btn primary">📂 اختيار ملف البصمة<input type="file" id="fpf" accept=".dat,.txt,.csv,.tsv,.xlsx,.xls" hidden></label>
+    <span id="fpn" class="muted" style="margin-inline-start:8px"></span></div><div id="fpo"></div>`;
+  const out = v.querySelector('#fpo');
+  v.querySelector('#fpf').onchange = async (ev) => {
+    const f = ev.target.files[0]; if (!f) return; ev.target.value = '';
+    v.querySelector('#fpn').textContent = f.name; out.innerHTML = '<div class="notice info">عم بقرأ الملف…</div>';
+    try {
+      let rows;
+      if (/\.(xlsx|xls)$/i.test(f.name)) {
+        const X = await xlsx(), wb = X.read(await f.arrayBuffer(), { cellDates: true });
+        rows = X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+      } else {
+        const txt = await f.text();
+        rows = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean).map(l => (/\t/.test(l) ? l.split('\t') : /[,;]/.test(l) ? l.split(/[,;]/) : l.split(/\s{2,}/)).map(c => c.trim().replace(/^"|"$/g, '')));
+      }
+      rows = rows.filter(r => r.some(c => c !== '' && c != null));
+      if (!rows.length) throw new Error('الملف فاضي');
+      const hasHead = !rows[0].some(c => cellDT(c)?.d);
+      const header = hasHead ? rows[0].map(String) : null, body = hasHead ? rows.slice(1) : rows;
+      showMap(out, body, header, guessCols(body, header), emps);
+    } catch (e) { out.innerHTML = `<div class="notice">${esc(e.message || String(e))}</div>`; }
+  };
+}
+function showMap(out, body, header, g, emps) {
+  const colOpts = (sel, none) => `${none ? `<option value="-1">${none}</option>` : ''}${Array.from({ length: g.n }, (_, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${esc(header?.[i] || `عمود ${i + 1}`)} — ${esc(String(body[0]?.[i] instanceof Date ? body[0][i].toLocaleString('en-GB') : body[0]?.[i] ?? ''))}</option>`).join('')}`;
+  out.innerHTML = `<div class="card" style="margin-bottom:10px"><div class="grid cols-3">
+    <div class="field"><label>عمود رقم الموظف</label><select id="cc">${colOpts(g.code)}</select></div>
+    <div class="field"><label>عمود التاريخ (أو التاريخ والوقت)</label><select id="cd">${colOpts(g.date)}</select></div>
+    <div class="field"><label>عمود الوقت</label><select id="ct">${colOpts(g.time, '— الوقت مع التاريخ —')}</select></div></div>
+    <span class="muted" style="font-size:12px">البرنامج خمّن الأعمدة لحاله، غيّرها إذا مش صح. ${body.length} سطر بالملف.</span></div><div id="fpp"></div>`;
+  const run = () => preview(out.querySelector('#fpp'), body, +out.querySelector('#cc').value, +out.querySelector('#cd').value, +out.querySelector('#ct').value, emps);
+  out.querySelectorAll('select').forEach(s => s.onchange = run); run();
+}
+function preview(box, body, ci, di, ti, emps) {
+  if (ci < 0 || di < 0) return void (box.innerHTML = '<div class="notice">اختار عمود رقم الموظف وعمود التاريخ</div>');
+  const today_ = today(), punches = [], bad = []; let fut = 0;
+  for (const r of body) {
+    const code = String(r[ci] ?? '').trim().replace(/\.0+$/, ''), a = cellDT(r[di]), b = ti >= 0 ? cellDT(r[ti]) : null;
+    const d = a?.d, t = b?.t || a?.t;
+    if (!code || !d || !t) { bad.push(r); continue; }
+    if (d > today_) { fut++; continue; }
+    punches.push({ code, ts: `${d} ${t}` });
+  }
+  const byDev = Object.fromEntries(emps.filter(e => e.device_code).map(e => [e.device_code, e]));
+  const byCode = Object.fromEntries(emps.filter(e => !e.device_code).map(e => [e.code, e]));
+  const emp = (c) => byDev[c] || (!byDev[c] && byCode[c]) || null;
+  const per = {}, unm = {};
+  for (const p of punches) {
+    const e = emp(p.code); if (!e) { unm[p.code] = (unm[p.code] || 0) + 1; continue; }
+    const k = e.id, day = p.ts.slice(0, 10);
+    const x = per[k] ||= { e, days: {}, n: 0 }; x.n++;
+    const dd = x.days[day] ||= { lo: p.ts, hi: p.ts }; if (p.ts < dd.lo) dd.lo = p.ts; if (p.ts > dd.hi) dd.hi = p.ts;
+  }
+  const list = Object.values(per).sort((a, b) => String(a.e.code).localeCompare(String(b.e.code)));
+  const allDays = list.flatMap(x => Object.keys(x.days)).sort();
+  const single = list.reduce((s, x) => s + Object.values(x.days).filter(d => d.lo === d.hi).length, 0);
+  box.innerHTML = `<div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+      <span class="badge ok">${punches.length - Object.values(unm).reduce((s, n) => s + n, 0)} بصمة لـ ${list.length} موظف</span>
+      ${allDays.length ? `<span class="badge">من ${fmtDate(allDays[0])} لـ ${fmtDate(allDays[allDays.length - 1])}</span>` : ''}
+      ${single ? `<span class="badge warn">${single} يوم ببصمة وحدة (بدون انصراف)</span>` : ''}
+      ${Object.keys(unm).length ? `<span class="badge bad">${Object.keys(unm).length} رقم مش معروف</span>` : ''}
+      ${bad.length ? `<span class="badge">${bad.length} سطر مش مفهوم</span>` : ''}${fut ? `<span class="badge">${fut} بتاريخ جاي</span>` : ''}
+      <div class="spacer"></div>
+      <label class="check"><input type="checkbox" id="ow"> استبدل اللي عدّله المشرف كمان</label>
+      <button class="btn primary" id="imp" ${list.length ? '' : 'disabled'}>📥 استيراد للحضور</button></div>
+    ${Object.keys(unm).length ? `<div class="notice" style="margin-bottom:10px">أرقام بالجهاز مش مربوطة بموظف: ${Object.entries(unm).map(([c, n]) => `<b dir="ltr">${esc(c)}</b> (${n})`).join('، ')}<br><span class="muted" style="font-size:12px">اكتب «رقم البصمة» ببطاقة الموظف وارجع استورد — الاستيراد بيندمج مع الموجود وما بيكرر.</span></div>` : ''}
+    <div class="card table-wrap"><table class="t rep"><thead><tr><th>الرمز</th><th>الموظف</th><th>رقم البصمة</th><th>الأيام</th><th>البصمات</th><th>أول يوم</th><th>آخر يوم</th><th>أمثلة</th></tr></thead><tbody>
+    ${list.map(x => { const ds = Object.keys(x.days).sort(); return `<tr><td>${esc(x.e.code)}</td><td>${esc(x.e.name)}</td><td dir="ltr">${esc(x.e.device_code || x.e.code)}</td><td class="n">${ds.length}</td><td class="n">${x.n}</td><td>${fmtDate(ds[0])}</td><td>${fmtDate(ds[ds.length - 1])}</td>
+      <td class="muted" style="font-size:12px">${ds.slice(-2).map(d => { const z = x.days[d]; return `${fmtDate(d)}: ${z.lo.slice(11, 16)}${z.hi !== z.lo ? ' – ' + z.hi.slice(11, 16) : ''}`; }).join(' · ')}</td></tr>`; }).join('') || '<tr><td colspan="8" class="empty">ما في بصمات مطابقة لموظفين</td></tr>'}</tbody></table></div>`;
+  box.querySelector('#imp')?.addEventListener('click', async (ev) => {
+    const btn = ev.target; btn.disabled = true; btn.textContent = 'عم بستورد…';
+    const ow = box.querySelector('#ow').checked, tot = { inserted: 0, updated: 0, skipped_supervisor: 0, unmatched: new Set() };
+    try {
+      for (let i = 0; i < punches.length; i += 20000) {
+        const { data, error } = await sb.rpc('attendance_import', { p_company: S.company.id, p_rows: punches.slice(i, i + 20000), p_overwrite: ow });
+        if (error) throw error;
+        tot.inserted += data.inserted; tot.updated += data.updated; tot.skipped_supervisor += data.skipped_supervisor; (data.unmatched || []).forEach(c => tot.unmatched.add(c));
+      }
+      box.insertAdjacentHTML('afterbegin', `<div class="notice info" style="margin-bottom:10px">✅ خلص الاستيراد: ${tot.inserted} يوم جديد، ${tot.updated} يوم انعدّل${tot.skipped_supervisor ? `، ${tot.skipped_supervisor} يوم ضل مثل ما عدّله المشرف` : ''}${tot.unmatched.size ? `، ${tot.unmatched.size} رقم مش معروف` : ''}.
+        <a href="#/attendance?t=summary">📊 شوف ملخص الفترة</a></div>`);
+      toast('انستورد', 'ok'); btn.textContent = '✅ انستورد';
+    } catch (e) { toast(arError(e), 'err'); btn.disabled = false; btn.textContent = '📥 استيراد للحضور'; }
+  });
 }
 
 export const ATTENDANCE_ROUTES = { attendance: viewAttendance };
