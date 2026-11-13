@@ -501,7 +501,17 @@ async function invoiceEditor(type, inv, ctx) {
   const partyInput = m.el.querySelector('#party');
   loadBal(); f.warehouse_id?.addEventListener('change', loadBal);
   if (inv?.party_id || pre?.inv?.party_id) { const p0 = myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)); loadListPrices(p0); loadLastPrices(p0); }
+  const stopWarn = async (p) => {   // إيقاف البيع على العميل أو فئته
+    m.el.querySelector('#pstop-warn')?.remove(); if (!p || !isSale || type !== 'sale') return;
+    const { data: s } = await sb.rpc('party_stops', { p_party: p.id }); if (!s) return;
+    const msg = [s.stop_credit && 'البيع الآجل موقوف', s.stop_if_debit && 'البيع الآجل موقوف إذا عليه رصيد مدين', s.stop_cheques && 'استلام الشيكات منه موقوف'].filter(Boolean);
+    if (!msg.length) return;
+    const box = document.createElement('div'); box.id = 'pstop-warn'; box.className = 'notice'; box.style.margin = '0 0 10px';
+    box.innerHTML = `⛔ ${esc(p.name)}: ${msg.join('، ')}${s.by_category ? ` (من فئته «${esc(s.category || '')}»)` : ''}.${can('credit_override', 'edit') || isAdmin() ? ' عندك صلاحية التجاوز.' : ' الفاتورة الآجلة بتنحفظ مسودة بس.'}`;
+    m.el.querySelector('#inv-form')?.before(box);
+  };
   const docWarn = async (p) => {   // وثائق الطرف الناقصة أو المنتهية
+    stopWarn(p);
     m.el.querySelector('#pdoc-warn')?.remove(); if (!p) return;
     const { data } = await sb.rpc('party_doc_issues', { p_company: S.company.id, p_party: p.id, p_date: f.inv_date.value || null });
     const bad = (data || []).filter(x => x.on_missing !== 'none');
@@ -575,6 +585,10 @@ async function invoiceEditor(type, inv, ctx) {
       const bal = b ? num(b.debit) - num(b.credit) : 0;
       if (bal + header.total > p.credit_limit && !(await confirmBox(`تنبيه: رصيد العميل رح يصير ${fmtNum(bal + header.total)} وهو أكثر من سقف الائتمان ${fmtNum(p.credit_limit)}.${st.credit_limit_mode === 'block' && !can('credit_override', 'edit') ? ' الترحيل ممنوع فوق السقف، بتقدر تحفظها مسودة بس.' : ''} بدك تكمّل؟`))) return;
       if (bal + header.total > p.credit_limit && st.credit_limit_mode === 'block' && !can('credit_override', 'edit') && !isAdmin()) post = false;   // بتنحفظ مسودة
+    }
+    if (post && post !== 'stock' && p && isSale && type === 'sale' && h.payment_type === 'credit' && !can('credit_override', 'edit') && !isAdmin()) {
+      const { data: s } = await sb.rpc('party_stops', { p_party: p.id });
+      if (s?.stop_credit) { post = false; toast('البيع الآجل موقوف على هالعميل: الفاتورة رح تنحفظ مسودة بس', 'err'); }
     }
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {

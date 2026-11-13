@@ -17,6 +17,7 @@ export const PARTY = {
   expense:  { label: 'مصروف', plural: 'المصاريف', screen: 'expense_cards', route: 'expenses', icon: '💸', accType: null, accCat: 'expenses', side: 1 },
 };
 
+const STOPS = [['stop_credit', 'وقف البيع الآجل'], ['stop_cheques', 'وقف استلام الشيكات منه'], ['stop_if_debit', 'وقف البيع الآجل إذا عليه رصيد مدين']];
 export async function loadParties(force = false) {
   if (!S.company) return [];
   if (!force && S.parties && S.partiesCompany === S.company.id) return S.parties;
@@ -48,6 +49,7 @@ function partyList(type) {
     const P = PARTY[type];
     const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups(), loadCustomFields(), loadFieldLayout(), loadDepartments()]);
     const catById = Object.fromEntries(cats.map(c => [c.id, c]));
+    const stopOf = (p) => { const c = catById[p.category_id] || {}; return STOPS.filter(([k]) => p[k] || c[k]).map(([, l]) => l.replace('وقف ', '')).join('، '); };
     let bal = {};
     if (S.fy) {
       const { data } = await sb.from('party_balances').select('party_id,debit,credit').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id);
@@ -75,7 +77,7 @@ function partyList(type) {
         return `<tr><td>${esc(p.code)}</td><td><b>${esc(p.name)}</b>${p.trade_name ? `<div class="muted" style="font-size:12px">${esc(p.trade_name)}</div>` : ''}</td><td>${esc(catById[p.category_id]?.name || '')}</td>
         <td dir="ltr" style="text-align:right">${esc(p.mobile || p.phone || '')}</td><td>${esc(p.city || '')}</td><td dir="ltr" style="text-align:right">${esc(p.tax_no || '')}</td>
         <td dir="ltr" style="text-align:left;${over ? 'color:var(--bad);font-weight:700' : ''}">${b ? fmtNum(b) : '<span class="muted">—</span>'}${over ? ' ⚠️' : ''}</td>
-        <td>${p.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
+        <td>${p.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}${stopOf(p) ? ` <span class="badge warn" title="${esc(stopOf(p))}">⛔ ${esc(stopOf(p))}</span>` : ''}</td>
         <td class="actions"><a class="btn sm" href="#/party-profile?id=${p.id}" title="ملف إحصائي">📊</a> <a class="btn sm" href="#/party-docs?t=docs&party=${p.id}" title="الوثائق">📄</a> <a class="btn sm" href="#/rep-party?party=${p.id}">كشف</a>
           ${can(P.screen, 'edit') ? `<button class="btn sm" data-edit="${p.id}">تعديل</button>` : ''}
           ${can(P.screen, 'delete') ? `<button class="btn sm danger" data-del="${p.id}">حذف</button>` : ''}</td></tr>`; }).join('')
@@ -144,6 +146,8 @@ async function partyForm(type, p, accs, ctx, cats = []) {
           ${sorted.map(a => `<option value="${a.id}" ${a.id === p.account_id ? 'selected' : ''}>${esc(accLabel(a))}${okAcc(a) ? ' ★' : ''}</option>`).join('')}</select>
           <span class="hint">عادة «${type === 'customer' ? 'الذمم المدينة (العملاء)' : 'الذمم الدائنة (الموردين)'}». كل ${P.plural} بيتجمّعوا على هالحساب، وكل واحد إله كشف لحاله.</span></div>
         <div class="field"><label>سقف الائتمان</label><input name="credit_limit" value="${p.credit_limit || ''}" inputmode="decimal" dir="ltr" placeholder="0 = بدون سقف"></div>
+        ${type === 'customer' ? `<div class="field" style="grid-column:span 2"><label>⛔ إيقاف البيع</label><div style="display:flex;gap:14px;flex-wrap:wrap">${STOPS.map(([k, l]) => `<label style="font-weight:normal"><input type="checkbox" name="${k}" ${p[k] ? 'checked' : ''}> ${l}</label>`).join('')}</div>
+          <span class="hint">بيمنع ترحيل الفاتورة الآجلة أو تسجيل الشيك، إلا لمين إله صلاحية «تجاوز سقف الائتمان وإيقاف البيع». العلامة على فئة العميل بتنطبق كمان.</span></div>` : ''}
         <div class="field"><label>مدة السداد / شروط الدفع (أيام)</label><input name="payment_terms_days" value="${p.payment_terms_days || ''}" inputmode="numeric" dir="ltr"></div>
         <div class="field"><label>وسيلة الدفع الافتراضية</label><select name="payment_method_id"><option value="">—</option>${lkOpts('payment_method', p.payment_method_id)}</select></div>
         <div class="field"><label>العملة</label><input name="currency" list="cur-list" value="${esc(p.currency || '')}" dir="ltr" placeholder="JOD"><datalist id="cur-list"></datalist></div>
@@ -168,6 +172,7 @@ async function partyForm(type, p, accs, ctx, cats = []) {
     if (!d.account_id) return toast('اختار الحساب', 'err');
     const ex = cfValues(m.el.querySelector('#p-form'), type, p.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex;
     if ('loyalty_type_id' in d) d.loyalty_type_id = d.loyalty_type_id || null; if ('loyalty_card_no' in d) d.loyalty_card_no = d.loyalty_card_no || null;
+    if (type === 'customer') STOPS.forEach(([k]) => d[k] = !!d[k]);
     d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null; if ('price_list_id' in d) d.price_list_id = d.price_list_id || null;
     ['route_id', 'payment_method_id', 'department_id', 'currency', 'reference', 'name2'].forEach(k => { if (k in d) d[k] = String(d[k] || '').trim() || null; });
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
@@ -342,14 +347,15 @@ async function viewPartyCategories(v, ctx) {
   const canAdd = can(P.screen, 'add'), canEd = can(P.screen, 'edit'), canDel = can(P.screen, 'delete');
   v.innerHTML = `<div class="page-head"><h2>🗂️ فئات ${P.plural}</h2><span class="badge brand">${cats.length}</span><div class="spacer"></div>
       <a class="btn sm" href="#/${P.route}">${P.icon} ${P.plural}</a>${canAdd ? `<button class="btn primary" id="c-add">➕ فئة جديدة</button>` : ''}</div>
-    <p class="muted">الفئة بتجمّع ${P.plural} (مثلاً: ${type === 'customer' ? 'جملة، مفرق، شركات' : 'محلي، استيراد، خدمات'}). بتختار فئة كل ${P.label} من بطاقته، وبتفلتر فيها القائمة.</p>
-    <div class="card table-wrap"><table class="t"><thead><tr><th style="width:120px">الرمز</th><th>اسم الفئة</th><th>عدد ${P.plural}</th><th>فعّالة</th><th></th></tr></thead><tbody id="crows"></tbody></table></div>`;
+    <p class="muted">الفئة بتجمّع ${P.plural} (مثلاً: ${type === 'customer' ? 'جملة، مفرق، شركات' : 'محلي، استيراد، خدمات'}). بتختار فئة كل ${P.label} من بطاقته، وبتفلتر فيها القائمة.${type === 'customer' ? ' علامات «⛔» على الفئة بتنطبق على كل عملائها.' : ''}</p>
+    <div class="card table-wrap"><table class="t"><thead><tr><th style="width:120px">الرمز</th><th>اسم الفئة</th><th>عدد ${P.plural}</th>${type === 'customer' ? STOPS.map(([, l]) => `<th style="font-size:12px">⛔ ${l}</th>`).join('') : ''}<th>فعّالة</th><th></th></tr></thead><tbody id="crows"></tbody></table></div>`;
   const draw = () => {
     v.querySelector('#crows').innerHTML = cats.map(c => `<tr data-id="${c.id}"><td><input data-f="code" value="${esc(c.code)}" dir="ltr" ${canEd ? '' : 'disabled'}></td>
       <td><input data-f="name" value="${esc(c.name)}" ${canEd ? '' : 'disabled'}></td><td>${used(c.id)}</td>
+      ${type === 'customer' ? STOPS.map(([k]) => `<td><input type="checkbox" data-f="${k}" ${c[k] ? 'checked' : ''} ${canEd ? '' : 'disabled'}></td>`).join('') : ''}
       <td><input type="checkbox" data-f="is_active" ${c.is_active ? 'checked' : ''} ${canEd ? '' : 'disabled'}></td>
       <td class="actions">${canEd ? '<button class="btn sm" data-save type="button">💾 حفظ</button>' : ''} ${canDel && !used(c.id) ? '<button class="btn sm danger" data-del type="button">حذف</button>' : ''}</td></tr>`).join('')
-      || '<tr><td colspan="5" class="empty">ما في فئات لسا</td></tr>';
+      || `<tr><td colspan="${type === 'customer' ? 8 : 5}" class="empty">ما في فئات لسا</td></tr>`;
   };
   draw();
   v.querySelector('#c-add')?.addEventListener('click', async () => {
@@ -362,6 +368,7 @@ async function viewPartyCategories(v, ctx) {
     const tr = e.target.closest('[data-id]'); if (!tr) return; const c = cats.find(x => x.id === tr.dataset.id);
     if (e.target.closest('[data-save]')) {
       const d = { code: tr.querySelector('[data-f=code]').value.trim(), name: tr.querySelector('[data-f=name]').value.trim(), is_active: tr.querySelector('[data-f=is_active]').checked };
+      if (type === 'customer') STOPS.forEach(([k]) => d[k] = tr.querySelector(`[data-f=${k}]`).checked);
       if (!d.code || !d.name) return toast('الرمز والاسم مطلوبين', 'err');
       const { error } = await sb.from('party_categories').update(d).eq('id', c.id); if (error) return toast(arError(error), 'err');
       Object.assign(c, d); await log('تعديل', 'party_categories', c.id, { name: d.name }); toast('تم الحفظ', 'ok');
