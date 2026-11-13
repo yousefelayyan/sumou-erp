@@ -378,3 +378,7 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .pg-nav { display: flex; gap: 4px; padding: 5px 10px; border-inline-end: 1px solid var(--tint); }
 .pg-nav button { border: 1px solid var(--tint-2); background: var(--tint); color: var(--brand); border-radius: 8px; min-width: 34px; height: 30px; font-size: 16px; font-weight: 700; cursor: pointer; }
 .pg-nav button:hover { background: var(--brand); color: #fff; }
+/* سجل أسعار الصنف للطرف (المرحلة 63) */
+.lp-hint{font-size:11.5px;color:var(--ink2,#555);margin-top:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lp-hint:hover{color:var(--brand);text-decoration:underline}
+.lp-hint.diff b{color:#b45309}

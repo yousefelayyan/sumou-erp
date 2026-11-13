@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..62). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..63). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -47,7 +47,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   compare.js        مقارنة الفترات (route compare?t=pl|sales): قائمة الدخل من rep_trial_balance لفترتين (كل فترة على سنتها) والمبيعات من ask_sales (حسب عميل/صنف/فئة/مندوب/فرع)، مقابل نفس الفترة من السنة الماضية أو السابقة أو يدوي، مع الفرق ونسبة النمو وجديد/توقّف — ما في SQL
   partydocs.js      وثائق العملاء والموردين (route party-docs?t=report|docs|types&party=…): المنتهية والقريبة، وثائق طرف مع مرفقات party_doc، أنواع الوثائق
   follow.js         حالات المتابعة (route doc-statuses?k=…) + attachFollow(root, table, row, kind, screen) بمحررات الفواتير/الطلبات/السندات/سندات المخزون + followMap()/followBadge() للقوائم
-  profile.js        ملف العميل/المورد الإحصائي (route party-profile?id=…): بطاقات الأرقام، رسم 12 شهر، أكثر الأصناف، طباعة
+  profile.js        ملف العميل/المورد الإحصائي (route party-profile?id=…): بطاقات الأرقام، رسم 12 شهر، أكثر الأصناف، آخر أسعار الأصناف، طباعة
   leaves.js         الإجازات (route leaves?t=requests|balances|types) + leaveForm() + myLeavesCard() ببطاقة «راتبي»
   landed.js         الكلفة المحمّلة (route landed-costs): فواتير شراء + مصاريف (مورد أو حساب) + معاينة التوزيع، ترحيل/إلغاء/حذف/طباعة
   messages.js       الرسائل والواتساب (route messages?t=campaign|log|templates): حملات/تذكير بفلاتر، سجل الرسائل، النصوص الجاهزة + sendWhatsApp/fillTpl/msgTemplates (زر «💬 واتساب» بفاتورة البيع)
@@ -110,7 +110,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -134,7 +134,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.45.0)
+## اللي انبنى (لحد النسخة 4.46.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -230,6 +230,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **حالات المتابعة (المرحلة 60):** `doc_statuses` (kind: sale/sale_return/purchase/purchase_return/sales_order/purchase_order/receipt/payment/journal/stock، code، name، color hex، sort، is_final، is_active؛ القراءة has_company والكتابة بـ doc_types edit). `doc_follow` (doc_id = id المستند، doc_table، screen، kind، status_id، note) و`doc_follow_log`؛ القراءة بـ view على `screen`، والكتابة بس من `set_doc_follow(table, id, status, note)` (edit أو post على شاشة المستند، فرع المستخدم، الحالة لنفس الـ kind) — ما بتلمس المستند فبتنفع للمرحّل. `doc_follow_target` داخلية. حذف المستند بيمسحها (`zw_doc_follow_cleanup`). الواجهة: «إعداد ← حالات المتابعة»، شريط «📌 المتابعة» تحت شريط التتبع بكل محرر (بيبيّن بس إذا في حالات للنوع)، وبقائمة الفواتير شارة الحالة وفلتر. backup_tables: doc_statuses بعد doc_types، وdoc_follow/log قبل attachments.
 - **وثائق العملاء والموردين (المرحلة 61):** `party_doc_types` (applies_to customer/supplier/both، required، on_missing none/warn/block، warn_days؛ القراءة has_company والكتابة بـ customers أو suppliers edit) و`party_documents` (party، type، doc_no، issue/expiry؛ القراءة/الكتابة بـ view/edit على شاشة الطرف؛ مرفقات entity = 'party_doc'). `party_doc_issues(company, party, date)` (missing للإلزامي الناقص، expired، expiring خلال warn_days؛ من آخر وثيقة لكل نوع) و`party_docs_report(company, days)`. trigger `ab_party_docs_check` على ترحيل الفاتورة (draft→posted، حتى الداخلي/الكاشير): نوع block ناقص أو منتهي بتاريخ الفاتورة = منع، إلا المدير أو شاشة `party_docs_override` edit. الواجهة: «📄 وثائق العملاء والموردين» بالقائمة، زر 📄 بقائمة الأطراف، وتنبيه أعلى الفاتورة المسودة عند اختيار الطرف (`docWarn`). backup_tables: party_doc_types قبل parties وparty_documents بعدها.
 - **الخانات العشرية (المرحلة 62):** `company_settings.decimals` = {amount, qty, price} من 0 لـ 3 (قيد `company_settings_decimals_chk`؛ التخزين والحساب بيضلوا 3). core.js: `DEC` بيتعبّى بـ `loadFiscalYears()` لكل شركة، و`fmtNum` الافتراضي = DEC.amount، و`fmtQty`/`fmtPrice` للكميات والأسعار (استعمالات `fmtNum(…qty…)`/`fmtNum(…price|unit_cost…)` اتحوّلت). الإعداد من «حسابات الربط ← 🔢 الخانات العشرية».
+- **سجل أسعار الصنف للطرف (المرحلة 63):** `price_hist_rows` (داخلية، مش للمستخدم) → `party_last_prices(company, party, 'sale'|'purchase')` (آخر سعر صافي لكل صنف + التاريخ والفاتورة وعدد المرات وأقل/أعلى) و`party_price_history(company, party, item, kind, limit)`؛ الفواتير المرحّلة بس، الصافي = بعد خصم السطر وقبل الضريبة، بصلاحية view على sales_invoices/purchase_invoices، وبتحترم الفرع. الواجهة: تحت الصنف بالفاتورة سطر «🕘 آخر سعر» (`lpHint`، كلاس `.lp-hint`، المفتاح `data-lph` — `data-hist` محجوز لسجل التتبع) والكبسة بتفتح `priceHistory()` (بـ invoices.js) مع «استعمل»؛ قسم «آخر أسعار الأصناف» بملف العميل/المورد. `company_settings.use_last_price` («حسابات الربط ← المخزون»): الفاتورة بتاخذ آخر سعر لما ينختار الصنف (قائمة الأسعار أولى).
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36 (آخر قيد هلأ `lookups_kind_chk4` بالمرحلة 54)، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

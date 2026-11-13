@@ -11,7 +11,7 @@ import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin, fmtPrice, DEC } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin, fmtPrice, fmtQty, DEC } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords, loadPrintSettings } from './print.js';
@@ -157,6 +157,7 @@ async function viewSettings(v, ctx) {
         <option value="warn" ${st.credit_limit_mode !== 'block' ? 'selected' : ''}>تنبيه بس</option>
         <option value="block" ${st.credit_limit_mode === 'block' ? 'selected' : ''}>منع الترحيل فوق السقف (إلا لمين إله صلاحية «تجاوز سقف الائتمان»)</option></select></div>
       <label class="check"><input type="checkbox" name="block_below_cost" ${st.block_below_cost ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع بسعر أقل من الكلفة (إلا لمين إله صلاحية «تجاوز ضوابط الأسعار»)</label>
+      <label class="check"><input type="checkbox" name="use_last_price" ${st.use_last_price ? 'checked' : ''} ${editable ? '' : 'disabled'}> 🕘 الفاتورة بتاخذ آخر سعر بعته للزبون (أو اشتريته من المورد) لما تختار الصنف — قائمة الأسعار أولى</label>
       <label class="check"><input type="checkbox" name="block_negative_stock" ${st.block_negative_stock ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع والإخراج بأكثر من الكمية المتوفرة بالمستودع (البيع بالسالب)</label>
       <p class="muted" style="font-size:12px;margin:2px 0 0">الصنف اللي مأشّر عليه «تجاهل تتبع الكمية» بنوع المستند ما بيتفحص.</p>
       <h3 style="margin:16px 0 6px">🔢 الخانات العشرية بالعرض والطباعة</h3>
@@ -168,7 +169,7 @@ async function viewSettings(v, ctx) {
         .map(([k, l]) => `<div class="field"><label>${l}</label><input data-ctpl="${k}" value="${esc((st.cheque_templates || {})[k] || '')}" placeholder="${k === 'deposit' ? 'إيداع شيك وارد رقم: [رقم الشيك] / [البنك] حق [الاستحقاق]' : ''}" ${editable ? '' : 'disabled'}></div>`).join('')}</div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
-    d.block_negative_stock = !!d.block_negative_stock; d.block_below_cost = !!d.block_below_cost; d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
+    d.block_negative_stock = !!d.block_negative_stock; d.block_below_cost = !!d.block_below_cost; d.use_last_price = !!d.use_last_price; d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
     d.decimals = Object.fromEntries([...v.querySelectorAll('[data-dec]')].map(i => [i.dataset.dec, +i.value]));
     d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
@@ -417,7 +418,7 @@ async function invoiceEditor(type, inv, ctx) {
   togglePay(); f.payment_type.onchange = togglePay;
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
-      <td><input class="cell" list="item-list" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td>
+      <td><input class="cell" list="item-list" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${lpHint(r, i)}</td>
       <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}</td>
       <td><input class="cell n" data-i="${i}" data-k="qty" value="${r.qty || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="price" value="${r.price || ''}" inputmode="decimal" ${ro}></td>
@@ -426,6 +427,16 @@ async function invoiceEditor(type, inv, ctx) {
       <td class="n" data-tot="${i}"></td><td>${!readOnly ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('');
     totals();
   };
+  // سجل أسعار الصنف للطرف: آخر سعر تحت الصنف، وكبسة بتفتح السجل
+  let lastPx = {};
+  const lpHint = (r, i) => { const it = resolveItem(items, r.item), x = it && lastPx[it.id]; if (!x) return '';
+    const cur = num(r.price) && Math.abs(num(r.price) - num(x.last_unit_price)) > 0.0005;
+    return `<div class="lp-hint${cur ? ' diff' : ''}" data-lph="${i}" title="سجل أسعار الصنف لهالطرف">🕘 آخر سعر <b dir="ltr">${fmtPrice(x.last_price)}</b> · ${fmtDate(x.last_date)}${x.times > 1 ? ` · ${x.times} مرات (${fmtPrice(x.min_price)}–${fmtPrice(x.max_price)})` : ''}</div>`; };
+  const loadLastPrices = async (p) => { lastPx = {}; if (p) {
+    const { data } = await sb.rpc('party_last_prices', { p_company: S.company.id, p_party: p.id, p_kind: isSale ? 'sale' : 'purchase' });
+    (data || []).forEach(x => lastPx[x.item_id] = x); } draw(); };
+  const lastPrice = (it) => { const x = lastPx[it.id]; if (!x || !st.use_last_price) return null;
+    return incl() ? Math.round(num(x.last_price) * (1 + num(it.tax_rate) / 100) * 1000) / 1000 : num(x.last_price); };
   const totals = () => {
     let sub = 0, tax = 0, disc = 0;
     rows.forEach((r, i) => { const c = calc(r); sub += c.sub; tax += c.tax; disc += num(r.disc); const el = tb.querySelector(`[data-tot="${i}"]`); if (el) el.textContent = fmtNum(c.tot); });
@@ -440,7 +451,7 @@ async function invoiceEditor(type, inv, ctx) {
     const t = e.target; if (t.dataset.k !== 'item') return;
     const it = resolveItem(items, t.value), r = rows[+t.dataset.i];
     t.classList.toggle('bad', !!t.value && !it);
-    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale && listPrice[it.id] != null ? listPrice[it.id] : isSale ? it.sale_price : it.purchase_price) || r.price; r.rate = num(it.tax_rate);
+    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale && listPrice[it.id] != null ? listPrice[it.id] : lastPrice(it) ?? (isSale ? it.sale_price : it.purchase_price)) || r.price; r.rate = num(it.tax_rate);
       r.manualDisc = false; applyPromo(r, it, true); draw(); }
   });
   // العرض الترويجي بيتحدّث مع الكمية والسعر والتاريخ، والخصم اليدوي بيلغي العرض عن السطر
@@ -456,13 +467,17 @@ async function invoiceEditor(type, inv, ctx) {
     if (t.dataset.k === 'disc') { r.manualDisc = true; r.promo = 0; return; }
     if (['qty', 'price'].includes(t.dataset.k) && applyPromo(r, resolveItem(items, r.item), false)) draw(); });
   f.inv_date.addEventListener('change', () => { let ch = false; rows.forEach(r => { ch = applyPromo(r, resolveItem(items, r.item), false) || ch; }); if (ch) draw(); });
+  tb.addEventListener('click', (e) => { const h = e.target.closest("[data-lph]"); if (!h) return;
+    const r = rows[+h.dataset.lph], it = resolveItem(items, r.item), p = resolveParty(myParties, m.el.querySelector('#party').value);
+    if (it && p) priceHistory(p, it, isSale ? 'sale' : 'purchase', readOnly ? null : (pr) => {
+      r.price = incl() ? Math.round(pr * (1 + num(r.rate) / 100) * 1000) / 1000 : pr; r.disc = 0; r.manualDisc = true; r.promo = 0; draw(); }); });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) }); draw(); });
   m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) }); draw(); });
   let listPrice = {};   // سعر الصنف من قائمة أسعار الزبون
   const loadListPrices = async (p) => { listPrice = {}; if (!isSale || !p?.price_list_id) return;
     const { data } = await sb.rpc('party_item_prices', { p_company: S.company.id, p_party: p.id }); (data || []).forEach(x => listPrice[x.item_id] = num(x.price)); };
   const partyInput = m.el.querySelector('#party');
-  if (inv?.party_id || pre?.inv?.party_id) loadListPrices(myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)));
+  if (inv?.party_id || pre?.inv?.party_id) { const p0 = myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)); loadListPrices(p0); loadLastPrices(p0); }
   const docWarn = async (p) => {   // وثائق الطرف الناقصة أو المنتهية
     m.el.querySelector('#pdoc-warn')?.remove(); if (!p) return;
     const { data } = await sb.rpc('party_doc_issues', { p_company: S.company.id, p_party: p.id, p_date: f.inv_date.value || null });
@@ -476,7 +491,7 @@ async function invoiceEditor(type, inv, ctx) {
   if ((inv?.party_id && inv.status === 'draft') || pre?.inv?.party_id) docWarn(myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)));
   partyInput.addEventListener('change', () => {
     const p = resolveParty(myParties, partyInput.value); partyInput.classList.toggle('bad', !!partyInput.value && !p);
-    loadListPrices(p);
+    loadListPrices(p); loadLastPrices(p);
     docWarn(p);
     if (p) { partyInput.value = partyLabel(p); if (p.payment_terms_days && !f.due_date.value) { const d = new Date(f.inv_date.value); d.setDate(d.getDate() + p.payment_terms_days); f.due_date.value = d.toISOString().slice(0, 10); } }
   });
@@ -751,3 +766,25 @@ export const INVOICE_ROUTES = {
   'sales': invoiceList('sales'), 'purchases': invoiceList('purchases'),
   'rep-salestax': viewSalesTax,
 };
+
+// سجل أسعار الصنف لطرف: كل الفواتير المرحّلة، وكبسة «استعمل» بترجّع السعر للفاتورة
+export async function priceHistory(p, it, kind, onPick) {
+  const { data, error } = await sb.rpc('party_price_history', { p_company: S.company.id, p_party: p.id, p_item: it.id, p_kind: kind, p_limit: 100 });
+  if (error) return toast(arError(error), 'err');
+  const rows = data || [], last = rows[0];
+  const nets = rows.map(r => num(r.net_price));
+  const m = modal({ title: `🕘 سجل أسعار ${esc(it.name)} — ${esc(p.name)}`, body: !rows.length ? '<p class="muted">ما في فواتير مرحّلة لهالصنف مع هالطرف.</p>' : `
+    <div class="cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">
+      <div class="card" style="padding:8px"><div class="muted" style="font-size:12px">آخر سعر صافي</div><b dir="ltr">${fmtPrice(last.net_price)}</b></div>
+      <div class="card" style="padding:8px"><div class="muted" style="font-size:12px">أقل / أعلى</div><b dir="ltr">${fmtPrice(Math.min(...nets))} – ${fmtPrice(Math.max(...nets))}</b></div>
+      <div class="card" style="padding:8px"><div class="muted" style="font-size:12px">المتوسط</div><b dir="ltr">${fmtPrice(nets.reduce((a, b) => a + b, 0) / nets.length)}</b></div>
+      <div class="card" style="padding:8px"><div class="muted" style="font-size:12px">عدد الفواتير</div><b>${new Set(rows.map(r => r.invoice_id)).size}</b></div></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th>التاريخ</th><th>الفاتورة</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الصافي للوحدة</th><th>الضريبة</th>${onPick ? '<th></th>' : ''}</tr></thead><tbody>
+    ${rows.map(r => `<tr><td>${fmtDate(r.inv_date)}</td><td>${esc(r.doc_no)}</td><td class="n">${fmtQty(r.qty)}</td><td class="n">${fmtPrice(r.unit_price)}${r.include_tax ? ' <span class="muted" style="font-size:11px">شامل</span>' : ''}</td>
+      <td class="n">${num(r.discount) ? fmtNum(r.discount) : ''}</td><td class="n"><b>${fmtPrice(r.net_price)}</b></td><td class="n">${num(r.tax_rate)}%</td>
+      ${onPick ? `<td><button class="btn sm" data-use="${r.net_price}">استعمل</button></td>` : ''}</tr>`).join('')}</tbody></table></div>
+    <p class="muted" style="font-size:12px">الصافي = بعد خصم السطر وقبل الضريبة. الفواتير المرحّلة بس.</p>`,
+    foot: '<button class="btn" data-close>إغلاق</button>' });
+  m.el.querySelector('.modal').style.maxWidth = '820px';
+  m.el.querySelectorAll('[data-use]').forEach(b => b.onclick = () => { onPick(num(b.dataset.use)); m.close(); });
+}

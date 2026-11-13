@@ -2,9 +2,10 @@
 //  السمو ERP — ملف العميل/المورد الإحصائي (route party-profile?id=…)
 //  كل أرقام الطرف بشاشة وحدة من party_profile(company, party): رصيد، مفتوح ومتأخر، 12 شهر، أكثر الأصناف، شيكات…
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, can } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, fmtPrice, fmtQty, num, toast, arError, can } from './core.js';
 import { loadParties, partyLabel, partyDatalist, resolveParty } from './parties.js';
 import { printDoc } from './print.js';
+import { loadItems, priceHistory } from './invoices.js';
 
 const qp = () => new URLSearchParams(location.hash.split('?')[1] || '');
 const card = (label, value, sub = '', color = '') => `<div class="card" style="padding:12px;text-align:center">
@@ -61,7 +62,21 @@ async function viewProfile(v) {
           <div class="muted" style="font-size:10px">${m.m.slice(5)}/${m.m.slice(2, 4)}</div></div>`).join('')}</div>
       <div class="muted" style="font-size:12px;margin-top:4px"><span style="display:inline-block;width:10px;height:10px;background:var(--brand)"></span> ${word} (صافي بعد المرتجعات، قبل الضريبة) &nbsp; <span style="display:inline-block;width:10px;height:10px;background:var(--ok);opacity:.7"></span> ${sup ? 'الدفعات' : 'التحصيل'}</div></div>
     <div class="card table-wrap" style="margin-top:10px"><h4 style="margin:0 0 8px">أكثر 10 أصناف</h4><table class="t"><thead><tr><th>الصنف</th><th style="text-align:left">الكمية</th><th style="text-align:left">القيمة</th><th>آخر مرة</th></tr></thead><tbody>
-      ${(j.top_items || []).map(x => `<tr><td>${esc(x.code)} — ${esc(x.name)}</td><td class="n">${fmtNum(x.q)}</td><td class="n">${fmtNum(x.v)}</td><td>${fmtDate(x.last)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">ما في أصناف</td></tr>'}</tbody></table></div>`;
+      ${(j.top_items || []).map(x => `<tr><td>${esc(x.code)} — ${esc(x.name)}</td><td class="n">${fmtNum(x.q)}</td><td class="n">${fmtNum(x.v)}</td><td>${fmtDate(x.last)}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">ما في أصناف</td></tr>'}</tbody></table></div>
+    <div class="card table-wrap" style="margin-top:10px" id="lp-box"></div>`;
+  // سجل أسعار الأصناف (المرحلة 63): آخر سعر لكل صنف، والكبسة بتفتح السجل
+  const kind = sup ? 'purchase' : 'sale';
+  if (j.party.type !== 'expense' && can(sup ? 'purchase_invoices' : 'sales_invoices', 'view')) {
+    const [{ data: lp }, items] = await Promise.all([sb.rpc('party_last_prices', { p_company: S.company.id, p_party: j.party.id, p_kind: kind }), loadItems()]);
+    const byId = Object.fromEntries(items.map(i => [i.id, i]));
+    const rows = (lp || []).map(x => ({ ...x, it: byId[x.item_id] })).filter(x => x.it).sort((a, b) => String(b.last_date).localeCompare(String(a.last_date)));
+    const box = v.querySelector('#lp-box');
+    if (box) { box.innerHTML = `<h4 style="margin:0 0 8px">🕘 آخر أسعار الأصناف <span class="muted" style="font-size:12px;font-weight:400">(صافي قبل الضريبة — اكبس على الصنف للسجل)</span></h4>
+      <table class="t"><thead><tr><th>الصنف</th><th style="text-align:left">آخر سعر</th><th>التاريخ</th><th>الفاتورة</th><th style="text-align:left">الكمية</th><th style="text-align:left">أقل – أعلى</th><th>مرات</th></tr></thead><tbody>
+      ${rows.map(x => `<tr data-lp="${x.item_id}" style="cursor:pointer"><td>${esc(x.it.code)} — ${esc(x.it.name)}</td><td class="n"><b>${fmtPrice(x.last_price)}</b></td><td>${fmtDate(x.last_date)}</td><td>${esc(x.doc_no)}</td>
+        <td class="n">${fmtQty(x.last_qty)}</td><td class="n">${x.times > 1 ? `${fmtPrice(x.min_price)} – ${fmtPrice(x.max_price)}` : ''}</td><td>${x.times}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">ما في فواتير مرحّلة</td></tr>'}</tbody></table>`;
+      box.addEventListener('click', (e) => { const tr = e.target.closest('[data-lp]'); if (tr) priceHistory(j.party, byId[tr.dataset.lp], kind, null); }); }
+  }
   v.querySelector('#pr')?.addEventListener('click', () => printDoc(`ملف ${sup ? 'المورد' : 'العميل'}: ${j.party.code} — ${j.party.name}`, v.querySelector('#pp-body').innerHTML.replace(/class="t"/g, 'class="pt"'), { landscape: true }));
 }
 
