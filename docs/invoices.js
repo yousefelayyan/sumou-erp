@@ -15,6 +15,7 @@ import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirm
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords, loadPrintSettings } from './print.js';
+import { msgTemplates, fillTpl, sendWhatsApp } from './messages.js';
 import { openAttachments } from './attach.js';
 
 export const INV = {
@@ -380,6 +381,7 @@ async function invoiceEditor(type, inv, ctx) {
       ${inv?.status === 'posted' && can(T.screen, 'post') ? '<button class="btn danger" data-cancel>⛔ إلغاء الفاتورة</button>' : ''}
       ${inv?.status === 'posted' && !type.endsWith('return') && can(T.screen, 'add') ? `<button class="btn" data-return>↩️ ${type === 'sale' ? 'مرتجع بيع' : 'مرتجع شراء'} منها</button>` : ''}
       ${inv && can(T.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
+      ${inv && inv.party_id && isSaleType(type) && inv.status !== 'cancelled' ? '<button class="btn" data-wa>💬 واتساب</button>' : ''}
       ${inv ? '<button class="btn" data-attach>📎 مرفقات</button>' : ''}
       ${inv?.status === 'draft' && !inv.stock_posted && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
@@ -548,6 +550,13 @@ async function invoiceEditor(type, inv, ctx) {
       .then(() => toast('عدّل الكميات المرتجعة، واحذف السطور اللي ما رجعت', ''));
   });
   m.el.querySelector('[data-print]')?.addEventListener('click', () => printInvoice(type, inv, lines, pById[inv.party_id], st));
+  m.el.querySelector('[data-wa]')?.addEventListener('click', async () => {
+    const p = pById[inv.party_id]; const ph = p?.mobile || p?.phone;
+    if (!ph) return toast('ما في رقم جوال للعميل ببطاقته', 'err');
+    const [tpl, b] = await Promise.all([msgTemplates(), sb.from('party_balances').select('debit,credit').eq('party_id', p.id).eq('fiscal_year_id', inv.fiscal_year_id).maybeSingle()]);
+    const body = fillTpl(tpl.invoice, { name: p.name, no: docNo(inv), date: inv.inv_date, amount: inv.total, balance: b.data ? num(b.data.debit) - num(b.data.credit) : null });
+    sendWhatsApp({ party_id: p.id, phone: ph, kind: 'invoice', ref_id: inv.id, body });
+  });
   m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('invoice', inv.id, `${T.label} رقم ${docNo(inv)}`));
 }
 let returnPrefill = null;

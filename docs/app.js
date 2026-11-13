@@ -33,6 +33,7 @@ import { ATTENDANCE_ROUTES } from './attendance.js';
 import { DOCTYPE_ROUTES } from './doctypes.js';
 import { PRICE_ROUTES } from './prices.js';
 import { DISCOUNT_ROUTES } from './discounts.js';
+import { MESSAGE_ROUTES } from './messages.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
@@ -290,6 +291,7 @@ const NAV = () => [
   ]},
   { title: 'التسويق', items: [
     { r: 'promotions', i: '📢', l: 'العروض الترويجية', show: () => S.company && can('marketing', 'view') },
+    { r: 'messages', i: '💬', l: 'الرسائل والواتساب', show: () => S.company && can('marketing', 'view') },
     { r: 'loyalty', i: '💳', l: 'مركز تحكم بطاقات الولاء', show: () => S.company && can('customers', 'view') },
     { r: 'loyalty-cashback', i: '🏅', l: 'مراتب الولاء والاسترداد النقدي', show: () => S.company && can('marketing', 'view') },
     { r: 'setup?k=loyalty_type', i: '🎫', l: 'أنواع بطاقات الولاء', show: () => S.company && can('lookups', 'view') },
@@ -584,7 +586,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
