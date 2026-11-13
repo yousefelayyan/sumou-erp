@@ -207,11 +207,11 @@ async function viewPromotions(v) {
   const live = (p) => p.is_active && p.date_from <= today() && p.date_to >= today();
   const ed = can('marketing', 'edit');
   v.innerHTML = `<div class="page-head"><h2>📢 العروض الترويجية</h2><div class="spacer"></div>${ed ? '<button class="btn primary" id="add">➕ عرض جديد</button>' : ''}</div>
-    <p class="muted" style="font-size:13px">العرض بيعطي خصم % لحاله بفاتورة البيع لما تختار الصنف، إذا تاريخ الفاتورة جوّا فترة العرض والكمية فوق الحد الأدنى. إذا في أكثر من عرض بياخذ الأكبر.</p>
-    <div class="card table-wrap"><table class="t"><thead><tr><th>العرض</th><th>على</th><th>الخصم %</th><th>من</th><th>إلى</th><th>أقل كمية</th><th>الحالة</th><th></th></tr></thead>
-      <tbody>${rows.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${scope(p)}</td><td class="n">${num(p.discount_pct)}</td><td>${fmtDate(p.date_from)}</td><td>${fmtDate(p.date_to)}</td><td class="n">${num(p.min_qty) || ''}</td>
+    <p class="muted" style="font-size:13px">العرض بيعطي خصم % أو بونص (اشترِ N خذ M مجاناً) لحاله بفاتورة البيع لما تختار الصنف وتكتب الكمية، إذا تاريخ الفاتورة جوّا فترة العرض والكمية فوق الحد الأدنى. إذا في أكثر من عرض بياخذ الأكبر. للشرائح اعمل أكثر من عرض بأقل كمية مختلفة (مثلاً 10 حبات خصم 5%، و50 حبة خصم 10%).</p>
+    <div class="card table-wrap"><table class="t"><thead><tr><th>العرض</th><th>على</th><th>الخصم %</th><th>🎁 بونص</th><th>من</th><th>إلى</th><th>أقل كمية</th><th>الحالة</th><th></th></tr></thead>
+      <tbody>${rows.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${scope(p)}</td><td class="n">${num(p.discount_pct) || ''}</td><td>${num(p.free_qty) ? `اشترِ ${num(p.buy_qty)} خذ ${num(p.free_qty)}${p.free_repeat !== false ? ' (ومضاعفاتها)' : ''}` : ''}</td><td>${fmtDate(p.date_from)}</td><td>${fmtDate(p.date_to)}</td><td class="n">${num(p.min_qty) || ''}</td>
         <td>${live(p) ? '<span class="badge ok">شغّال</span>' : p.date_to < today() ? '<span class="badge">منتهي</span>' : p.is_active ? '<span class="badge warn">لسا ما بلّش</span>' : '<span class="badge">موقوف</span>'}</td>
-        <td class="actions">${ed ? `<button class="btn sm" data-edit="${p.id}">تعديل</button><button class="btn sm danger" data-del="${p.id}">حذف</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">ما في عروض</td></tr>'}</tbody></table></div>`;
+        <td class="actions">${ed ? `<button class="btn sm" data-edit="${p.id}">تعديل</button><button class="btn sm danger" data-del="${p.id}">حذف</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">ما في عروض</td></tr>'}</tbody></table></div>`;
   const open = (p) => {
     p = p || { name: '', date_from: today(), date_to: today(), discount_pct: 10, min_qty: 0, is_active: true };
     const kind = p.item_id ? 'item' : p.category_id ? 'cat' : 'all';
@@ -221,16 +221,22 @@ async function viewPromotions(v) {
       <div class="field" data-w="cat"><label>الفئة</label><select name="category_id">${cats.map(c => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
       <div class="field" data-w="item"><label>الصنف</label><select name="item_id">${items.filter(i => i.is_active || i.id === p.item_id).map(i => `<option value="${i.id}" ${i.id === p.item_id ? 'selected' : ''}>${esc(itemLabel(i))}</option>`).join('')}</select></div>
       <div class="grid cols-2"><div class="field"><label>من *</label><input type="date" name="date_from" value="${esc(p.date_from)}"></div><div class="field"><label>إلى *</label><input type="date" name="date_to" value="${esc(p.date_to)}"></div></div>
-      <div class="grid cols-2"><div class="field"><label>الخصم % *</label><input name="discount_pct" dir="ltr" value="${num(p.discount_pct)}"></div><div class="field"><label>أقل كمية</label><input name="min_qty" dir="ltr" value="${num(p.min_qty) || ''}"></div></div>
+      <div class="grid cols-2"><div class="field"><label>الخصم % (0 = بدون خصم)</label><input name="discount_pct" dir="ltr" value="${num(p.discount_pct)}"></div><div class="field"><label>أقل كمية</label><input name="min_qty" dir="ltr" value="${num(p.min_qty) || ''}"></div></div>
+      <div class="grid cols-2"><div class="field"><label>🎁 بونص: اشترِ (كمية)</label><input name="buy_qty" dir="ltr" value="${num(p.buy_qty) || ''}" placeholder="مثلاً 10"></div><div class="field"><label>خذ مجاناً</label><input name="free_qty" dir="ltr" value="${num(p.free_qty) || ''}" placeholder="مثلاً 1"></div></div>
+      <label class="check"><input type="checkbox" name="free_repeat" ${p.free_repeat !== false ? 'checked' : ''}> البونص بيتضاعف (20 → 2، 30 → 3…)</label>
       <label class="check"><input type="checkbox" name="is_active" ${p.is_active ? 'checked' : ''}> فعّال</label></form>`,
       foot: '<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>' });
     const f = m.el.querySelector('#pf'); const sync = () => m.el.querySelectorAll('[data-w]').forEach(x => x.style.display = x.dataset.w === f.kind.value ? '' : 'none'); f.kind.onchange = sync; sync();
     m.el.querySelector('[data-save]').onclick = async () => {
       const d = formData(f);
       if (!d.name?.trim()) return toast('اكتب اسم العرض', 'err');
-      if (!(num(d.discount_pct) > 0 && num(d.discount_pct) <= 100)) return toast('الخصم لازم بين 0 و100', 'err');
+      const bon = num(d.buy_qty) > 0 && num(d.free_qty) > 0;
+      if ((num(d.buy_qty) > 0) !== (num(d.free_qty) > 0)) return toast('البونص بده الكميتين: اشترِ وخذ', 'err');
+      if (!(num(d.discount_pct) >= 0 && num(d.discount_pct) <= 100)) return toast('الخصم لازم بين 0 و100', 'err');
+      if (!(num(d.discount_pct) > 0) && !bon) return toast('العرض بده خصم أو بونص', 'err');
       if (d.date_to < d.date_from) return toast('تاريخ النهاية قبل البداية', 'err');
       const rec = { name: d.name.trim(), date_from: d.date_from, date_to: d.date_to, discount_pct: num(d.discount_pct), min_qty: num(d.min_qty), is_active: !!d.is_active,
+        buy_qty: bon ? num(d.buy_qty) : null, free_qty: bon ? num(d.free_qty) : null, free_repeat: !!d.free_repeat,
         item_id: d.kind === 'item' ? d.item_id || null : null, category_id: d.kind === 'cat' ? d.category_id || null : null };
       const r = p.id ? await sb.from('promotions').update(rec).eq('id', p.id) : await sb.from('promotions').insert({ ...rec, company_id: S.company.id });
       if (r.error) return toast(arError(r.error), 'err');

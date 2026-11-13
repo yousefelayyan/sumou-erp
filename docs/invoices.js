@@ -372,7 +372,13 @@ async function invoiceEditor(type, inv, ctx) {
     original_invoice_id: pre && !pre.fromOrder ? pre.inv.id : null, sales_rep_id: pre?.inv.sales_rep_id || null, department_id: pre?.inv.department_id || null, notes: pre?.inv.notes || '', project: pre?.inv.project || '', tax_mode: pre?.inv.tax_mode || 'normal' };
   if (pre) lines = pre.lines;
   const pById = Object.fromEntries(parties.map(p => [p.id, p])), itById = Object.fromEntries(items.map(i => [i.id, i]));
-  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '' }));
+  let rows = [];
+  for (const l of lines) {   // سطر البونص بينضم لكمية+ على سطر نفس الصنف اللي قبله
+    const prev = rows[rows.length - 1];
+    if (l.is_bonus && prev && prev.itemId === l.item_id && !prev.bonus) { prev.bonus = num(l.qty); prev.manualBonus = true; continue; }
+    rows.push({ itemId: l.item_id, item: itemLabel(itById[l.item_id]), desc: l.is_bonus ? '' : l.description || '', details: l.details || '', qty: l.is_bonus ? 0 : num(l.qty), bonus: l.is_bonus ? num(l.qty) : 0, manualBonus: !!l.is_bonus,
+      price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '' });
+  }
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
   const dept = await deptField(inv?.department_id, ro, !inv); await loadLookups(); const dtf = await docTypeField(type, inv?.doc_type_id, ro);
@@ -396,7 +402,7 @@ async function invoiceEditor(type, inv, ctx) {
       <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" name="prices_include_tax" ${i0.prices_include_tax ? 'checked' : ''} ${ro}> الأسعار شاملة الضريبة</label></div>
     </div></form>
     <datalist id="item-list">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}"></option>`).join('')}</datalist>
-    <div class="table-wrap"><table class="t lines" id="il"><thead><tr><th style="width:32px">#</th><th style="min-width:180px">الصنف (اختياري)</th><th style="min-width:180px">البيان</th><th style="width:80px">الكمية</th><th style="width:110px">السعر</th><th style="width:90px">الخصم</th><th style="width:70px">ض%</th><th style="width:120px">الإجمالي</th><th style="width:30px"></th></tr></thead>
+    <div class="table-wrap"><table class="t lines" id="il"><thead><tr><th style="width:32px">#</th><th style="min-width:180px">الصنف (اختياري)</th><th style="min-width:180px">البيان</th><th style="width:80px">الكمية</th><th style="width:70px" title="بونص: كمية مجانية بتطلع من المخزون بدون سعر">🎁 كمية+</th><th style="width:110px">السعر</th><th style="width:90px">الخصم</th><th style="width:70px">ض%</th><th style="width:120px">الإجمالي</th><th style="width:30px"></th></tr></thead>
       <tbody></tbody></table></div>
     ${!readOnly ? '<button class="btn sm" id="add-line" type="button" style="margin-top:6px">➕ سطر</button>' : ''}
     <div class="inv-totals"><div><span>المجموع قبل الضريبة</span><b id="t-sub" dir="ltr"></b></div><div><span>الخصومات</span><b id="t-disc" dir="ltr"></b></div>
@@ -428,6 +434,7 @@ async function invoiceEditor(type, inv, ctx) {
       <td><input class="cell" list="item-list" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${lpHint(r, i)}</td>
       <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}${batchCell(r, i)}</td>
       <td><input class="cell n" data-i="${i}" data-k="qty" value="${r.qty || ''}" inputmode="decimal" ${ro}></td>
+      <td><input class="cell n" data-i="${i}" data-k="bonus" value="${r.bonus || ''}" inputmode="decimal" ${ro} ${r.bonus ? 'style="color:var(--ok,#15803d);font-weight:700"' : ''}></td>
       <td><input class="cell n" data-i="${i}" data-k="price" value="${r.price || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="disc" value="${r.disc || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="rate" value="${r.rate}" inputmode="decimal" ${ro} ${(f?.tax_mode?.value || i0.tax_mode || 'normal') !== 'normal' ? 'disabled' : ''}></td>
@@ -477,7 +484,10 @@ async function invoiceEditor(type, inv, ctx) {
   });
   // العرض الترويجي بيتحدّث مع الكمية والسعر والتاريخ، والخصم اليدوي بيلغي العرض عن السطر
   const applyPromo = (r, it, announce) => {
-    if (!(isSale && type === 'sale') || !it || r.manualDisc) return false;
+    if (!(isSale && type === 'sale') || !it) return false;
+    if (!r.manualBonus) { const b = bestBonus(promos, it, f.inv_date.value, num(r.qty)), hadB = num(r.bonus);
+      r.bonus = b ? b.qty : 0; if (b && announce && b.qty !== hadB) toast(`عرض «${b.name}»: بونص ${fmtQty(b.qty)}`, 'ok'); }
+    if (r.manualDisc) return true;
     const pr = bestPromo(promos, it, f.inv_date.value, num(r.qty)), had = !!r.promo;
     r.promo = pr ? num(pr.discount_pct) : 0;
     if (pr) { r.disc = r3(num(r.qty) * num(r.price) * r.promo / 100); if (announce) toast(`عرض «${pr.name}»: خصم ${r.promo}%`, 'ok'); }
@@ -486,6 +496,7 @@ async function invoiceEditor(type, inv, ctx) {
   };
   tb.addEventListener('change', (e) => { const t = e.target, r = rows[+t.dataset.i]; if (!r) return;
     if (t.dataset.k === 'disc') { r.manualDisc = true; r.promo = 0; return; }
+    if (t.dataset.k === 'bonus') { r.manualBonus = true; return; }
     if (t.dataset.k === 'batch' && !inbound) { const b = bal.find(x => x.batch_no === t.value.trim() && x.item_id === resolveItem(items, r.item)?.id); r.exp = b?.expiry_date || ''; draw(); return; }
     if (['qty', 'price'].includes(t.dataset.k) && applyPromo(r, resolveItem(items, r.item), false)) draw(); });
   f.inv_date.addEventListener('change', () => { let ch = false; rows.forEach(r => { ch = applyPromo(r, resolveItem(items, r.item), false) || ch; }); if (ch) draw(); });
@@ -540,7 +551,10 @@ async function invoiceEditor(type, inv, ctx) {
       if (!r.item && !r.desc && !num(r.price)) continue;
       const it = resolveItem(items, r.item);
       if (r.item && !it) return toast(`السطر ${k + 1}: الصنف مش موجود`, 'err');
-      if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err');
+      const bq = num(r.bonus);
+      if (bq < 0) return toast(`السطر ${k + 1}: كمية البونص ما بتكون سالب`, 'err');
+      if (bq > 0 && !it) return toast(`السطر ${k + 1}: البونص بده صنف`, 'err');
+      if (num(r.qty) <= 0 && !(bq > 0 && num(r.qty) === 0)) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err');
       if (num(r.disc) > num(r.qty) * num(r.price)) return toast(`السطر ${k + 1}: الخصم أكبر من قيمة السطر`, 'err');
       const c = calc(r);
       const bm = it?.batch_mode && it.batch_mode !== 'none';
@@ -548,6 +562,9 @@ async function invoiceEditor(type, inv, ctx) {
       if (bm && inbound && it.batch_mode === 'expiry' && !r.exp) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
       out.push({ batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate),
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
+      if (num(r.qty) === 0) out.pop();
+      if (bq > 0) out.push({ batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it.id, description: `${r.desc || it.name} — 🎁 بونص`, details: null,
+        qty: bq, unit_price: 0, discount: 0, tax_rate: 0, is_bonus: true, account_id: (isSale ? it.sales_account_id : it.purchase_account_id) || null, subtotal: 0, tax_amount: 0, line_total: 0 });
     }
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
     // تنبيه: الكمية المطلوبة أكبر من المتوفرة بالمستودع (فاتورة البيع)
@@ -647,8 +664,14 @@ async function invoiceEditor(type, inv, ctx) {
 }
 let returnPrefill = null;
 // فتح فاتورة جديدة معبّاة من طلب (طلب مبيعات/تزويد)
+function bestBonus(promos, it, date, qty) {   // اشترِ N خذ M (ومضاعفاتها)
+  return promos.filter(p => num(p.free_qty) > 0 && num(p.buy_qty) > 0 && p.date_from <= date && p.date_to >= date && num(qty) >= num(p.min_qty) && num(qty) >= num(p.buy_qty)
+      && (p.item_id ? p.item_id === it.id : p.category_id ? p.category_id === it.category_id : true))
+    .map(p => ({ name: p.name, qty: (p.free_repeat !== false ? Math.floor(num(qty) / num(p.buy_qty) + 1e-9) : 1) * num(p.free_qty) }))
+    .sort((a, b) => b.qty - a.qty)[0] || null;
+}
 function bestPromo(promos, it, date, qty) {
-  return promos.filter(p => p.date_from <= date && p.date_to >= date && num(qty) >= num(p.min_qty) && (p.item_id ? p.item_id === it.id : p.category_id ? p.category_id === it.category_id : true))
+  return promos.filter(p => num(p.discount_pct) > 0 && p.date_from <= date && p.date_to >= date && num(qty) >= num(p.min_qty) && (p.item_id ? p.item_id === it.id : p.category_id ? p.category_id === it.category_id : true))
     .sort((a, b) => num(b.discount_pct) - num(a.discount_pct))[0] || null;
 }
 export function openInvoicePrefill(type, prefill, ctx) { returnPrefill = { ...prefill, fromOrder: true }; return invoiceEditor(type, null, ctx); }
