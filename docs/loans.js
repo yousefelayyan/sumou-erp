@@ -26,7 +26,9 @@ async function loanDetails(l, ctx, { sup = false, mine = false } = {}) {
     ${inst?.length ? `<h4>📅 جدول الأقساط</h4><div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>شهر الاستحقاق</th><th>القسط</th><th>الحالة</th><th></th></tr></thead><tbody>
       ${inst.map(i => `<tr><td>${i.seq}</td><td>${esc(i.due_month)}${i.deferred ? ` <span class="badge">مؤجّل ${i.deferred}</span>` : ''}</td><td class="n">${fmtNum(i.amount)}</td>
         <td>${i.status === 'paid' ? '<span class="badge ok">مدفوع</span>' : '—'}</td>
-        <td>${sup && i.status === 'pending' && l.status === 'approved' ? `<button class="btn sm" data-defer="${i.id}">⏭ تأجيل</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+        <td>${i.defer_request ? `<span class="badge warn" title="${esc(i.defer_request)}">⏸ طلب تأجيل</span> ` : ''}${sup && i.status === 'pending' && l.status === 'approved' ? `<button class="btn sm" data-defer="${i.id}">⏭ تأجيل</button>${i.defer_request ? ` <button class="btn sm" data-dreject="${i.id}">رفض الطلب</button>` : ''}` : ''}
+          ${mine && !sup && i.status === 'pending' && l.status === 'approved' && !i.defer_request ? `<button class="btn sm" data-dreq="${i.id}">⏸ اطلب تأجيل</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    <div id="rule-issues"></div>
     <h4>💬 التعليقات</h4>
     <div class="grid cols-2">
       <div class="field"><label>👤 تعليقات الموظف</label><textarea id="c-emp" rows="3" ${mine && ['pending', 'approved'].includes(l.status) ? '' : 'disabled'}>${esc(l.employee_note || '')}</textarea></div>
@@ -36,6 +38,19 @@ async function loanDetails(l, ctx, { sup = false, mine = false } = {}) {
       ${(sup && ['pending', 'approved'].includes(l.status) && !paid) || (mine && l.status === 'pending') ? '<button class="btn danger" data-cancel style="margin-inline-start:auto">إلغاء الطلب</button>' : ''}
       <button class="btn" data-print>🖨️ طباعة</button><button class="btn" data-close>إغلاق</button>` });
   const done = () => { m.close(); ctx.rerender(); };
+  if (sup && l.status === 'pending') sb.rpc('loan_rule_issues', { p_loan: l.id }).then(({ data }) => { if (data?.length) m.el.querySelector('#rule-issues').innerHTML = `<div class="notice" style="margin-top:8px">⚠️ مخالف لضوابط القروض: ${data.map(esc).join('، ')}.${S.profile?.is_admin ? ' بتقدر تعتمده كمدير.' : ' الاعتماد بس للمدير.'}</div>`; });
+  m.el.querySelectorAll('[data-dreq]').forEach(b => b.onclick = () => {
+    const q = modal({ title: '⏸ طلب تأجيل قسط', size: 'sm', stack: true, body: '<div class="field"><label>السبب</label><textarea id="dq" rows="3" maxlength="300"></textarea></div>',
+      foot: '<button class="btn primary" data-go>إرسال</button><button class="btn" data-close>إلغاء</button>' });
+    q.el.querySelector('[data-go]').onclick = async () => {
+      const { error } = await sb.rpc('loan_defer_request', { p_inst: b.dataset.dreq, p_note: q.el.querySelector('#dq').value }); if (error) return toast(arError(error), 'err');
+      toast('انبعث طلب التأجيل للمشرف', 'ok'); q.close(); m.close(); loanDetails(l, ctx, { sup, mine });
+    };
+  });
+  m.el.querySelectorAll('[data-dreject]').forEach(b => b.onclick = async () => {
+    const { error } = await sb.rpc('loan_defer_reject', { p_inst: b.dataset.dreject }); if (error) return toast(arError(error), 'err');
+    toast('انرفض طلب التأجيل', 'ok'); m.close(); loanDetails(l, ctx, { sup, mine });
+  });
   m.el.querySelector('[data-cm]')?.addEventListener('click', async () => {
     const note = (mine ? m.el.querySelector('#c-emp') : m.el.querySelector('#c-sup')).value;
     const { error } = await sb.rpc('loan_comment', { p_id: l.id, p_note: note }); if (error) return toast(arError(error), 'err'); toast('انحفظ التعليق', 'ok');
@@ -57,6 +72,19 @@ async function loanDetails(l, ctx, { sup = false, mine = false } = {}) {
     <table class="pt"><tbody><tr><td>الموظف</td><td>${esc(l.emp_name || '')}</td><td>المبلغ</td><td>${fmtNum(l.amount)}</td></tr>
     <tr><td>تاريخ الطلب</td><td>${fmtDate(l.request_date)}</td><td>الحالة</td><td>${ST[l.status]?.[0] || ''}</td></tr></tbody></table>
     <table class="pt"><thead><tr><th>#</th><th>الشهر</th><th>القسط</th><th>الحالة</th></tr></thead><tbody>${(inst || []).map(i => `<tr><td>${i.seq}</td><td>${esc(i.due_month)}</td><td>${fmtNum(i.amount)}</td><td>${i.status === 'paid' ? 'مدفوع' : ''}</td></tr>`).join('')}</tbody></table>`);
+}
+
+async function rulesForm() {
+  const { data: r = {} } = await sb.rpc('loan_rules_get', { p_company: S.company.id });
+  const F = [['max_multiple', 'أعلى قرض = كم ضعف الراتب الشهري', 'مثلاً 3'], ['max_inst_pct', 'أعلى قسط % من الراتب', 'مثلاً 25'], ['advance_max_pct', 'أعلى سلفة % من الراتب', 'مثلاً 50'],
+    ['max_open', 'أكثر عدد قروض/سلف مفتوحة للموظف', 'مثلاً 1'], ['min_service_months', 'أقل مدة خدمة (شهور) قبل أول قرض', 'مثلاً 6'], ['max_installments', 'أكثر عدد أقساط', 'مثلاً 24']];
+  const m = modal({ title: '⚙️ ضوابط القروض والسلف', size: 'sm', body: `<form id="rf"><p class="muted" style="margin-top:0;font-size:13px">الفاضي = بدون ضابط. الراتب = الأساسي + العلاوات. طلب الموظف لحاله المخالف بينرفض، وطلب المشرف بينحفظ بس اعتماده للمدير بس.</p>
+    ${F.map(([k, l, ph]) => `<div class="field"><label>${l}</label><input name="${k}" inputmode="decimal" dir="ltr" value="${r?.[k] ?? ''}" placeholder="${ph}"></div>`).join('')}</form>`,
+    foot: '<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>' });
+  m.el.querySelector('[data-save]').onclick = async () => {
+    const { error } = await sb.rpc('loan_rules_save', { p_company: S.company.id, p: formData(m.el.querySelector('#rf')) });
+    if (error) return toast(arError(error), 'err'); toast('انحفظت الضوابط', 'ok'); m.close();
+  };
 }
 
 function requestForm(ctx, { emps = null } = {}) {
@@ -96,14 +124,18 @@ async function viewLoans(v, ctx) {
   const sup = can('payroll', 'post');
   const { data: myEmp } = await sb.rpc('my_employee', { p_company: S.company.id });
   const cnt = (k) => all.filter(l => l.status === k).length;
-  v.innerHTML = `<div class="page-head"><h2>💳 القروض والسلف</h2><div class="spacer"></div>${can('payroll', 'add') ? '<button class="btn primary" id="add">➕ طلب جديد</button>' : ''}</div>
+  const { data: dreq } = await sb.from('loan_installments').select('loan_id').not('defer_request', 'is', null).in('loan_id', all.map(l => l.id).slice(0, 500));
+  const dreqSet = new Set((dreq || []).map(x => x.loan_id));
+  v.innerHTML = `<div class="page-head"><h2>💳 القروض والسلف</h2><div class="spacer"></div>${can('payroll', 'edit') ? '<button class="btn" id="rules">⚙️ ضوابط القروض</button>' : ''}${can('payroll', 'add') ? '<button class="btn primary" id="add">➕ طلب جديد</button>' : ''}</div>
+    ${dreqSet.size ? `<div class="notice info" style="margin-bottom:8px">⏸ في ${dreqSet.size} طلب تأجيل قسط بانتظار المشرف (معلّمة بالجدول).</div>` : ''}
     <div class="tabs" style="margin-bottom:10px">${[['pending', 'بانتظار الموافقة'], ['approved', 'قيد السداد'], ['closed', 'مسدّدة'], ['rejected', 'مرفوضة'], ['all', 'الكل']]
       .map(([k, lbl]) => `<a class="tab ${st === k ? 'active' : ''}" href="#/loans?st=${k}">${lbl}${k !== 'all' ? ` (${cnt(k)})` : ''}</a>`).join('')}</div>
     <div class="card table-wrap"><table class="t rep"><thead><tr><th>الرقم</th><th>الموظف</th><th>النوع</th><th>التاريخ</th><th>المبلغ</th><th>الأقساط</th><th>المتبقي</th><th>الحالة</th></tr></thead><tbody>
       ${list.map(l => `<tr data-l="${l.id}" style="cursor:pointer"><td>${String(l.loan_no).padStart(6, '0')}</td><td>${esc(l.emp_name)}</td><td>${KIND[l.kind]}</td><td>${fmtDate(l.request_date)}</td>
-        <td class="n">${fmtNum(l.amount)}</td><td class="n">${l.installments}</td><td class="n">${l.status === 'approved' ? fmtNum(num(l.amount) - (paidBy[l.id] || 0)) : ''}</td><td>${badge(l.status)}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">ما في طلبات</td></tr>'}</tbody></table></div>
+        <td class="n">${fmtNum(l.amount)}</td><td class="n">${l.installments}</td><td class="n">${l.status === 'approved' ? fmtNum(num(l.amount) - (paidBy[l.id] || 0)) : ''}</td><td>${badge(l.status)}${dreqSet.has(l.id) ? ' <span class="badge warn">⏸ تأجيل</span>' : ''}${l.entry_id ? ' <span class="badge" title="من سند صرف">🧾</span>' : ''}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">ما في طلبات</td></tr>'}</tbody></table></div>
     <p class="muted" style="font-size:12px">الأقساط المستحقة بتنخصم لحالها بمسيّر الرواتب (عمود «خصم السلف»)، وبتصير مدفوعة لما يترحّل. الموافقة والرفض والتأجيل لمين إله «ترحيل» الرواتب.</p>`;
   v.querySelector('#add')?.addEventListener('click', () => requestForm(ctx, { emps: emps.filter(e => e.is_active) }));
+  v.querySelector('#rules')?.addEventListener('click', () => rulesForm());
   v.querySelector('tbody').onclick = (e) => { const tr = e.target.closest('[data-l]'); if (tr) { const l = all.find(x => x.id === tr.dataset.l); loanDetails(l, ctx, { sup: sup && (l.employee_id !== myEmp || S.profile?.is_admin) }); } };
 }
 

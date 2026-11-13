@@ -379,6 +379,7 @@ async function voucherEditor(type, entry, ctx) {
       ${entry && can(T.screen, 'print') ? `<button class="btn" data-print>🖨️ طباعة</button>` : ''}
       ${entry ? `<button class="btn" data-attach>📎 مرفقات</button>` : ''}
       ${entry && isCash && entry.status === 'posted' && !entry.reversal_of && !entry.reversed_by && (can(T.screen, 'edit') || can(T.screen, 'add')) && lines.some(l => l.party_id) ? `<button class="btn" data-alloc>🧾 توزيع على الفواتير</button>` : ''}
+      ${entry && ['payment', 'journal'].includes(type) && entry.status === 'posted' && !entry.reversal_of && !entry.reversed_by && can('payroll', 'add') && can('payroll', 'post') && lines.some(l => l.employee_id && num(l.debit) > 0) ? `<button class="btn" data-toloan>👷 سلفة بالأقساط من الراتب</button>` : ''}
       ${entry && ['journal', 'receipt', 'payment'].includes(type) && can('journal_entries', 'add') ? `<button class="btn" data-recur>🔁 تكرار شهري</button>` : ''}
       ${entry?.status === 'draft' && can(T.screen, 'delete') ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>` : ''}
       <button class="btn" data-close>إغلاق</button>` });
@@ -607,6 +608,23 @@ async function voucherEditor(type, entry, ctx) {
   m.el.querySelector('[data-postdo=gl]')?.addEventListener('click', (ev) => { if (!readOnly) { ev.stopImmediatePropagation(); save(true); } });
   if (entry) wirePostBar(m.el, 'entry', entry.id, () => reopen(entry.id));
   m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('entry', entry.id, `${T.label} رقم ${docNo(entry)}`));
+  m.el.querySelector('[data-toloan]')?.addEventListener('click', async () => {
+    const ids = [...new Set(lines.filter(l => l.employee_id && num(l.debit) > 0).map(l => l.employee_id))];
+    const { data: done } = await sb.from('employee_loans').select('employee_id,loan_no,status').eq('entry_id', entry.id).neq('status', 'cancelled');
+    const nm = new Date(); nm.setMonth(nm.getMonth() + 1); const fm = `${nm.getFullYear()}-${String(nm.getMonth() + 1).padStart(2, '0')}`;
+    const lm = modal({ title: '👷 تحويل السند لسلفة بالأقساط', size: 'sm', stack: true, body: `<form id="tl">
+      <p class="muted" style="margin-top:0;font-size:13px">المبلغ = سطور السند المدينة على «حساب سلف الموظفين» (من حسابات الربط) لهالموظف. الأقساط بتنخصم لحالها بمسيّر الرواتب.</p>
+      <div class="field"><label>الموظف</label><select name="emp">${ids.map(id => { const d = (done || []).find(x => x.employee_id === id); return `<option value="${id}" ${d ? 'disabled' : ''}>${esc(empById[id]?.name || '')}${d ? ` — محوّل (رقم ${d.loan_no})` : ''}</option>`; }).join('')}</select></div>
+      <div class="grid cols-2"><div class="field"><label>عدد الأقساط</label><input name="n" type="number" min="1" max="120" value="1"></div>
+        <div class="field"><label>شهر أول قسط</label><input name="fm" type="month" value="${fm}"></div></div></form>`,
+      foot: '<button class="btn primary" data-go>تحويل</button><button class="btn" data-close>إلغاء</button>' });
+    lm.el.querySelector('[data-go]').onclick = async (ev) => {
+      const f = lm.el.querySelector('#tl'); ev.target.disabled = true;
+      const { error } = await sb.rpc('loan_from_entry', { p_entry: entry.id, p_employee: f.emp.value, p_installments: parseInt(f.n.value) || 1, p_first_month: f.fm.value });
+      ev.target.disabled = false; if (error) return toast(arError(error), 'err');
+      toast('انعملت السلفة وجدول أقساطها (القروض والسلف)', 'ok'); lm.close();
+    };
+  });
   m.el.querySelector('[data-alloc]')?.addEventListener('click', () => allocateDialog(entry, [...new Set(lines.filter(l => l.party_id).map(l => l.party_id))], pById));
   m.el.querySelector('[data-recur]')?.addEventListener('click', () => recurringDialog(entry));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
