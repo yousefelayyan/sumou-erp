@@ -59,7 +59,26 @@ export const SCREENS = [
   { key: 'maintenance',      label: 'بطاقات الصيانة', group: 'الصيانة' },
   { key: 'reports',          label: 'التقارير والأستاذ العام والمساعد', group: 'التقارير' },
   { key: 'obligations',      label: 'متابعة إقرارات العملاء', group: 'المكتب' },
+  { key: 'theme',            label: 'تغيير لون الواجهة', group: 'الأدوات' },
 ];
+
+// ألوان الواجهة (CSS: html[data-theme=…])
+export const THEMES = [
+  { key: 'purple',  label: 'بنفسجي السمو', c: '#5b2a86' },
+  { key: 'jcpa',    label: 'أخضر منصة JCPA', c: '#0f4f4a' },
+  { key: 'emerald', label: 'أخضر زمردي', c: '#047857' },
+  { key: 'blue',    label: 'أزرق', c: '#1d4ed8' },
+  { key: 'maroon',  label: 'عنّابي', c: '#8b1e3f' },
+  { key: 'orange',  label: 'برتقالي', c: '#c2410c' },
+  { key: 'slate',   label: 'رمادي داكن', c: '#334155' },
+];
+export const canTheme = () => isAdmin() || can('theme', 'view');
+export function applyTheme(key) {
+  const t = THEMES.find(x => x.key === key) ? key : 'purple';
+  if (t === 'purple') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', THEMES.find(x => x.key === t).c);
+  try { localStorage.setItem('sumou.theme', t); } catch {}
+}
 export const ACTIONS = [
   { key: 'view', label: 'عرض' }, { key: 'add', label: 'إضافة' },
   { key: 'edit', label: 'تعديل' }, { key: 'delete', label: 'حذف' }, { key: 'print', label: 'طباعة' }, { key: 'post', label: 'ترحيل' }, { key: 'unpost', label: 'إلغاء ترحيل' },

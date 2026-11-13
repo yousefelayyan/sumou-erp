@@ -4,7 +4,7 @@
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
-import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, THEMES, applyTheme, canTheme, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
@@ -552,6 +552,20 @@ async function viewHome(v) {
       </div>
     </div>`;
   v.querySelector('#home-fy')?.addEventListener('click', switchYearDialog);
+  // لون الواجهة: كل مستخدم بيختار لونه (إذا المدير سامحله من الصلاحيات)
+  if (canTheme()) {
+    const cur = S.profile?.theme || 'purple';
+    const box = document.createElement('div'); box.className = 'card'; box.style.marginTop = '14px';
+    box.innerHTML = `<h3 style="margin-top:0">🎨 لون الواجهة</h3><div class="theme-sw">${THEMES.map(t => `<button type="button" data-th="${t.key}" class="${t.key === cur ? 'on' : ''}"><i style="background:${t.c}"></i>${esc(t.label)}</button>`).join('')}</div>`;
+    v.appendChild(box);
+    box.onclick = async (e) => {
+      const b = e.target.closest('[data-th]'); if (!b) return;
+      applyTheme(b.dataset.th); box.querySelectorAll('[data-th]').forEach(x => x.classList.toggle('on', x === b));
+      const { error } = await sb.from('profiles').update({ theme: b.dataset.th }).eq('id', S.profile.id);
+      if (error) return toast(arError(error), 'err');
+      S.profile.theme = b.dataset.th; toast('تغيّر اللون', 'ok');
+    };
+  }
   dashboardPanel(v.querySelector('#dash')).catch(() => {});
   if (S.companies.some(c => can('obligations', 'view', c.id))) {
     obligationsSummary().then(({ late, soon }) => { const el = v.querySelector('#ob-sum'); if (!el || (!late && !soon)) return;
@@ -1184,6 +1198,7 @@ async function boot() {
     if (!S.profile.is_active) return renderPending();
     if (S.sub?.status === 'suspended') return renderSuspended();
     await loadContext();
+    applyTheme(canTheme() ? (S.profile?.theme || 'purple') : 'purple');
     renderShell(); route_();
     setTimeout(() => autoBackup().catch(() => {}), 4000);
   } catch (err) {
