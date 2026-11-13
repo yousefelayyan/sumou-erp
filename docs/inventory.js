@@ -2,6 +2,7 @@
 //  السمو ERP — المخزون والجرد
 // =====================================================================
 import { attachAudit } from './audit.js';
+import { docTypeField, docTypeValue, docCopies, docTypeName, loadDocTypes, docCommittee } from './doctypes.js';
 import { attachDocNav, setNavList } from './docnav.js';
 import { deptField, deptValue } from './departments.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
@@ -151,14 +152,14 @@ async function docEditor(type, doc, whs, ctx) {
   let rows = lines.map(l => ({ item: itemLabel(byId[l.item_id]), qty: num(l.qty), counted: l.counted_qty == null ? '' : num(l.counted_qty), cost: num(l.unit_cost) }));
   if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 });
   const isCount = type === 'count';
-  const dept = await deptField(doc?.department_id, ro, !doc);
+  const dept = await deptField(doc?.department_id, ro, !doc); const dtf = await docTypeField('stock_' + type, doc?.doc_type_id, ro);
   const m = modal({ title: doc ? `${D.label} رقم ${docNo(doc)}` : `${D.label} جديد`, body: `${bar}
     <form id="sd-form"><div class="grid cols-3">
       ${manualField(manual, doc?.doc_no, ro)}
       <div class="field"><label>التاريخ</label><input type="date" name="doc_date" value="${esc(d0.doc_date)}" ${ro}></div>
       <div class="field"><label>${type === 'transfer' ? 'من مستودع' : 'المستودع'}</label><select name="warehouse_id" ${ro}>${whs.map(w => `<option value="${w.id}" ${w.id === d0.warehouse_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>
       ${type === 'transfer' ? `<div class="field"><label>إلى مستودع</label><select name="to_warehouse_id" ${ro}><option value="">—</option>${whs.map(w => `<option value="${w.id}" ${w.id === d0.to_warehouse_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : '<div></div>'}
-      ${dept}
+      ${dept}${dtf}
       ${perp ? `<div class="field" style="grid-column:span 3"><label>الحساب المقابل بالقيد (الجرد المستمر)</label><select name="account_id" ${ro}><option value="">— الافتراضي: ${esc(accs.find(a => a.id === st.cogs_account_id)?.name || 'كلفة البضاعة المباعة')} —</option>${accs.map(a => `<option value="${a.id}" ${a.id === d0.account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select>
         <small class="muted">${type === 'in' ? 'مثلاً لبضاعة أول المدة اختار رأس المال أو الأرصدة الافتتاحية' : 'مثلاً مصروف تالف أو هدايا'}</small></div>` : ''}
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(d0.notes)}" ${ro}></div></div></form>
@@ -204,7 +205,7 @@ async function docEditor(type, doc, whs, ctx) {
     if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم السند (رقم صحيح أكبر من صفر)', 'err');
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {
-      const header = { ...(mn.value ? { doc_no: mn.value } : {}), doc_date: h.doc_date, warehouse_id: h.warehouse_id, to_warehouse_id: type === 'transfer' ? h.to_warehouse_id : null, notes: h.notes, ...deptValue(m.el.querySelector('#sd-form')), ...(perp ? { account_id: h.account_id } : {}) };
+      const header = { ...(mn.value ? { doc_no: mn.value } : {}), doc_date: h.doc_date, warehouse_id: h.warehouse_id, to_warehouse_id: type === 'transfer' ? h.to_warehouse_id : null, notes: h.notes, ...deptValue(m.el.querySelector('#sd-form')), ...docTypeValue(m.el.querySelector('#sd-form')), ...(perp ? { account_id: h.account_id } : {}) };
       let id = doc?.id;
       if (id) { const u = await sb.from('stock_docs').update(header).eq('id', id); if (u.error) throw u.error; const dl = await sb.from('stock_doc_lines').delete().eq('doc_id', id); if (dl.error) throw dl.error; }
       else { const ins = await sb.from('stock_docs').insert({ ...header, company_id: S.company.id, doc_type: type }).select().single(); if (ins.error) throw ins.error; id = ins.data.id; doc = ins.data; }
@@ -233,7 +234,8 @@ async function docEditor(type, doc, whs, ctx) {
       ${doc.notes ? `<tr><td colspan="3"><b>ملاحظات:</b> ${esc(doc.notes)}</td></tr>` : ''}</table>
       <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الصنف</th><th>${isCount ? 'الفعلي' : 'الكمية'}</th>${isCount ? '<th>التسوية</th>' : ''}<th>الكلفة</th></tr></thead><tbody>
       ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itemLabel(byId[l.item_id]))}</td><td class="n">${fmtNum(isCount ? l.counted_qty : l.qty)}</td>${isCount ? `<td class="n">${fmtNum(l.qty)}</td>` : ''}<td class="n">${fmtNum(l.unit_cost)}</td></tr>`).join('')}</tbody></table>
-`, { kind: 'stock' });
+${isCount && docCommittee(doc.doc_type_id) ? `<div style="margin-top:18px"><b>لجنة الجرد:</b><div class="signs">${docCommittee(doc.doc_type_id).split(/[،,]/).map(x => x.trim()).filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('')}</div></div>` : ''}
+`, { kind: 'stock', copies: docCopies(doc.doc_type_id) });
   });
 }
 

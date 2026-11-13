@@ -3,6 +3,7 @@
 //  حسابات الربط، الأصناف والخدمات، فواتير البيع والشراء والمرتجعات، تقرير الإقرار
 // =====================================================================
 import { attachAudit } from './audit.js';
+import { docTypeField, docTypeValue, docCopies, docTypeName, loadDocTypes, docCommittee } from './doctypes.js';
 import { attachDocNav, setNavList } from './docnav.js';
 import { deptField, deptValue } from './departments.js';
 import { loadLookups, pmOptions, repOptions, hasReps } from './lookups.js';
@@ -340,7 +341,7 @@ async function invoiceEditor(type, inv, ctx) {
   let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
-  const dept = await deptField(inv?.department_id, ro, !inv); await loadLookups();
+  const dept = await deptField(inv?.department_id, ro, !inv); await loadLookups(); const dtf = await docTypeField(type, inv?.doc_type_id, ro);
   const m = modal({ title: inv ? `${T.label} رقم ${docNo(inv)}` : `${T.label} جديدة`, body: `
     ${bar}${inv ? `<div style="margin:-6px 0 12px">${badge(inv.status)} ${readOnly && (inv.status !== 'draft' || inv.stock_posted) ? '<span class="muted" style="font-size:13px">— الفاتورة المرحّلة ما بتنعدّل. للتعديل ألغِ ترحيلها، أو ألغيها، أو اعمل مرتجع.</span>' : ''}</div>` : ''}
     <form id="inv-form"><div class="grid cols-3">
@@ -354,7 +355,7 @@ async function invoiceEditor(type, inv, ctx) {
       <div class="field"><label>${isSale ? 'رقم الطلب / المرجع' : 'رقم فاتورة المورد'}</label><input name="reference" value="${esc(i0.reference)}" ${ro}></div>
       ${isSale ? `<div class="field"><label>المشروع</label><input name="project" value="${esc(i0.project || '')}" ${ro}></div>` : ''}
       ${ccs.length ? `<div class="field"><label>مركز الكلفة</label><select name="cost_center_id" ${ro}><option value="">—</option>${ccs.map(c => `<option value="${c.id}" ${c.id === i0.cost_center_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : ''}
-      ${dept}
+      ${dept}${dtf}
       ${isSale && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id" ${ro}><option value="">— مندوب العميل —</option>${repOptions(i0.sales_rep_id)}</select></div>` : ''}
       ${whs.length > 1 ? `<div class="field"><label>المستودع</label><select name="warehouse_id" ${ro}>${whs.map(w => `<option value="${w.id}" ${w.id === (i0.warehouse_id || pre?.inv.warehouse_id) ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
       <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" name="prices_include_tax" ${i0.prices_include_tax ? 'checked' : ''} ${ro}> الأسعار شاملة الضريبة</label></div>
@@ -479,7 +480,7 @@ async function invoiceEditor(type, inv, ctx) {
     if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم الفاتورة (رقم صحيح أكبر من صفر)', 'err');
     const header = { ...(mn.value ? { inv_no: mn.value } : {}), inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
       party_name: h.payment_type === 'cash' ? (h.party_name || p?.name || null) : null, cash_account_id: h.payment_type === 'cash' ? h.cash_account_id : null,
-      reference: h.reference, ...(isSale ? { project: h.project || null } : {}), prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
+      reference: h.reference, ...(isSale ? { project: h.project || null } : {}), prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...docTypeValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
       subtotal: r3(out.reduce((s, l) => s + l.subtotal, 0)), tax_total: r3(out.reduce((s, l) => s + l.tax_amount, 0)), discount_total: r3(out.reduce((s, l) => s + l.discount, 0)) };
     header.total = r3(header.subtotal + header.tax_total);
     if (p && isSale && type === 'sale' && p.credit_limit > 0 && h.payment_type === 'credit') {
@@ -573,7 +574,7 @@ function printInvoice(type, inv, lines, party, st) {
       cfg, titleAr: arTitle(cfg), titleEn: cfg.invoice_title_en || (type === 'sale_return' ? 'Sales Return' : 'Sales Invoice'),
       no: docNo(inv), date: inv.inv_date, pay: inv.payment_type === 'cash' ? 'نقدي / Cash' : 'آجل / Credit', orderNo, project: inv.project,
       party, partyName: party?.name || inv.party_name, lines, sub: inv.subtotal, disc: inv.discount_total, tax: inv.tax_total, total: inv.total, notes: inv.notes, stamp,
-      footer: st.invoice_footer }) : full(), { kind: 'invoice', branch: inv.department_id ? sb.from('departments').select('name,address,city,phone,income_tax_no,sales_tax_no').eq('id', inv.department_id).maybeSingle().then(r => r.data || null) : null });
+      footer: st.invoice_footer }) : full(), { kind: 'invoice', copies: docCopies(inv.doc_type_id), branch: inv.department_id ? sb.from('departments').select('name,address,city,phone,income_tax_no,sales_tax_no').eq('id', inv.department_id).maybeSingle().then(r => r.data || null) : null });
   if (isSaleType(type)) sb.from('orders').select('order_no').eq('invoice_id', inv.id).limit(1).then(({ data }) => go(data?.[0]?.order_no || '')); else go('');
 }
 const isSaleType = (t) => t === 'sale' || t === 'sale_return';

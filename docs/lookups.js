@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — قوائم الإعداد: وسائل الدفع، البنوك وفروعها، الدول والمناطق، أنواع الأوراق التجارية
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, confirmBox, formData } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, num } from './core.js';
 import { loadAccounts, leafAccounts, accLabel } from './finance.js';
 
 export const LK = {
@@ -36,7 +36,7 @@ export function lookupDatalistSync(id, kinds) {
 export function pmOptions(where = '') {
   const rows = (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => r.kind === 'payment_method' && r.is_active && r.account_id
     && (where === 'sales' ? r.use_sales !== false : where === 'purchases' ? r.use_purchases !== false : true));
-  return rows.length ? `<optgroup label="وسائل الدفع">${rows.map(r => `<option value="${r.account_id}">💳 ${esc(r.name)}</option>`).join('')}</optgroup><optgroup label="الحسابات">` : '';
+  return rows.length ? `<optgroup label="وسائل الدفع">${rows.map(r => `<option value="${r.account_id}" data-pm="${r.id}">💳 ${esc(r.name)}${num(r.rate) && r.commission_account_id ? ` (عمولة ${num(r.rate)}%)` : ''}</option>`).join('')}</optgroup><optgroup label="الحسابات">` : '';
 }
 export function repOptions(sel) {
   const rows = (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => r.kind === 'sales_rep' && (r.is_active || r.id === sel));
@@ -58,6 +58,7 @@ async function viewLookups(v) {
   const K = LK[kind], byId = Object.fromEntries(rows.map(r => [r.id, r]));
   const list = rows.filter(r => r.kind === kind);
   const cashAccs = leafAccounts(accs).filter(a => a.category === 'assets');
+  const leafAll = leafAccounts(accs);
   const users = kind === 'sales_rep' ? ((await sb.from('profiles').select('id,username,full_name').eq('is_active', true).order('username')).data || []) : [];
   v.innerHTML = `<div class="page-head"><h2>⚙️ الإعداد</h2><div class="spacer"></div>
       ${can('lookups', 'add') ? `<button class="btn primary" id="add">➕ ${esc(K.one)} جديد${kind === 'payment_method' || kind === 'country' || kind === 'region' ? 'ة' : ''}</button>` : ''}</div>
@@ -85,6 +86,8 @@ async function viewLookups(v) {
         <label class="check"><input type="checkbox" name="use_pos" ${r.use_pos ? 'checked' : ''}> نقطة البيع</label></div></div>` : ''}
       ${K.parent ? `<div class="field"><label>${esc(K.parentLabel)}</label><select name="parent_id"><option value="">—</option>${parents.map(p => `<option value="${p.id}" ${p.id === r.parent_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       ${kind === 'payment_method' ? `<div class="field"><label>الحساب المرتبط من الشجرة (الطرف المدين) *</label><select name="account_id"><option value="">— اختار —</option>${cashAccs.map(a => `<option value="${a.id}" ${a.id === r.account_id ? 'selected' : ''}>${esc(accLabel(a))}${['cash', 'bank'].includes(a.account_type) ? ' ★' : ''}</option>`).join('')}</select></div>` : ''}
+      ${kind === 'payment_method' ? `<div class="field"><label>نسبة العمولة % (فيزا مثلاً، بتنخصم بسند القبض)</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? ''}" placeholder="2.25"></div>
+        <div class="field"><label>حساب العمولة (مصروف)</label><select name="commission_account_id"><option value="">—</option>${leafAll.map(a => `<option value="${a.id}" ${a.id === r.commission_account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>` : ''}
       ${kind === 'loyalty_type' ? `<div class="field"><label>نقاط لكل دينار</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? 1}"></div>` : ''}
       ${kind === 'sales_rep' ? `<div class="field"><label>نسبة العمولة %</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? ''}"></div>
         <div class="field"><label>مستخدم البرنامج (لتطبيق المندوب و«زبائني»)</label><select name="user_id"><option value="">—</option>${(users || []).map(u => `<option value="${u.id}" ${u.id === r.user_id ? 'selected' : ''}>${esc(u.full_name || u.username || '')}</option>`).join('')}</select></div>` : ''}
@@ -98,7 +101,7 @@ async function viewLookups(v) {
       if (kind === 'payment_method' && !d.account_id) return toast('اختار الحساب', 'err');
       const rec = { code: d.code.trim(), name: d.name.trim(), name2: d.name2 || null, parent_id: d.parent_id || null, account_id: d.account_id || null, notes: d.notes || null, is_active: !d.inactive, ...(kind === 'sales_rep' || kind === 'loyalty_type' ? { rate: d.rate === '' || d.rate == null ? null : Number(d.rate) } : {}),
         ...(kind === 'sales_rep' ? { user_id: d.user_id || null } : {}), ...(kind === 'route' ? { weekdays: [0, 1, 2, 3, 4, 5, 6].filter(i => d['wd' + i]) } : {}),
-        ...(kind === 'payment_method' ? { pos_label: (d.pos_label || '').trim() || null, use_sales: !!d.use_sales, use_purchases: !!d.use_purchases, use_pos: !!d.use_pos } : {}) };
+        ...(kind === 'payment_method' ? { rate: d.rate === '' || d.rate == null ? null : num(d.rate), commission_account_id: d.commission_account_id || null, pos_label: (d.pos_label || '').trim() || null, use_sales: !!d.use_sales, use_purchases: !!d.use_purchases, use_pos: !!d.use_pos } : {}) };
       e.target.disabled = true;
       const res = isNew ? await sb.from('lookups').insert({ ...rec, company_id: S.company.id, kind }) : await sb.from('lookups').update(rec).eq('id', r.id);
       if (res.error) { e.target.disabled = false; return toast(/duplicate|unique/.test(res.error.message) ? 'الرمز مستعمل' : arError(res.error), 'err'); }

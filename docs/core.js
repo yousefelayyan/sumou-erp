@@ -35,6 +35,7 @@ export const SCREENS = [
   { key: 'fiscal_years',     label: 'السنوات المالية والفترات', group: 'ملف' },
   { key: 'fy_unavailable',   label: 'الوصول للسنوات المالية «غير المتاحة»', group: 'ملف' },
   { key: 'departments',      label: 'الدوائر',             group: 'ملف' },
+  { key: 'doc_types',        label: 'أنواع السندات (اليوميات): التعديل وتجاوز قيودها', group: 'إعداد' },
   { key: 'lookups',          label: 'قوائم الإعداد (وسائل الدفع، البنوك، الدول…)', group: 'إعداد' },
   { key: 'accounts',         label: 'دليل الحسابات ومراكز الكلفة', group: 'المالية' },
   { key: 'opening_balances', label: 'الأرصدة الافتتاحية',  group: 'المالية' },

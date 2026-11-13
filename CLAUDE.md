@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..47). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..48). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -37,6 +37,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   assets.js         حركات الأصول الثابتة (asset-moves): استبعاد/إتلاف، بيع مباشر، نقل بين الدوائر + عهد الأصول (asset-custody?t=docs|current|holders) و custodyHistory()
   supply.js         طلبات التزويد بين المستودعات (supply) وحدود الأصناف بالمستودع (supply?t=limits)
   attendance.js     الحضور والانصراف (route attendance?t=day|summary|locations|settings) + punchCard() ببطاقة «راتبي»
+  doctypes.js       أنواع السندات/اليوميات (route doc-types?k=…) + docTypeField/docTypeValue بالمحررات + docCopies (نسخ الطباعة) + docCommittee (لجنة الجرد)
   loans.js          القروض والسلف (route loans?st=…) و«راتبي» (route me): قسيمة الراتب لكل شهر، قروضي، جدول الأقساط، تعليقات الموظف والمشرف
   rep.js            «تطبيق المندوب» (route rep?t=customers|visits|payments|team): زيارة جارية بعدّاد، بداية/نهاية بالموقع، صور، دفعات نقد/تحويل/شيكات (mobile_payment)، وفريق المشرف (visits_report)
   ask.js            «اسأل السمو» (route ask، بالتجميع بمستويين: مجمّع/جدول محوري/قائمة): سؤال بالعربي → parseQuestion() (فترة، تجميع، أعلى N، «للمندوب/للعميل فلان»، قارن بالشهر الماضي) → ask_sales
@@ -100,7 +101,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -124,7 +125,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.28.0)
+## اللي انبنى (لحد النسخة 4.29.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -200,6 +201,8 @@ dev/                أدوات الفحص (شوف تحت)
 - **التحقق من الكمية (المرحلة 45):** `company_settings.block_negative_stock` («منع البيع والإخراج بأكثر من المتوفر» بحسابات الربط ← المخزون) → trigger `ab_stock_negative_guard` على stock_moves (الحركة الطالعة بتتفحص رصيد الصنف بالمستودع لتاريخها؛ الحركات القديمة created_at < الآن−دقيقتين = استرجاع ما بتتفحص). `items.qty_check_ignore` («📦 تجاهل تتبع الكمية» ببطاقة الصنف: sale, sale_return, pos, sales_order, purchase, purchase_return, stock_out, stock_transfer, production) بيستثني الصنف من الفحص ومن تنبيه النقص بالفاتورة. مع المنع، التنبيه بالفاتورة بيحفظ مسودة بس.
 - **القروض والسلف و«راتبي» (المرحلة 46):** `employees.user_id` (الموظف ↔ مستخدم، فريد بالشركة؛ `ad_employee_user_check`، وبالاسترجاع/التجربة الربط الغريب أو المكرر بينشال) و`my_employee(company)`. `employee_loans` (loan/advance، pending/approved/rejected/cancelled/closed) و`loan_installments` (due_month، paid/pending، deferred) — كتابة من الدوال بس: `loan_request(jsonb)` (الموظف لحاله أو payroll add لغيره)، `loan_decide(id, approve, note)` (payroll post، الاعتماد بيولّد الأقساط والأخير بياخذ الفرق)، `loan_defer(inst)` (لشهر بعد آخر قسط)، `loan_cancel`، `loan_comment` (الموظف/المشرف). `payroll_fill` بيحط أقساط الشهر والمتأخرة بـ advances، `post_payroll` → `loan_mark_paid` (بالترتيب لحد مبلغ advances) وبيسكّر القرض المسدّد، `cancel_payroll` بيرجّعهم. `my_payroll(company)` قسائم الموظف المرحّلة. backup_tables: القروض بعد payroll_lines. **حجز الأقساط:** `loan_installments.run_id` = المسيّر المسودة اللي حجز القسط (`payroll_fill` بيحجز غير المحجوز بس، وحذف المسيّر بيفكّه)؛ `post_payroll` بيرفض إذا «خصم السلف» أقل من المحجوز، و`loan_mark_paid` بيدفع المحجوز بالضبط؛ التأجيل/الإلغاء بيفكّ الحجز وبينزّل المبلغ من السطر (`loan_release`). المشرف ما بيعتمد/يأجّل قرضه (إلا المدير). الاعتماد: الموظف فعّال وأول قسط مش بشهر فات. `company_users(company)` (payroll edit) لقائمة ربط الموظف بمستخدم، والحفظ ما بيبعت user_id إذا ما تغيّر. القروض بـ `company_activity`.
 - **الحضور والانصراف (المرحلة 47):** `work_locations` (إحداثيات + نصف قطر، كتابة بـ payroll edit) و`employees.work_location_id`. `attendance` (سطر لكل موظف/يوم؛ كتابة من الدوال بس): `attendance_punch(company, 'in'|'out', lat, lng)` للموظف المربوط (لازم جوّا نطاق موقعه أو أقرب موقع فعّال، إلا إذا `company_settings.attendance.allow_outside` وبينعلّم outside)، `attendance_set(jsonb)` للمشرف (payroll edit، الوقتين فاضيين = حذف)، `attendance_summary(company, from, to)` (أيام/ساعات/تأخير بعد start+grace/غياب بدون الجمعة). توقيت عمّان. backup_tables: مواقع العمل قبل الموظفين والحضور بعدهم.
+- **أنواع السندات (المرحلة 48):** `doc_types` (kind: journal/opening/receipt/payment/sale/sale_return/purchase/purchase_return/stock_in/out/transfer/count؛ واحد افتراضي لكل kind، `doc_type_default` بيعمله لحاله «01 عام»، و`ensure_doc_types(company)`). `doc_type_id` على journal_entries (للأنواع اليدوية بس، الداخلية null) والفواتير وسندات المخزون، إلزامي (trigger `a1_doc_type` قبل الترقيم بيحط الافتراضي ويفحص الشركة والنوع). خصائص النوع: `own_seq` + `prefix` (تسلسل لحاله: `aa_number_*` بتضيف `T<id>` لـ seq_key)، `print_copies` (printDoc `copies`)، `date_today`، `edit_days` (من يوم الإدخال بتوقيت عمّان، 0 = نفس اليوم؛ ما بيمنع الترحيل)، `lock_dept`، `committee` للجرد (بتنطبع تواقيع). القيود ما بتنطبق على الداخلي ولا المدير ولا مين إله doc_types edit. الكتابة على الجدول بصلاحية doc_types edit. backup_tables: doc_types بعد الدوائر.
+- **عمولة وسيلة الدفع (المرحلة 48):** `lookups.rate` (نسبة %) و`lookups.commission_account_id` لوسيلة الدفع (`ad_lookup_commission_check`: حساب فرعي من نفس الشركة، 0..20%). سند القبض (finance.js، الواجهة): لما تنختار الوسيلة (`option[data-pm]` من `pmOptions`) البنك مدين بالصافي وحساب العمولة مدين بالعمولة؛ عند فتح السند بترجع الوسيلة من سطر العمولة. لسا مش مطبّق على الفواتير ونقطة البيع.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

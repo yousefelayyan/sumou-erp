@@ -109,7 +109,7 @@ export function printBarHTML() {
   <button type="button" class="p" onclick="window.print()">🖨️ طباعة</button></div>`;
 }
 
-export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null, branch = null } = {}) {
+export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null, branch = null, copies = 1 } = {}) {
   const w = preview || window.open('', '_blank');
   if (!w) { alert('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهالموقع.'); return; }
   if (!preview) { w.document.write('<p dir="rtl" style="font-family:sans-serif;padding:20px">جاري تحضير الطباعة…</p>'); }
@@ -137,6 +137,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
   <style>${css(cfg, { landscape, thermal, paper: paper === 'A5' ? 'A5' : 'A4' })}</style></head><body>
   ${preview ? '' : printBarHTML()}
+  ${Array.from({ length: Math.min(Math.max(+copies || 1, 1), 5) }, (_, ci, arr) => `${ci ? '<div style="page-break-before:always"></div>' : ''}${(+copies || 1) > 1 ? `<div style="text-align:left;font-size:11px;color:#666">نسخة ${ci + 1} من ${Math.min(+copies, 5)}</div>` : ''}
   ${cfg.watermark && !thermal ? `<div class="wm"><div>${esc(c.name || '')}<br>${esc(fy)}</div></div>` : ''}
   <div class="head">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}
     <div class="co"><h1>${esc(c.name || '')}</h1>${c.branchName ? `<div style="font-weight:700">${esc(c.branchName)}</div>` : ''}<div>${esc([c.address, c.city].filter(Boolean).join(' - '))}${c.phone ? ' | هاتف: ' + esc(c.phone) : ''}</div>
@@ -147,7 +148,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
   ${body}
   ${sigs.length ? `<div class="signs">${sigs.map(x => `<div>${esc(x)}</div>`).join('')}</div>` : ''}
   ${cfg.footer_text ? `<div class="foot-text">${esc(cfg.footer_text)}</div>` : ''}
-  <div class="foot">${cfg.show_printed_by ? `<span>طُبع بواسطة: ${esc(S.profile?.full_name || S.profile?.email || '')}</span>` : '<span></span>'}<span>${fmtDateTime(new Date())}</span></div>
+  <div class="foot">${cfg.show_printed_by ? `<span>طُبع بواسطة: ${esc(S.profile?.full_name || S.profile?.email || '')}</span>` : '<span></span>'}<span>${fmtDateTime(new Date())}</span></div>`).join('')}
   ${preview ? '' : '<script>window.onload = () => setTimeout(() => window.print(), 450);<\/script>'}</body></html>`;
     w.document.open(); w.document.write(doc); w.document.close();
   }).catch(e => { w.document.body.innerHTML = '<p dir="rtl">ما قدرت أحضّر الطباعة: ' + esc(e.message) + '</p>'; });
