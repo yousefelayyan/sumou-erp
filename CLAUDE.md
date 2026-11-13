@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..57). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..58). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -36,7 +36,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   payroll.js        الموظفين، الرواتب والضمان، الأصول الثابتة والاستهلاك
   assets.js         حركات الأصول الثابتة (asset-moves): استبعاد/إتلاف، بيع مباشر، نقل بين الدوائر + عهد الأصول (asset-custody?t=docs|current|holders) و custodyHistory()
   supply.js         طلبات التزويد بين المستودعات (supply) وحدود الأصناف بالمستودع (supply?t=limits)
-  attendance.js     الحضور والانصراف (route attendance?t=day|summary|locations|settings) + punchCard() ببطاقة «راتبي»
+  attendance.js     الحضور والانصراف (route attendance?t=day|summary|locations|shifts|settings) + punchCard() ببطاقة «راتبي»
   discounts.js      خصومات العملاء (route discounts?t=voucher|settle|types): سند خصم، تسوية الأرصدة الصغيرة، أنواع الخصم
   prices.js         قوائم الأسعار (route price-lists): محرر سعر كل صنف بالقائمة مع «تعبئة الكل ±%»
   doctypes.js       أنواع السندات/اليوميات (route doc-types?k=…) + docTypeField/docTypeValue بالمحررات + docCopies (نسخ الطباعة) + docCommittee (لجنة الجرد)
@@ -106,7 +106,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -130,7 +130,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.39.0)
+## اللي انبنى (لحد النسخة 4.40.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -221,6 +221,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **الشيكات من سند القبض (المرحلة 55):** `cheques.receipt_entry_id` (من النظام بس، `ab_cheque_receipt_guard`؛ حذف السند بيفك الربط). `receipt_cheques(company, entry, party, date, rows)` (receipt_vouchers add/edit + cheques add، السند قبض مش معكوس ولا مجمّد وبفرع المستخدم، سنة مفتوحة، ≤50): كل شيك بـ `register_cheque` بقيد استلام لحاله وبتاريخ السند، وبينربط؛ صاحب الشيكات لازم يكون على سطور السند. إذا فشل تسجيل الشيكات بعد حفظ السند، النافذة بتضل مفتوحة بالشيكات. الواجهة: قسم «📑 شيكات مستلمة بهالسند» بسند القبض (العميل، رقم، بنك، استحقاق، ساحب، مجيّر، مبلغ)؛ بينسجّل مع الحفظ، وبالسند المرحّل بزر «تسجيل الشيكات»؛ وبدون نقد بيسجّل الشيكات بدون سند. طباعة السند فيها جدول الشيكات وإجمالي النقد + الشيكات.
 - **الكلفة المحمّلة (المرحلة 56):** `landed_costs` (doc_no لكل شركة، method value|qty، draft/posted/cancelled، entry_id/cancel_entry_id) + `landed_cost_invoices` (FK restrict) + `landed_cost_charges` (حساب أو طرف؛ الطرف دايماً على حسابه) + `landed_cost_allocs` (من الترحيل). الكتابة من الدوال بس: `landed_save(jsonb)`، `landed_post(id)`، `landed_cancel(id, date)`، `landed_delete(id)`؛ `landed_preview(id)` للمعاينة. شاشة `landed_costs` (قسم purchases، المجموعات اللي إلها فواتير الشراء أخذتها مرة وحدة). ممنوعة على موظف الفرع (`dept_allowed` لازم null، وسياسة restrictive). التوزيع على حركات فواتير الشراء (صنف × مستودع) ناقص مرتجعات الشراء المرحّلة؛ نسبة «الموجود» = رصيد الصنف الحالي على مستوى الشركة ÷ الكمية المشتراة، والباقي لكلفة المبيعات (بالجرد الدوري الكل على المشتريات). القيد نوعه stock (داخلي): مدين المخزون/المشتريات + كلفة المبيعات، دائن المصاريف. رفع قيمة المخزون بحركتين `source_type = 'landed_cost'`: +1 بالمبلغ و−1 بصفر (الإلغاء بالعكس). الإلغاء بقيد عكسي، وممنوع إذا طلع من الأصناف شي بعد الترحيل أو القيد مجمّد. `ab_landed_invoice_guard`: فاتورة الشراء بمستند مسودة/مرحّل ما بينلغى ترحيلها ولا بتنحذف. `ab_landed_entry_guard`: قيد المستند ما بيتغيّر إلا من الإلغاء. backup_tables: بعد stock_moves. ناقص: حركات ±1 بتبيّن ببطاقة الصنف، ومستند الكلفة ما بينحسب بحد حركات التجربة.
 - **الإجازات (المرحلة 57):** `leave_types` (code، name، paid، annual_days 0 = بدون حد؛ كتابة بـ payroll edit؛ `ensure_leave_types(company)` بيعمل سنوية 14/مرضية 14/بدون راتب/طارئة 3) و`leave_requests` (req_no، الموظف، النوع، من/إلى، days بدون الجمعة `leave_workdays`، half_day، pending/approved/rejected/cancelled؛ كتابة من الدوال بس). `leave_request(jsonb)` (الموظف لحاله عن طريق `my_employee`، أو payroll add لغيره؛ ما في تداخل، والطلب جوّا سنة وحدة)، `leave_decide(id, approve, note)` (payroll post، مش طلبه إلا المدير، بيفحص الرصيد السنوي إلا المدير، والبدون راتب ممنوعة إذا مسيّر الشهر مرحّل)، `leave_cancel(id)` (صاحبها وهي بالانتظار، أو المشرف)، `leave_balance(company, employee, year)`. `leave_days_in(...)` داخلية. trigger `pa_payroll_leave` (قبل `payroll_lines_guard`) بيخصم البدون راتب على other_ded: (الأساسي + العلاوات) ÷ 30 × الأيام. `attendance_summary` صار فيه `leave_days` والإجازة ما بتنحسب غياب (المرحلة 47 بتعمل drop قبل ما تعيد التعريف). الواجهة: شاشة «🌴 الإجازات» بالموظفين والرواتب، وبطاقة «إجازاتي» بـ«راتبي». backup_tables: بعد attendance.
+- **المناوبات والإضافي والجزاءات (المرحلة 58):** `work_shifts` (start/end، end ≤ start = ليلية لتاني يوم، grace_min، days_off int[] 0 أحد…6 سبت؛ كتابة بـ payroll edit) و`employees.shift_id` (`ad_employee_shift_check`؛ الفاضي = الدوام العام). `company_settings.attendance` صار فيه hours_per_day (8)، ot_rate (1.25)، ot_offday_rate (1.5)، ot_min (30)، late_mult (1)، absent_mult (1)، apply_payroll (false) — الحفظ من الواجهة بيحافظ على باقي المفاتيح. `att_calc(company, from, to, employee)` داخلية: التأخير بعد البداية + السماح، الخروج المبكر، الإضافي بعد النهاية (≥ ot_min)، شغل يوم العطلة كله إضافي عطلة، الغياب = أيام العمل (حسب المناوبة وتاريخ التعيين/الانتهاء، لحد اليوم) − الحضور − الإجازات، والمبالغ: الشهري (أساسي + علاوات) ÷ 30 ÷ ساعات اليوم. `attendance_summary` = غلاف بصلاحية payroll view (شكل النتيجة اتغيّر: drop بالمراحل 47 و57 و58). trigger `pa_payroll_zatt` (بعد `pa_payroll_leave` وقبل `payroll_lines_guard`): إذا apply_payroll والموظف إله حضور، بيعبّي overtime (إذا صفر) وبيزيد other_ded بالجزاءات (لحد الراتب). الواجهة: تبويب «🔄 المناوبات» و«⚙️ الدوام والجزاءات»، وأعمدة الإضافي والجزاءات بالملخص، و«المناوبة / الدوام» ببطاقة الموظف. backup_tables: work_shifts قبل employees.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36 (آخر قيد هلأ `lookups_kind_chk4` بالمرحلة 54)، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

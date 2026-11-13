@@ -77,10 +77,10 @@ async function viewAttendance(v, ctx) {
   if (!S.company) return void (v.innerHTML = '<div class="notice info">اختار شركة من فوق أول.</div>');
   if (!can('payroll', 'view')) return void (v.innerHTML = '<div class="notice">ما عندك صلاحية على الرواتب</div>');
   const t = qp().get('t') || 'day', sup = can('payroll', 'edit');
-  const tabs = [['day', '📋 يومي'], ['summary', '📊 ملخص الفترة'], ['locations', '📍 مواقع العمل'], ['settings', '⚙️ الدوام']];
+  const tabs = [['day', '📋 يومي'], ['summary', '📊 ملخص الفترة'], ['locations', '📍 مواقع العمل'], ['shifts', '🔄 المناوبات'], ['settings', '⚙️ الدوام والجزاءات']];
   const head = `<div class="page-head"><h2>🕘 الحضور والانصراف</h2></div>
     <div class="tabs" style="margin-bottom:10px">${tabs.map(([k, l]) => `<a class="tab ${t === k ? 'active' : ''}" href="#/attendance?t=${k}">${l}</a>`).join('')}</div>`;
-  const { data: emps = [] } = await sb.from('employees').select('id,code,name,is_active,work_location_id').eq('company_id', S.company.id).order('code');
+  const { data: emps = [] } = await sb.from('employees').select('id,code,name,is_active,work_location_id,shift_id').eq('company_id', S.company.id).order('code');
   const eBy = Object.fromEntries((emps || []).map(e => [e.id, e]));
   const { data: locs = [] } = await sb.from('work_locations').select('*').eq('company_id', S.company.id).order('name');
   const lBy = Object.fromEntries((locs || []).map(l => [l.id, l]));
@@ -111,10 +111,13 @@ async function viewAttendance(v, ctx) {
     v.innerHTML = `${head}<div class="card" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px">
       <div class="field"><label>من</label><input type="date" id="f" value="${from}"></div><div class="field"><label>إلى</label><input type="date" id="to" value="${to}"></div>
       <button class="btn primary" id="go">عرض</button><div class="spacer"></div><button class="btn" id="pr">🖨️ طباعة</button></div>
-      <div class="card table-wrap"><table class="t rep"><thead><tr><th>الرمز</th><th>الموظف</th><th>أيام الحضور</th><th>الساعات</th><th>أيام التأخير</th><th>دقائق التأخير</th><th>الغياب</th><th>إجازات</th><th>برّا الموقع</th><th>بدون انصراف</th></tr></thead><tbody>
-      ${(rows || []).map(r => `<tr><td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="n">${r.days}</td><td class="n">${fmtNum(r.hours, 2)}</td><td class="n">${r.late_days}</td><td class="n">${r.late_minutes}</td>
-        <td class="n" ${r.absent_days ? 'style="color:var(--bad)"' : ''}>${r.absent_days}</td><td class="n">${num(r.leave_days) || ''}</td><td class="n">${r.outside_days}</td><td class="n">${r.open_days}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">ما في بيانات</td></tr>'}</tbody></table></div>
-      <p class="muted" style="font-size:12px">أيام العمل = كل الأيام ما عدا الجمعة لحد اليوم. التأخير بعد بداية الدوام + فترة السماح (من تبويب «الدوام»).</p>`;
+      <div class="card table-wrap"><table class="t rep"><thead><tr><th>الرمز</th><th>الموظف</th><th>أيام الحضور</th><th>الساعات</th><th>أيام التأخير</th><th>دقائق التأخير</th><th>خروج مبكر (د)</th><th>الغياب</th><th>إجازات</th><th>إضافي (س)</th><th>إضافي عطلة (س)</th><th>جزاء التأخير</th><th>جزاء الغياب</th><th>قيمة الإضافي</th><th>برّا الموقع</th><th>بدون انصراف</th></tr></thead><tbody>
+      ${(rows || []).map(r => `<tr><td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="n">${r.days}</td><td class="n">${fmtNum(r.hours, 2)}</td><td class="n">${r.late_days}</td><td class="n">${r.late_minutes}</td><td class="n">${r.early_minutes || ''}</td>
+        <td class="n" ${r.absent_days ? 'style="color:var(--bad)"' : ''}>${r.absent_days}</td><td class="n">${num(r.leave_days) || ''}</td>
+        <td class="n">${r.ot_minutes ? fmtNum(r.ot_minutes / 60, 1) : ''}</td><td class="n">${r.offday_minutes ? fmtNum(r.offday_minutes / 60, 1) : ''}</td>
+        <td class="n" style="color:var(--bad)">${num(r.late_amount) ? fmtNum(r.late_amount) : ''}</td><td class="n" style="color:var(--bad)">${num(r.absent_amount) ? fmtNum(r.absent_amount) : ''}</td><td class="n" style="color:var(--ok)">${num(r.ot_amount) ? fmtNum(r.ot_amount) : ''}</td>
+        <td class="n">${r.outside_days}</td><td class="n">${r.open_days}</td></tr>`).join('') || '<tr><td colspan="16" class="empty">ما في بيانات</td></tr>'}</tbody></table></div>
+      <p class="muted" style="font-size:12px">أيام العمل حسب مناوبة الموظف (أو دوام الشركة) لحد اليوم، بدون أيام العطلة والإجازات المعتمدة. التأخير بعد البداية + السماح، والإضافي بعد نهاية الدوام (من أقل مدة بالإعدادات)، وشغل يوم العطلة كله إضافي عطلة. المبالغ: الشهري ÷ 30 ÷ ساعات اليوم.</p>`;
     v.querySelector('#go').onclick = () => { location.hash = `#/attendance?t=summary&from=${v.querySelector('#f').value}&to=${v.querySelector('#to').value}`; };
     v.querySelector('#pr').onclick = () => printDoc(`ملخص الحضور ${fmtDate(from)} — ${fmtDate(to)}`, v.querySelector('table').outerHTML.replace('class="t rep"', 'class="pt"'));
   } else if (t === 'locations') {
@@ -125,18 +128,59 @@ async function viewAttendance(v, ctx) {
       <p class="muted" style="font-size:12px">الموظف بيسجّل بس وهو جوّا نطاق موقعه (من بطاقة الموظف ← «موقع العمل»)، أو أقرب موقع فعّال إذا ما إله موقع محدد.</p>`;
     v.querySelector('#add')?.addEventListener('click', () => locForm(ctx));
     if (sup) v.querySelector('tbody').onclick = (e) => { const tr = e.target.closest('[data-l]'); if (tr) locForm(ctx, lBy[tr.dataset.l]); };
+  } else if (t === 'shifts') {
+    const { data: shifts = [] } = await sb.from('work_shifts').select('*').eq('company_id', S.company.id).order('code');
+    const DN = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    v.innerHTML = `${head}<div class="page-head"><div class="spacer"></div>${sup ? '<button class="btn primary" id="add">➕ مناوبة</button>' : ''}</div>
+      <div class="card table-wrap"><table class="t"><thead><tr><th>الرمز</th><th>الاسم</th><th>من</th><th>إلى</th><th>السماح</th><th>أيام العطلة</th><th>الموظفين</th><th>الحالة</th></tr></thead><tbody>
+      ${(shifts || []).map(x => `<tr data-s="${x.id}" ${sup ? 'style="cursor:pointer"' : ''}><td>${esc(x.code)}</td><td>${esc(x.name)}</td><td>${String(x.start_time).slice(0, 5)}</td><td>${String(x.end_time).slice(0, 5)}${x.end_time <= x.start_time ? ' <small class="muted">(تاني يوم)</small>' : ''}</td>
+        <td class="n">${x.grace_min} د</td><td>${(x.days_off || []).map(d => DN[d]).join('، ')}</td><td class="n">${(emps || []).filter(e => e.shift_id === x.id).length}</td><td>${x.is_active ? '<span class="badge ok">فعّالة</span>' : '<span class="badge">موقوفة</span>'}</td></tr>`).join('')
+        || '<tr><td colspan="8" class="empty">ما في مناوبات — كل الموظفين على دوام الشركة العام (تبويب «الدوام والجزاءات»)</td></tr>'}</tbody></table></div>
+      <p class="muted" style="font-size:12px">المناوبة بتنربط على الموظف من بطاقته ← «المناوبة / الدوام». إذا النهاية أصغر من البداية، المناوبة ليلية وبتخلص تاني يوم.</p>`;
+    const form = (x) => {
+      x = x || { code: String((shifts || []).length + 1).padStart(2, '0'), name: '', start_time: '08:00', end_time: '16:00', grace_min: 10, days_off: [5], is_active: true };
+      const m = modal({ title: x.id ? 'تعديل مناوبة' : 'مناوبة جديدة', body: `<form id="sf"><div class="grid cols-2">
+        <div class="field"><label>الرمز</label><input name="code" value="${esc(x.code)}"></div><div class="field"><label>الاسم</label><input name="name" value="${esc(x.name)}" placeholder="صباحي، مسائي، ليلي…"></div>
+        <div class="field"><label>من</label><input type="time" name="start_time" value="${String(x.start_time).slice(0, 5)}"></div><div class="field"><label>إلى</label><input type="time" name="end_time" value="${String(x.end_time).slice(0, 5)}"></div>
+        <div class="field"><label>السماح بالتأخير (دقيقة)</label><input type="number" name="grace_min" min="0" max="240" value="${x.grace_min}"></div>
+        <label class="check"><input type="checkbox" name="is_active" ${x.is_active ? 'checked' : ''}> فعّالة</label></div>
+        <div class="field"><label>أيام العطلة</label><div style="display:flex;gap:10px;flex-wrap:wrap">${DN.map((n, i) => `<label class="check"><input type="checkbox" data-off="${i}" ${(x.days_off || []).includes(i) ? 'checked' : ''}> ${n}</label>`).join('')}</div></div></form>`,
+        foot: '<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>' });
+      m.el.querySelector('[data-save]').onclick = async () => {
+        const f = m.el.querySelector('#sf'), d = formData(f); if (!d.code || !d.name) return toast('الرمز والاسم مطلوبين', 'err');
+        const row = { code: d.code, name: d.name, start_time: d.start_time, end_time: d.end_time, grace_min: +d.grace_min || 0, is_active: !!d.is_active,
+          days_off: [...f.querySelectorAll('[data-off]')].filter(c => c.checked).map(c => +c.dataset.off) };
+        const q = x.id ? sb.from('work_shifts').update(row).eq('id', x.id) : sb.from('work_shifts').insert({ ...row, company_id: S.company.id });
+        const { error } = await q; if (error) return toast(arError(error), 'err');
+        toast('انحفظ', 'ok'); m.close(); ctx.rerender();
+      };
+    };
+    v.querySelector('#add')?.addEventListener('click', () => form(null));
+    if (sup) v.querySelector('tbody').onclick = (e) => { const tr = e.target.closest('[data-s]'); if (tr) form((shifts || []).find(x => x.id === tr.dataset.s)); };
   } else {
     const { data: cs } = await sb.from('company_settings').select('attendance').eq('company_id', S.company.id).maybeSingle();
     const c = cs?.attendance || {};
-    v.innerHTML = `${head}<div class="card" style="max-width:520px"><form class="grid cols-2">
+    v.innerHTML = `${head}<div class="card" style="max-width:640px"><form class="grid cols-2">
+      <h4 style="grid-column:span 2;margin:0">الدوام العام (للموظف بدون مناوبة)</h4>
       <div class="field"><label>بداية الدوام</label><input type="time" name="start" value="${c.start || '08:00'}"></div>
       <div class="field"><label>نهاية الدوام</label><input type="time" name="end" value="${c.end || '16:00'}"></div>
       <div class="field"><label>فترة السماح بالتأخير (دقيقة)</label><input type="number" name="grace" min="0" max="120" value="${c.grace ?? 10}"></div>
-      <div class="field"><label><input type="checkbox" name="allow_outside" ${c.allow_outside ? 'checked' : ''}> السماح بالتسجيل من برّا الموقع (بينعلّم «برّا»)</label></div></form>
+      <div class="field"><label>ساعات يوم العمل</label><input type="number" name="hours_per_day" min="1" max="24" step="0.5" value="${c.hours_per_day ?? 8}"></div>
+      <label class="check" style="grid-column:span 2"><input type="checkbox" name="allow_outside" ${c.allow_outside ? 'checked' : ''}> السماح بالتسجيل من برّا الموقع (بينعلّم «برّا»)</label>
+      <h4 style="grid-column:span 2;margin:8px 0 0">العمل الإضافي والجزاءات</h4>
+      <div class="field"><label>نسبة الإضافي بالأيام العادية</label><input type="number" name="ot_rate" step="0.05" min="0" value="${c.ot_rate ?? 1.25}"><span class="hint">قانون العمل: 125% من أجر الساعة</span></div>
+      <div class="field"><label>نسبة الإضافي بيوم العطلة</label><input type="number" name="ot_offday_rate" step="0.05" min="0" value="${c.ot_offday_rate ?? 1.5}"><span class="hint">قانون العمل: 150%</span></div>
+      <div class="field"><label>أقل مدة إضافي بتنحسب (دقيقة)</label><input type="number" name="ot_min" min="0" max="240" value="${c.ot_min ?? 30}"></div>
+      <div class="field"><label>مضاعف جزاء التأخير والخروج المبكر</label><input type="number" name="late_mult" step="0.25" min="0" value="${c.late_mult ?? 1}"><span class="hint">1 = أجر الدقائق نفسها، 0 = بدون جزاء</span></div>
+      <div class="field"><label>مضاعف جزاء الغياب (أيام)</label><input type="number" name="absent_mult" step="0.25" min="0" value="${c.absent_mult ?? 1}"><span class="hint">1 = أجر يوم عن كل يوم غياب</span></div>
+      <div style="grid-column:span 2"><label class="check"><input type="checkbox" name="apply_payroll" ${c.apply_payroll ? 'checked' : ''}> طبّق الإضافي والجزاءات على مسيّر الرواتب لحاله</label>
+        <span class="hint muted" style="font-size:12px">لما تعمل «تعبئة» للمسيّر: الإضافي بينحط بخانة «العمل الإضافي»، والجزاءات بتنزاد على «خصومات أخرى» — بس للموظفين اللي إلهم تسجيل حضور.</span></div></form>
       ${sup ? '<button class="btn primary" id="save">💾 حفظ</button>' : ''}</div>`;
     v.querySelector('#save')?.addEventListener('click', async () => {
-      const f = v.querySelector('form'), d = formData(f);
-      const { error } = await sb.from('company_settings').upsert({ company_id: S.company.id, attendance: { start: d.start, end: d.end, grace: +d.grace || 0, allow_outside: f.allow_outside.checked } }, { onConflict: 'company_id' });
+      const f = v.querySelector('form'), d = formData(f), n = (k, def) => (d[k] === '' || d[k] == null ? def : +d[k]);
+      const att = { ...c, start: d.start, end: d.end, grace: +d.grace || 0, allow_outside: f.allow_outside.checked, hours_per_day: n('hours_per_day', 8),
+        ot_rate: n('ot_rate', 1.25), ot_offday_rate: n('ot_offday_rate', 1.5), ot_min: n('ot_min', 30), late_mult: n('late_mult', 1), absent_mult: n('absent_mult', 1), apply_payroll: f.apply_payroll.checked };
+      const { error } = await sb.from('company_settings').upsert({ company_id: S.company.id, attendance: att }, { onConflict: 'company_id' });
       if (error) return toast(arError(error), 'err'); toast('انحفظ', 'ok');
     });
   }
