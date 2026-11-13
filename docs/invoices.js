@@ -46,16 +46,18 @@ function categoriesDialog(cats, items, ctx) {
   const used = (id) => items.filter(i => i.category_id === id).length;
   const m = modal({ title: '🗂️ فئات المواد', body: `
     <p class="muted" style="margin-top:0">الفئة بتجمّع الأصناف (مثلاً: مشروبات، قرطاسية). من «طريقة الترقيم» بتقدر تخلّي رقم الصنف يبدأ برمز فئته.</p>
-    <div class="table-wrap"><table class="t"><thead><tr><th style="width:110px">الرمز</th><th>اسم الفئة</th><th>عدد الأصناف</th><th>فعّالة</th><th></th></tr></thead><tbody id="crows"></tbody></table></div>
+    <div class="table-wrap"><table class="t"><thead><tr><th style="width:110px">الرمز</th><th>اسم الفئة</th><th title="أعلى نسبة خصم للأصناف اللي ما إلها حد">أعلى خصم %</th><th title="أقل ربح فوق الكلفة">أقل هامش %</th><th>عدد الأصناف</th><th>فعّالة</th><th></th></tr></thead><tbody id="crows"></tbody></table></div>
     ${canAdd ? '<button class="btn sm" id="c-add" type="button" style="margin-top:8px">➕ فئة جديدة</button>' : ''}`,
     foot: `<button class="btn" data-close>إغلاق</button>` });
   let changed = false;
   const draw = () => {
     m.el.querySelector('#crows').innerHTML = cats.map(c => `<tr data-id="${c.id}"><td><input data-f="code" value="${esc(c.code)}" dir="ltr" ${canEd ? '' : 'disabled'}></td>
-      <td><input data-f="name" value="${esc(c.name)}" ${canEd ? '' : 'disabled'}></td><td>${used(c.id)}</td>
+      <td><input data-f="name" value="${esc(c.name)}" ${canEd ? '' : 'disabled'}></td>
+      <td><input data-f="max_discount_pct" value="${c.max_discount_pct ?? ''}" dir="ltr" style="width:70px" ${canEd ? '' : 'disabled'}></td>
+      <td><input data-f="min_margin_pct" value="${c.min_margin_pct ?? ''}" dir="ltr" style="width:70px" ${canEd ? '' : 'disabled'}></td><td>${used(c.id)}</td>
       <td><input type="checkbox" data-f="is_active" ${c.is_active ? 'checked' : ''} ${canEd ? '' : 'disabled'}></td>
       <td class="actions">${canEd ? '<button class="btn sm" data-save type="button">💾</button>' : ''} ${canDel && !used(c.id) ? '<button class="btn sm danger" data-del type="button">حذف</button>' : ''}</td></tr>`).join('')
-      || '<tr><td colspan="5" class="empty">ما في فئات لسا</td></tr>';
+      || '<tr><td colspan="7" class="empty">ما في فئات لسا</td></tr>';
   };
   draw();
   m.el.querySelector('#c-add')?.addEventListener('click', async () => {
@@ -67,7 +69,7 @@ function categoriesDialog(cats, items, ctx) {
   m.el.querySelector('#crows').addEventListener('click', async (e) => {
     const tr = e.target.closest('[data-id]'); if (!tr) return; const c = cats.find(x => x.id === tr.dataset.id);
     if (e.target.closest('[data-save]')) {
-      const d = { code: tr.querySelector('[data-f=code]').value.trim(), name: tr.querySelector('[data-f=name]').value.trim(), is_active: tr.querySelector('[data-f=is_active]').checked };
+      const d = { code: tr.querySelector('[data-f=code]').value.trim(), name: tr.querySelector('[data-f=name]').value.trim(), is_active: tr.querySelector('[data-f=is_active]').checked, max_discount_pct: (v => v === '' ? null : num(v))(tr.querySelector('[data-f=max_discount_pct]').value.trim()), min_margin_pct: (v => v === '' ? null : num(v))(tr.querySelector('[data-f=min_margin_pct]').value.trim()) };
       if (!d.code || !d.name) return toast('الرمز والاسم مطلوبين', 'err');
       const { error } = await sb.from('item_categories').update(d).eq('id', c.id); if (error) return toast(arError(error), 'err');
       Object.assign(c, d); changed = true; await log('تعديل', 'item_categories', c.id, { name: d.name }); toast('تم الحفظ', 'ok');
@@ -99,7 +101,7 @@ export function shrinkImage(file, max = 320) {
 export async function loadItems(force = false) {
   if (!force && S.items && S.itemsCompany === S.company.id) return S.items;
   // بدون الصورة (ثقيلة)؛ محرر الصنف بيجيبها لحاله
-  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,category_id,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
+  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,category_id,min_price,max_discount_pct,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
   if (error) throw error;
   S.items = data; S.itemsCompany = S.company.id; return data;
 }
@@ -152,6 +154,7 @@ async function viewSettings(v, ctx) {
       <div class="field" style="max-width:520px"><label>سقف الائتمان للزبائن (الفاتورة الآجلة)</label><select name="credit_limit_mode" ${editable ? '' : 'disabled'}>
         <option value="warn" ${st.credit_limit_mode !== 'block' ? 'selected' : ''}>تنبيه بس</option>
         <option value="block" ${st.credit_limit_mode === 'block' ? 'selected' : ''}>منع الترحيل فوق السقف (إلا لمين إله صلاحية «تجاوز سقف الائتمان»)</option></select></div>
+      <label class="check"><input type="checkbox" name="block_below_cost" ${st.block_below_cost ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع بسعر أقل من الكلفة (إلا لمين إله صلاحية «تجاوز ضوابط الأسعار»)</label>
       <label class="check"><input type="checkbox" name="block_negative_stock" ${st.block_negative_stock ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع والإخراج بأكثر من الكمية المتوفرة بالمستودع (البيع بالسالب)</label>
       <p class="muted" style="font-size:12px;margin:2px 0 0">الصنف اللي مأشّر عليه «تجاهل تتبع الكمية» بنوع المستند ما بيتفحص.</p>
       <h3 style="margin:16px 0 6px">🧾 بيان قيود الشيكات</h3>
@@ -160,7 +163,7 @@ async function viewSettings(v, ctx) {
         .map(([k, l]) => `<div class="field"><label>${l}</label><input data-ctpl="${k}" value="${esc((st.cheque_templates || {})[k] || '')}" placeholder="${k === 'deposit' ? 'إيداع شيك وارد رقم: [رقم الشيك] / [البنك] حق [الاستحقاق]' : ''}" ${editable ? '' : 'disabled'}></div>`).join('')}</div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
-    d.block_negative_stock = !!d.block_negative_stock; d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
+    d.block_negative_stock = !!d.block_negative_stock; d.block_below_cost = !!d.block_below_cost; d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
     d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
     const { error } = await sb.from('company_settings').upsert(d);
@@ -219,6 +222,8 @@ async function viewItems(v, ctx) {
       <div class="field"><label>الوحدة</label><input name="unit" value="${esc(it.unit)}"></div>
       <div class="field"><label>سعر البيع</label><input name="sale_price" value="${it.sale_price || ''}" inputmode="decimal" dir="ltr"></div>
       <div class="field"><label>سعر الشراء</label><input name="purchase_price" value="${it.purchase_price || ''}" inputmode="decimal" dir="ltr"></div>
+      <div class="field"><label>أقل سعر بيع (بعد الخصم)</label><input name="min_price" value="${it.min_price ?? ''}" inputmode="decimal" dir="ltr" placeholder="فاضي = بدون"></div>
+      <div class="field"><label>أعلى نسبة خصم %</label><input name="max_discount_pct" value="${it.max_discount_pct ?? ''}" inputmode="decimal" dir="ltr" placeholder="فاضي = حسب الفئة"></div>
       <div class="field"><label>نسبة الضريبة %</label><input name="tax_rate" value="${it.tax_rate ?? 16}" inputmode="decimal" dir="ltr"><span class="hint">16 عام، 0 للمعفى أو الصفري، أو أي نسبة خاصة</span></div>
       <div class="field"><label>الباركود</label><input name="barcode" value="${esc(it.barcode)}" dir="ltr"></div>
       <div class="field"><label>حساب المبيعات</label>${accSel('sales_account_id', st.sales_account_id)}</div>
@@ -253,6 +258,7 @@ async function viewItems(v, ctx) {
       d.qty_check_ignore = [...m.el.querySelectorAll('[data-qi]')].filter(x => x.checked).map(x => x.dataset.qi);
       { const ex = cfValues(m.el.querySelector('#i-form'), 'item', it.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex; }
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);
+      d.min_price = d.min_price === '' || d.min_price == null ? null : num(d.min_price); d.max_discount_pct = d.max_discount_pct === '' || d.max_discount_pct == null ? null : num(d.max_discount_pct);
       if (isNew) d.company_id = S.company.id;
       if ((it.image || null) !== image) d.image = image;
       const res = isNew ? await sb.from('items').insert(d) : await sb.from('items').update(d).eq('id', it.id);
@@ -414,7 +420,7 @@ async function invoiceEditor(type, inv, ctx) {
     const t = e.target; if (t.dataset.k !== 'item') return;
     const it = resolveItem(items, t.value), r = rows[+t.dataset.i];
     t.classList.toggle('bad', !!t.value && !it);
-    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale ? it.sale_price : it.purchase_price) || r.price; r.rate = num(it.tax_rate);
+    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale && listPrice[it.id] != null ? listPrice[it.id] : isSale ? it.sale_price : it.purchase_price) || r.price; r.rate = num(it.tax_rate);
       r.manualDisc = false; applyPromo(r, it, true); draw(); }
   });
   // العرض الترويجي بيتحدّث مع الكمية والسعر والتاريخ، والخصم اليدوي بيلغي العرض عن السطر
@@ -432,9 +438,14 @@ async function invoiceEditor(type, inv, ctx) {
   f.inv_date.addEventListener('change', () => { let ch = false; rows.forEach(r => { ch = applyPromo(r, resolveItem(items, r.item), false) || ch; }); if (ch) draw(); });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) }); draw(); });
   m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) }); draw(); });
+  let listPrice = {};   // سعر الصنف من قائمة أسعار الزبون
+  const loadListPrices = async (p) => { listPrice = {}; if (!isSale || !p?.price_list_id) return;
+    const { data } = await sb.rpc('party_item_prices', { p_company: S.company.id, p_party: p.id }); (data || []).forEach(x => listPrice[x.item_id] = num(x.price)); };
   const partyInput = m.el.querySelector('#party');
+  if (inv?.party_id || pre?.inv?.party_id) loadListPrices(myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)));
   partyInput.addEventListener('change', () => {
     const p = resolveParty(myParties, partyInput.value); partyInput.classList.toggle('bad', !!partyInput.value && !p);
+    loadListPrices(p);
     if (p) { partyInput.value = partyLabel(p); if (p.payment_terms_days && !f.due_date.value) { const d = new Date(f.inv_date.value); d.setDate(d.getDate() + p.payment_terms_days); f.due_date.value = d.toISOString().slice(0, 10); } }
   });
 

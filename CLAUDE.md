@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..49). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..50). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -37,6 +37,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   assets.js         حركات الأصول الثابتة (asset-moves): استبعاد/إتلاف، بيع مباشر، نقل بين الدوائر + عهد الأصول (asset-custody?t=docs|current|holders) و custodyHistory()
   supply.js         طلبات التزويد بين المستودعات (supply) وحدود الأصناف بالمستودع (supply?t=limits)
   attendance.js     الحضور والانصراف (route attendance?t=day|summary|locations|settings) + punchCard() ببطاقة «راتبي»
+  prices.js         قوائم الأسعار (route price-lists): محرر سعر كل صنف بالقائمة مع «تعبئة الكل ±%»
   doctypes.js       أنواع السندات/اليوميات (route doc-types?k=…) + docTypeField/docTypeValue بالمحررات + docCopies (نسخ الطباعة) + docCommittee (لجنة الجرد)
   loans.js          القروض والسلف (route loans?st=…) و«راتبي» (route me): قسيمة الراتب لكل شهر، قروضي، جدول الأقساط، تعليقات الموظف والمشرف
   rep.js            «تطبيق المندوب» (route rep?t=customers|visits|payments|team): زيارة جارية بعدّاد، بداية/نهاية بالموقع، صور، دفعات نقد/تحويل/شيكات (mobile_payment)، وفريق المشرف (visits_report)
@@ -101,7 +102,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -125,7 +126,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.31.0)
+## اللي انبنى (لحد النسخة 4.32.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -206,6 +207,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **الواجهة الرئيسية (4.30):** `launcherHTML()` بـ app.js: مجموعات القائمة الجانبية كأزرار كبيرة بأيقونة (بنفس فلتر القائمة وصلاحياتها)، والكبسة `#/home?g=<المجموعة>` بتعرض فروعها كأزرار مع «رجوع»؛ بتبيّن كمان بدون شركة. CSS: `.launch-grid/.launch-tile`.
 - **شريط التنقل (4.31):** `.pg-nav` جنب تبويبات الشاشات: → رجوع (history.back)، ← للأمام، ▦ أزرار مجموعة الشاشة الحالية (`#/home?g=`)، 🏠 الرئيسية.
 - **سقف الائتمان وتوزيع الدفعات (المرحلة 49):** `company_settings.credit_limit_mode` = warn|block (بحسابات الربط ← المخزون/المبيعات). trigger `ab_credit_limit_check` على ترحيل فاتورة بيع آجلة (draft→posted، حتى من pos/الداخلي): رصيد الزبون بسنة الفاتورة (من غير قيد الفاتورة نفسها) + المجموع > `parties.credit_limit` = منع، إلا المدير أو شاشة `credit_override` edit. `invoice_allocations` (entry ↔ invoice، مبلغ؛ كتابة من الدوال بس): `party_open_invoices(company, party, except_entry)` (الآجلة المرحّلة: المجموع − المرتجعات المرحّلة − الموزّع من سندات فعّالة `alloc_live`)، `allocate_payment(entry, party, items)` (بيستبدل توزيع السند لهالطرف؛ ما بيتعدى مبلغ الطرف بالسند `entry_party_amount` ولا المتبقي)، `auto_allocate(entry, party)` الأقدم أول. السند المعكوس/الملغى توزيعه ما بينحسب. الواجهة: زر «🧾 توزيع على الفواتير» بسند القبض/الصرف. backup_tables: بعد invoice_lines.
+- **قوائم الأسعار وضوابط السعر (المرحلة 50):** `price_lists`/`price_list_items` (كتابة بـ items edit) و`parties.price_list_id` (`ad_party_price_list_check`)؛ `party_item_prices(company, party)` والفاتورة (invoices.js `listPrice`) بتاخذ سعر القائمة لما ينختار الصنف. ضوابط: `items.min_price`/`max_discount_pct`، `item_categories.max_discount_pct`/`min_margin_pct` (للصنف اللي ما إله)، `company_settings.block_below_cost`؛ trigger `ab_sale_price_guard` على سطور فواتير البيع (مش الداخلي، فبيستثني pos_checkout) — التجاوز للمدير أو شاشة `price_override` edit؛ السعر الشامل للضريبة بينحسب قبل الضريبة. backup_tables: price_lists قبل parties وprice_list_items بعد items.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

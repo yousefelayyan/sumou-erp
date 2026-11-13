@@ -105,7 +105,8 @@ const lkOpts = (kind, val) => (S._lk?.cid === S.company?.id ? S._lk.rows : []).f
   .map(r => `<option value="${r.id}" ${r.id === val ? 'selected' : ''}>${esc(r.code)} — ${esc(r.name)}</option>`).join('');
 const subDepts = () => (S._depts?.cid === S.company?.id ? S._depts.rows : []).filter(d => d.kind === 'sub');
 
-function partyForm(type, p, accs, ctx, cats = []) {
+async function partyForm(type, p, accs, ctx, cats = []) {
+  if (type === 'customer') { const { data } = await sb.from('price_lists').select('id,code,name,is_active').eq('company_id', S.company.id).order('code'); S._plists = data || []; }
   const P = PARTY[type], isNew = !p;
   const leaves = leafAccounts(accs);
   const okAcc = (a) => P.accCat ? a.category === P.accCat : a.account_type === P.accType;
@@ -118,6 +119,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
       <div class="tab-panel active" data-tab="g"><div class="grid cols-2">
         <div class="field"><label>الاسم *</label><input name="name" required value="${esc(p.name)}"></div>
         <div class="field"><label>الرقم</label><input name="code" value="${esc(p.code)}" placeholder="تلقائي" dir="ltr"></div>
+        ${type === 'customer' && (S._plists || []).length ? `<div class="field"><label>قائمة الأسعار</label><select name="price_list_id"><option value="">— سعر البيع العادي —</option>${S._plists.filter(l => l.is_active || l.id === p.price_list_id).map(l => `<option value="${l.id}" ${l.id === p.price_list_id ? 'selected' : ''}>${esc(l.code)} — ${esc(l.name)}</option>`).join('')}</select></div>` : ''}
         ${type === 'customer' && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id"><option value="">—</option>${repOptions(p.sales_rep_id)}</select></div>` : ''}
         <div class="field"><label>الفئة</label><select name="category_id"><option value="">— بدون فئة —</option>${cats.filter(c => c.is_active || c.id === p.category_id).map(c => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
         <div class="field"><label>الوصف #2 (اسم ثاني / بالإنجليزي)</label><input name="name2" value="${esc(p.name2 || '')}"></div>
@@ -166,7 +168,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
     if (!d.account_id) return toast('اختار الحساب', 'err');
     const ex = cfValues(m.el.querySelector('#p-form'), type, p.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex;
     if ('loyalty_type_id' in d) d.loyalty_type_id = d.loyalty_type_id || null; if ('loyalty_card_no' in d) d.loyalty_card_no = d.loyalty_card_no || null;
-    d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null;
+    d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null; if ('price_list_id' in d) d.price_list_id = d.price_list_id || null;
     ['route_id', 'payment_method_id', 'department_id', 'currency', 'reference', 'name2'].forEach(k => { if (k in d) d[k] = String(d[k] || '').trim() || null; });
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
     else if (!d.code) delete d.code;
