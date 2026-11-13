@@ -56,6 +56,7 @@ async function viewPos(v, ctx) {
   ]);
   if (error) return void (v.innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
   const catList = (cats || []).filter(c => items.some(i => i.category_id === c.id));
+  const altBc = (await sb.from('item_barcodes').select('item_id,barcode,factor').eq('company_id', S.company.id)).data || [];
   const cartKey = 'sumou.pos.cart.' + S.company.id;
   const parties = (await loadParties()).filter(x => x.party_type === 'customer' && x.is_active);
   let cart = [], cust = null, invDisc = 0;
@@ -152,8 +153,9 @@ async function viewPos(v, ctx) {
   qi.onkeydown = (e) => {   // الباركود: الماسح بيكتب الرقم وبيضغط إدخال
     if (e.key !== 'Enter') return;
     const t = qi.value.trim(); if (!t) return;
-    const it = items.find(i => i.barcode && i.barcode === t) || items.find(i => i.code === t);
-    if (it) { addItem(it); qi.value = ''; q = ''; drawGrid(); } else toast('ما في صنف بهالباركود', 'err');
+    let it = items.find(i => i.barcode && i.barcode === t) || items.find(i => i.code === t), qty = 1;
+    if (!it) { const b = altBc.find(x => x.barcode === t); if (b) { it = items.find(i => i.id === b.item_id); qty = num(b.factor) || 1; } }   // باركود إضافي (كرتونة = 12)
+    if (it) { addItem(it, qty); qi.value = ''; q = ''; drawGrid(); } else toast('ما في صنف بهالباركود', 'err');
   };
   $('#pos-lines').onclick = (e) => {
     const m = e.target.closest('[data-m]'), p = e.target.closest('[data-p]'), l = e.target.closest('[data-l]');

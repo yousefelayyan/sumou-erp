@@ -103,13 +103,71 @@ export function shrinkImage(file, max = 320) {
 export async function loadItems(force = false) {
   if (!force && S.items && S.itemsCompany === S.company.id) return S.items;
   // بدون الصورة (ثقيلة)؛ محرر الصنف بيجيبها لحاله
-  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,batch_mode,category_id,brand_id,origin_id,model,color,size,min_price,max_discount_pct,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
+  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,batch_mode,serial_tracked,category_id,brand_id,origin_id,model,color,size,min_price,max_discount_pct,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
   if (error) throw error;
+  // الباركود الإضافي (المرحلة 86): i.barcodes = [{barcode, factor, label}]
+  const { data: bc } = await sb.from('item_barcodes').select('item_id,barcode,factor,label').eq('company_id', S.company.id);
+  const byIt = {}; (bc || []).forEach(b => (byIt[b.item_id] ||= []).push(b)); data.forEach(i => { i.barcodes = byIt[i.id] || []; });
   S.items = data; S.itemsCompany = S.company.id; return data;
 }
+// ===== السيريال بالسطر (المرحلة 86) =====
+export const parseSerials = (t) => [...new Set(String(t || '').split(/[\n,;\t]+/).map(x => x.trim()).filter(Boolean))];
+export function serialCellHTML(r, i, it, ro, inbound) {
+  if (!it?.serial_tracked) return '';
+  const n = parseSerials(r.serials).length, q = num(r.qty), ok = n === q;
+  return `<div class="batch-cell" style="align-items:flex-start"><span title="الأرقام التسلسلية">🔢</span>
+    <textarea class="cell" data-i="${i}" data-k="serials" rows="${Math.min(Math.max(n, 1), 4)}" placeholder="${inbound ? 'سيريال لكل حبة (سطر لكل واحد أو امسح بالباركود)' : 'سيريالات الحبات الطالعة'}" style="font-size:12px;min-height:26px" dir="ltr" ${ro}>${esc(r.serials || '')}</textarea>
+    ${!inbound && !ro ? `<button type="button" class="btn sm" data-spick="${i}" title="اختيار من الموجود بالمستودع">📋</button>` : ''}
+    <small class="${ok ? 'muted' : 'bad-txt'}" data-scnt="${i}">${n}/${fmtQty(q)}</small></div>`;
+}
+export async function serialPicker(it, wh, current) {
+  const { data, error } = await sb.rpc('serial_balances', { p_company: S.company.id, p_warehouse: wh || null, p_item: it.id });
+  if (error) { toast(arError(error), 'err'); return null; }
+  const cur = new Set(parseSerials(current));
+  return new Promise(res => {
+    const m = modal({ stack: true, title: `🔢 سيريالات ${it.name} الموجودة`, body: `<input id="sq" placeholder="بحث…" dir="ltr" style="width:100%;margin-bottom:8px">
+      <div id="sl" style="max-height:50vh;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px">${(data || []).map(x => `<label class="check" data-s="${esc(x.serial)}"><input type="checkbox" value="${esc(x.serial)}" ${cur.has(x.serial) ? 'checked' : ''}> <span dir="ltr">${esc(x.serial)}</span></label>`).join('') || '<div class="muted">ما في سيريالات بهالمستودع</div>'}</div>`,
+      foot: '<button class="btn primary" data-ok>تمام</button><button class="btn" data-close>إلغاء</button>' });
+    m.el.querySelector('#sq').oninput = (e) => { const q = e.target.value.trim().toLowerCase(); m.el.querySelectorAll('[data-s]').forEach(l => { l.style.display = !q || l.dataset.s.toLowerCase().includes(q) ? '' : 'none'; }); };
+    m.el.querySelector('[data-ok]').onclick = () => { res([...m.el.querySelectorAll('#sl input:checked')].map(x => x.value)); m.close(); };
+    m.el.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => res(null)));
+  });
+}
+
+// ===== ملصقات الباركود (Code 128-B بـ SVG) =====
+const C128 = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
+export function code128SVG(text, h = 50) {
+  const t = String(text || '').replace(/[^\x20-\x7e]/g, ''); if (!t) return '';
+  const codes = [104, ...[...t].map(c => c.charCodeAt(0) - 32)];
+  codes.push(codes.reduce((s, c, k) => s + c * (k || 1), 0) % 103, 106);
+  let x = 10, bars = '';
+  for (const c of codes) { const p = C128[c]; for (let k = 0; k < p.length; k++) { const w = +p[k]; if (k % 2 === 0) bars += `<rect x="${x}" y="0" width="${w}" height="${h}"/>`; x += w; } }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${x + 10} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px">${bars}</svg>`;
+}
+function barcodeLabels(it, bcs) {
+  const codes = [it.barcode || it.code, ...bcs.map(b => b.barcode)].filter(Boolean);
+  const m = modal({ stack: true, title: '🖨️ ملصقات باركود', body: `<div class="grid cols-3">
+    <div class="field"><label>الباركود</label><select id="lb-c">${codes.map(c => `<option>${esc(c)}</option>`).join('')}</select></div>
+    <div class="field"><label>عدد الملصقات</label><input type="number" id="lb-n" min="1" max="500" value="10"></div>
+    <div class="field"><label>حجم الملصق (ملم)</label><select id="lb-s"><option value="50x25">50 × 25</option><option value="40x30">40 × 30</option><option value="38x25">38 × 25</option><option value="a4">A4 (65 ملصق)</option></select></div></div>
+    <label class="check"><input type="checkbox" id="lb-p" checked> اطبع السعر</label><div id="lb-prev" style="margin-top:10px;max-width:260px"></div>`,
+    foot: '<button class="btn primary" data-ok>🖨️ طباعة</button><button class="btn" data-close>إغلاق</button>' });
+  const one = () => { const c = m.el.querySelector('#lb-c').value; return `<div class="lbl"><div class="nm">${esc(it.name)}</div>${code128SVG(c, 34)}<div class="cd">${esc(c)}</div>${m.el.querySelector('#lb-p').checked ? `<div class="pr">${fmtNum(it.sale_price)}</div>` : ''}</div>`; };
+  const prev = () => { m.el.querySelector('#lb-prev').innerHTML = `<style>.lbl{border:1px dashed #999;padding:4px;text-align:center;font-family:Tahoma}.lbl .nm{font-size:11px}.lbl .cd{font:11px monospace}.lbl .pr{font-weight:700}</style>${one()}`; };
+  m.el.querySelectorAll('select,input').forEach(x => x.oninput = prev); prev();
+  m.el.querySelector('[data-ok]').onclick = () => {
+    const n = Math.min(Math.max(+m.el.querySelector('#lb-n').value || 1, 1), 500), sz = m.el.querySelector('#lb-s').value;
+    const [w, h] = sz === 'a4' ? [0, 0] : sz.split('x').map(Number);
+    const w2 = window.open('', '_blank'); if (!w2) return toast('المتصفح منع النافذة', 'err');
+    const page = sz === 'a4' ? '@page{size:A4;margin:8mm}body{display:grid;grid-template-columns:repeat(5,1fr);gap:2mm}.lbl{height:20mm}' : `@page{size:${w}mm ${h}mm;margin:0}.lbl{width:${w}mm;height:${h}mm;page-break-after:always;box-sizing:border-box;padding:1mm 2mm}`;
+    w2.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>body{margin:0;font-family:Tahoma}${page}.lbl{text-align:center;overflow:hidden}.nm{font-size:9px;white-space:nowrap;overflow:hidden}.cd{font:9px monospace}.pr{font-size:11px;font-weight:700}svg{fill:#000}</style></head><body>${Array(n).fill(one()).join('')}<script>onload=()=>print()<\/script></body></html>`);
+    w2.document.close();
+  };
+}
+
 const TAXM = { normal: 'ضريبة عادية', exempt: 'معفى من الضريبة', zero: 'ضريبة مبيعات صفر', export: 'تصدير' };
 const itemLabel = (i) => i ? `${i.code} — ${i.name}` : '';
-const resolveItem = (items, t) => { t = (t || '').trim(); if (!t) return null; const c = t.split('—')[0].trim(); return items.find(i => i.code === c) || items.find(i => i.name === t || i.barcode === t) || null; };
+const resolveItem = (items, t) => { t = (t || '').trim(); if (!t) return null; const c = t.split('—')[0].trim(); return items.find(i => i.code === c) || items.find(i => i.name === t || i.barcode === t) || items.find(i => (i.barcodes || []).some(b => b.barcode === t)) || null; };
 
 // ---------------------------------------------------------------------
 //  حسابات الربط والضريبة
@@ -256,6 +314,11 @@ async function viewItems(v, ctx) {
       ${cfFieldsHTML('item', it.extra) ? `<h4 style="margin:12px 0 6px">🧩 حقول إضافية</h4>${cfFieldsHTML('item', it.extra)}` : ''}
       <div class="field" style="max-width:420px"><label>🧪 الدفعات وتاريخ الانتهاء</label><select name="batch_mode">
         ${[['none', 'بدون دفعات'], ['batch', 'رقم دفعة'], ['expiry', 'رقم دفعة + تاريخ انتهاء']].map(([k, l]) => `<option value="${k}" ${(it.batch_mode || 'none') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <label class="check"><input type="checkbox" name="serial_tracked" ${it.serial_tracked ? 'checked' : ''}> 🔢 تتبع بالأرقام التسلسلية (سيريال لكل حبة — بالإدخال والبيع)</label>
+      <details style="margin:8px 0" ${(it.barcodes || []).length ? 'open' : ''}><summary style="cursor:pointer;font-weight:700">🏷️ باركود إضافي (كرتونة، عبوة، باركود المورد…)</summary>
+        <table class="t" style="margin-top:6px"><thead><tr><th>الباركود</th><th>بيساوي كم ${esc(it.unit || 'حبة')}</th><th>الوصف</th><th></th></tr></thead><tbody id="i-bc"></tbody></table>
+        <button type="button" class="btn sm" id="i-bc-add">➕ باركود</button>
+        ${!isNew ? '<button type="button" class="btn sm" id="i-label">🖨️ طباعة ملصقات باركود</button>' : ''}</details>
       <details style="margin:8px 0"><summary style="cursor:pointer;font-weight:700">📦 تجاهل تتبع الكمية</summary>
         <p class="muted" style="font-size:12px;margin:4px 0">بالمستندات المأشّرة ما بيتفحص رصيد هالصنف (ما بيطلع تنبيه نقص ولا بيمنع البيع بالسالب). مفيد للخدمات والتركيب.</p>
         <div style="display:flex;flex-wrap:wrap;gap:6px 16px">${[['sale', 'فواتير المبيعات'], ['sale_return', 'مردودات المبيعات'], ['pos', 'نقطة البيع'], ['sales_order', 'طلبات المبيعات'], ['purchase', 'فواتير المشتريات'], ['purchase_return', 'مردودات المشتريات'], ['stock_out', 'سندات الإخراج'], ['stock_transfer', 'سندات التحويل'], ['production', 'سندات الإنتاج']].map(([k, l]) => `<label class="check" style="margin:0"><input type="checkbox" data-qi="${k}" ${(it.qty_check_ignore || []).includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div></details>
@@ -263,6 +326,15 @@ async function viewItems(v, ctx) {
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
     if (!isNew) attachAudit(m.el, it);
     applyLayout(m.el.querySelector('#i-form'), 'item');
+    let bcs = (it.barcodes || []).map(b => ({ ...b }));
+    const drawBc = () => { m.el.querySelector('#i-bc').innerHTML = bcs.map((b, k) => `<tr><td><input class="cell" data-bk="${k}" data-f="barcode" value="${esc(b.barcode)}" dir="ltr"></td>
+      <td><input class="cell n" data-bk="${k}" data-f="factor" value="${b.factor ?? 1}" inputmode="decimal"></td><td><input class="cell" data-bk="${k}" data-f="label" value="${esc(b.label || '')}"></td>
+      <td><button type="button" class="x" data-bdel="${k}">×</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">ما في</td></tr>'; };
+    drawBc();
+    m.el.querySelector('#i-bc').oninput = (e) => { const t = e.target; if (t.dataset.bk != null) bcs[+t.dataset.bk][t.dataset.f] = t.value; };
+    m.el.querySelector('#i-bc').onclick = (e) => { const b = e.target.closest('[data-bdel]'); if (b) { bcs.splice(+b.dataset.bdel, 1); drawBc(); } };
+    m.el.querySelector('#i-bc-add').onclick = () => { bcs.push({ barcode: '', factor: 1, label: '' }); drawBc(); };
+    m.el.querySelector('#i-label')?.addEventListener('click', () => barcodeLabels(it, bcs));
     let image = it.image || null;
     const imgPrev = m.el.querySelector('#i-img-prev'), imgRm = m.el.querySelector('#i-img-rm');
     m.el.querySelector('#i-img').onchange = async (e) => {
@@ -280,13 +352,21 @@ async function viewItems(v, ctx) {
       d.category_id = d.category_id || null; d.brand_id = d.brand_id || null; d.origin_id = d.origin_id || null;
       ['model', 'color', 'size'].forEach(k => { d[k] = (d[k] || '').trim() || null; });
       d.qty_check_ignore = [...m.el.querySelectorAll('[data-qi]')].filter(x => x.checked).map(x => x.dataset.qi);
+      d.serial_tracked = !!m.el.querySelector('[name=serial_tracked]').checked;
+      const bcClean = bcs.map(b => ({ barcode: (b.barcode || '').trim(), factor: num(b.factor) || 1, label: (b.label || '').trim() || null })).filter(b => b.barcode);
+      if (new Set(bcClean.map(b => b.barcode)).size !== bcClean.length) return toast('في باركود مكرر', 'err');
       { const ex = cfValues(m.el.querySelector('#i-form'), 'item', it.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex; }
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);
       d.min_price = d.min_price === '' || d.min_price == null ? null : num(d.min_price); d.max_discount_pct = d.max_discount_pct === '' || d.max_discount_pct == null ? null : num(d.max_discount_pct);
       if (isNew) d.company_id = S.company.id;
       if ((it.image || null) !== image) d.image = image;
-      const res = isNew ? await sb.from('items').insert(d) : await sb.from('items').update(d).eq('id', it.id);
+      const res = isNew ? await sb.from('items').insert(d).select('id').single() : await sb.from('items').update(d).eq('id', it.id);
       if (res.error) return toast(arError(res.error), 'err');
+      { const iid = isNew ? res.data.id : it.id, old = JSON.stringify((it.barcodes || []).map(b => [b.barcode, num(b.factor), b.label || null]));
+        if (old !== JSON.stringify(bcClean.map(b => [b.barcode, b.factor, b.label]))) {
+          const dl = await sb.from('item_barcodes').delete().eq('item_id', iid); if (dl.error) return toast(arError(dl.error), 'err');
+          if (bcClean.length) { const ins = await sb.from('item_barcodes').insert(bcClean.map(b => ({ ...b, company_id: S.company.id, item_id: iid }))); if (ins.error) return toast(arError(ins.error), 'err'); }
+        } }
       await log(isNew ? 'إضافة' : 'تعديل', 'items', it.id || d.code, { name: d.name }); S.items = null; toast('تم الحفظ', 'ok'); m.close(); ctx.rerender();
     };
   };
@@ -379,7 +459,7 @@ async function invoiceEditor(type, inv, ctx) {
     const prev = rows[rows.length - 1];
     if (l.is_bonus && prev && prev.itemId === l.item_id && !prev.bonus) { prev.bonus = num(l.qty); prev.manualBonus = true; continue; }
     rows.push({ itemId: l.item_id, item: itemLabel(itById[l.item_id]), desc: l.is_bonus ? '' : l.description || '', details: l.details || '', qty: l.is_bonus ? 0 : num(l.qty), bonus: l.is_bonus ? num(l.qty) : 0, manualBonus: !!l.is_bonus,
-      price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '', rep: l.sales_rep_id || '' });
+      price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '', rep: l.sales_rep_id || '', serials: (l.serials || []).join('\n') });
   }
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
@@ -434,7 +514,7 @@ async function invoiceEditor(type, inv, ctx) {
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="item-list" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${lpHint(r, i)}</td>
-      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}${batchCell(r, i)}${repCell(r, i)}</td>
+      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}${batchCell(r, i)}${serialCellHTML(r, i, resolveItem(items, r.item), ro, inbound)}${repCell(r, i)}</td>
       <td><input class="cell n" data-i="${i}" data-k="qty" value="${r.qty || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="bonus" value="${r.bonus || ''}" inputmode="decimal" ${ro} ${r.bonus ? 'style="color:var(--ok,#15803d);font-weight:700"' : ''}></td>
       <td><input class="cell n" data-i="${i}" data-k="price" value="${r.price || ''}" inputmode="decimal" ${ro}></td>
@@ -505,6 +585,11 @@ async function invoiceEditor(type, inv, ctx) {
     if (t.dataset.k === 'batch' && !inbound) { const b = bal.find(x => x.batch_no === t.value.trim() && x.item_id === resolveItem(items, r.item)?.id); r.exp = b?.expiry_date || ''; draw(); return; }
     if (['qty', 'price'].includes(t.dataset.k) && applyPromo(r, resolveItem(items, r.item), false)) draw(); });
   f.inv_date.addEventListener('change', () => { let ch = false; rows.forEach(r => { ch = applyPromo(r, resolveItem(items, r.item), false) || ch; }); if (ch) draw(); });
+  tb.addEventListener('input', (e) => { const t = e.target; if (t.dataset.k !== 'serials' && t.dataset.k !== 'qty') return; const i = t.dataset.i, c = tb.querySelector(`[data-scnt="${i}"]`); if (!c) return;
+    const n = parseSerials(rows[+i].serials).length, q = num(rows[+i].qty); c.textContent = `${n}/${fmtQty(q)}`; c.className = n === q ? 'muted' : 'bad-txt'; });
+  tb.addEventListener('click', async (e) => { const b = e.target.closest('[data-spick]'); if (!b) return; const r = rows[+b.dataset.spick], it = resolveItem(items, r.item); if (!it) return;
+    const sel = await serialPicker(it, f.warehouse_id?.value || whs[0]?.id || null, r.serials); if (!sel) return;
+    r.serials = sel.join('\n'); if (!num(r.qty) || num(r.qty) < sel.length) r.qty = sel.length; draw(); });
   tb.addEventListener('click', (e) => { const h = e.target.closest("[data-lph]"); if (!h) return;
     const r = rows[+h.dataset.lph], it = resolveItem(items, r.item), p = resolveParty(myParties, m.el.querySelector('#party').value);
     if (it && p) priceHistory(p, it, isSale ? 'sale' : 'purchase', readOnly ? null : (pr) => {
@@ -565,7 +650,9 @@ async function invoiceEditor(type, inv, ctx) {
       const bm = it?.batch_mode && it.batch_mode !== 'none';
       if (bm && inbound && !(r.batch || '').trim()) return toast(`السطر ${k + 1}: ${it.name} بده رقم دفعة`, 'err');
       if (bm && inbound && it.batch_mode === 'expiry' && !r.exp) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
-      out.push({ ...(isSale ? { sales_rep_id: r.rep || null } : {}), batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate),
+      const sl = it?.serial_tracked ? parseSerials(r.serials) : [];
+      if (sl.length && sl.length !== num(r.qty)) return toast(`السطر ${k + 1}: ${it.name} — عدد السيريالات (${sl.length}) لازم يساوي الكمية (${fmtQty(r.qty)})`, 'err');
+      out.push({ serials: sl.length ? sl : null, ...(isSale ? { sales_rep_id: r.rep || null } : {}), batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate),
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
       if (num(r.qty) === 0) out.pop();
       if (bq > 0) out.push({ ...(isSale ? { sales_rep_id: r.rep || null } : {}), batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it.id, description: `${r.desc || it.name} — 🎁 بونص`, details: null,

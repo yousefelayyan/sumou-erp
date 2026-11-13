@@ -16,7 +16,7 @@ const r3 = (x) => Math.round(x * 1000) / 1000;
 const amt = (x) => Math.abs(x) < 0.0005 ? '' : fmtNum(x);
 const qs = () => new URLSearchParams(location.hash.split('?')[1] || '');
 const itemLabel = (it) => it ? `${it.code} — ${it.name}` : '';
-const resolveItem = (items, v) => { v = (v || '').trim(); if (!v) return null; return items.find(i => itemLabel(i) === v || i.code === v || i.name === v || i.barcode === v) || null; };
+const resolveItem = (items, v) => { v = (v || '').trim(); if (!v) return null; return items.find(i => itemLabel(i) === v || i.code === v || i.name === v || i.barcode === v) || items.find(i => (i.barcodes || []).some(b => b.barcode === v)) || null; };
 
 export const ORD = {
   sales_order:    { label: 'طلب مبيعات', plural: 'طلبات المبيعات', screen: 'sales_orders', partyType: 'customer', partyLabel: 'العميل', inv: 'sale', icon: '📝' },

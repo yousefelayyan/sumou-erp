@@ -96,4 +96,36 @@ export async function batchHistory(id, itById, whById) {
   m.el.querySelector('.modal').style.maxWidth = '820px';
 }
 
-export const BATCH_ROUTES = { batches: viewBatches };
+// ===== الأرقام التسلسلية (المرحلة 86): بحث بالسيريال وسجله، والموجود بالمستودعات =====
+const SKIND = { sale: "فاتورة بيع", sale_return: "مرتجع بيع", purchase: "فاتورة شراء", purchase_return: "مرتجع شراء", stock_in: "سند إدخال", stock_out: "سند إخراج", stock_transfer: "سند تحويل" };
+async function viewSerials(v) {
+  if (!S.company) return void (v.innerHTML = '<div class="notice info">اختار شركة من فوق أول.</div>');
+  if (!(can('inventory', 'view') || can('items', 'view'))) return void (v.innerHTML = '<div class="notice">ما عندك صلاحية</div>');
+  const q = new URLSearchParams(location.hash.split('?')[1] || ''), sn = q.get('s') || '', itF = q.get('item') || '';
+  const [items, whs] = await Promise.all([loadItems(), loadWarehouses()]);
+  const iBy = Object.fromEntries(items.map(i => [i.id, i])), wBy = Object.fromEntries(whs.map(w => [w.id, w]));
+  const sItems = items.filter(i => i.serial_tracked);
+  v.innerHTML = `<div class="page-head"><h2>🔢 الأرقام التسلسلية (سيريال)</h2></div>
+    <div class="card" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px">
+      <div class="field"><label>بحث برقم السيريال</label><input id="sn" value="${esc(sn)}" dir="ltr" placeholder="اكتب أو امسح السيريال"></div><button class="btn primary" id="go">🔍 بحث</button>
+      <div class="spacer"></div><div class="field"><label>الموجود من صنف</label><select id="it"><option value="">— كل الأصناف —</option>${sItems.map(i => `<option value="${i.id}" ${i.id === itF ? 'selected' : ''}>${esc(i.code)} — ${esc(i.name)}</option>`).join('')}</select></div></div>
+    <div id="hist"></div><div id="bal"></div>`;
+  const go = () => { location.hash = `#/serials?s=${encodeURIComponent(v.querySelector('#sn').value.trim())}&item=${v.querySelector('#it').value}`; };
+  v.querySelector('#go').onclick = go; v.querySelector('#sn').onkeydown = (e) => { if (e.key === 'Enter') go(); }; v.querySelector('#it').onchange = go;
+  if (sn) {
+    const { data, error } = await sb.rpc('serial_history', { p_company: S.company.id, p_serial: sn });
+    v.querySelector('#hist').innerHTML = error ? `<div class="notice">${esc(arError(error))}</div>` : `<div class="card" style="margin-bottom:10px"><h4 style="margin-top:0">سجل السيريال <span dir="ltr">${esc(sn)}</span>
+      ${data?.length ? (data.reduce((s, x) => s + x.qty, 0) > 0 ? `<span class="badge ok">موجود بـ ${esc(wBy[data.at(-1).warehouse_id]?.name || '')}</span>` : '<span class="badge">مش بالمخزون</span>') : ''}</h4>
+      <table class="t"><thead><tr><th>التاريخ</th><th>الصنف</th><th>المستند</th><th>الرقم</th><th>الطرف</th><th>المستودع</th><th>الحركة</th></tr></thead><tbody>
+      ${(data || []).map(x => `<tr><td>${fmtDate(x.move_date)}</td><td>${esc(iBy[x.item_id]?.name || '')}</td><td>${esc((x.source_type === 'invoice_cancel' ? 'إلغاء ' : '') + (SKIND[x.doc_kind] || x.doc_kind || ''))}</td><td>${esc(x.doc_no || '')}</td><td>${esc(x.party_name || '')}</td>
+        <td>${esc(wBy[x.warehouse_id]?.name || '')}</td><td>${x.qty > 0 ? '<span class="badge ok">داخل</span>' : '<span class="badge bad">طالع</span>'}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">ما في حركات لهالسيريال</td></tr>'}</tbody></table></div>`;
+  }
+  const { data: bal, error: e2 } = await sb.rpc('serial_balances', { p_company: S.company.id, p_warehouse: null, p_item: itF || null });
+  if (e2) return void (v.querySelector('#bal').innerHTML = `<div class="notice">${esc(arError(e2))}</div>`);
+  v.querySelector('#bal').innerHTML = `<div class="card table-wrap"><h4 style="margin-top:0">الموجود بالمستودعات (${(bal || []).length})</h4><table class="t rep" id="sbt"><thead><tr><th>الصنف</th><th>السيريال</th><th>المستودع</th><th>دخل بتاريخ</th></tr></thead><tbody>
+    ${(bal || []).slice(0, 3000).map(x => `<tr data-sn="${esc(x.serial)}" style="cursor:pointer"><td>${esc(iBy[x.item_id]?.code || '')} — ${esc(iBy[x.item_id]?.name || '')}</td><td dir="ltr" style="text-align:right">${esc(x.serial)}</td><td>${esc(wBy[x.warehouse_id]?.name || '')}</td><td>${x.since ? fmtDate(x.since) : ''}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="empty">ما في سيريالات بالمخزون</td></tr>'}</tbody></table></div>`;
+  v.querySelector('#sbt tbody').onclick = (e) => { const tr = e.target.closest('[data-sn]'); if (tr) { v.querySelector('#sn').value = tr.dataset.sn; go(); } };
+}
+
+export const BATCH_ROUTES = { batches: viewBatches, serials: viewSerials };

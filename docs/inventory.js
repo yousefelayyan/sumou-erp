@@ -10,7 +10,7 @@ import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } f
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, fmtQty, fmtPrice } from './core.js';
 import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
-import { loadItems } from './invoices.js';
+import { loadItems, serialCellHTML, serialPicker, parseSerials } from './invoices.js';
 import { printDoc } from './print.js';
 import { openAttachments } from './attach.js';
 
@@ -21,7 +21,7 @@ const DOC = {
   count:    { label: 'جرد وتسوية', icon: '📋' },
 };
 const itemLabel = (i) => i ? `${i.code} — ${i.name}` : '';
-const resolveItem = (items, t) => { t = (t || '').trim(); if (!t) return null; const c = t.split('—')[0].trim(); return items.find(i => i.code === c) || items.find(i => i.name === t || i.barcode === t) || null; };
+const resolveItem = (items, t) => { t = (t || '').trim(); if (!t) return null; const c = t.split('—')[0].trim(); return items.find(i => i.code === c) || items.find(i => i.name === t || i.barcode === t) || items.find(i => (i.barcodes || []).some(b => b.barcode === t)) || null; };
 
 export async function loadWarehouses() {
   if (!S.company) return [];
@@ -150,7 +150,7 @@ async function docEditor(type, doc, whs, ctx) {
     postFlag(K, 'gl') || doc.entry_id ? { key: 'gl', posted: !!doc.entry_id, canPost: doc.status === 'posted' && !doc.entry_id && can('inventory', 'post') && postFlag(K, 'gl'),
       canUnpost: !!doc.entry_id && can('inventory', 'unpost'), note: doc.status !== 'posted' && !doc.entry_id ? 'بعد الترحيل للمخزون' : '' } : null]) : '';
   const d0 = doc || { doc_date: today(), warehouse_id: whs[0]?.id };
-  let rows = lines.map(l => ({ item: itemLabel(byId[l.item_id]), qty: num(l.qty), counted: l.counted_qty == null ? '' : num(l.counted_qty), cost: num(l.unit_cost), batch: l.batch_no || '', exp: l.expiry_date || '' }));
+  let rows = lines.map(l => ({ item: itemLabel(byId[l.item_id]), qty: num(l.qty), counted: l.counted_qty == null ? '' : num(l.counted_qty), cost: num(l.unit_cost), batch: l.batch_no || '', exp: l.expiry_date || '', serials: (l.serials || []).join('\n') }));
   if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 });
   const isCount = type === 'count';
   const dept = await deptField(doc?.department_id, ro, !doc); const dtf = await docTypeField('stock_' + type, doc?.doc_type_id, ro);
@@ -190,14 +190,18 @@ async function docEditor(type, doc, whs, ctx) {
       ${inbound && it.batch_mode === 'expiry' ? `<input class="cell" type="date" data-i="${i}" data-k="exp" value="${esc(r.exp)}" title="تاريخ الانتهاء" ${ro}>` : ''}</div>`; };
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
-      <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${batchCell(r, i)}</td>
+      <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${batchCell(r, i)}${isCount ? '' : serialCellHTML(r, i, resolveItem(items, r.item), ro, type === 'in')}</td>
       <td><input class="cell n" data-i="${i}" data-k="${isCount ? 'counted' : 'qty'}" value="${isCount ? r.counted : (r.qty || '')}" inputmode="decimal" ${ro}></td>
       ${isCount && doc?.status === 'posted' ? `<td class="n" style="color:${r.qty < 0 ? 'var(--bad)' : 'var(--ok)'}">${r.qty ? fmtQty(r.qty) : '—'}</td>` : ''}
       <td><input class="cell n" data-i="${i}" data-k="cost" value="${r.cost || ''}" inputmode="decimal" ${ro}></td>
       <td>${!readOnly ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('');
   };
   draw(); loadBal(); m.el.querySelector('[name=warehouse_id]')?.addEventListener('change', loadBal);
-  tb.addEventListener('input', (e) => { const t = e.target; if (t.dataset.k) rows[+t.dataset.i][t.dataset.k] = t.value; });
+  tb.addEventListener('input', (e) => { const t = e.target; if (t.dataset.k) rows[+t.dataset.i][t.dataset.k] = t.value;
+    if (t.dataset.k === 'serials' || t.dataset.k === 'qty') { const c = tb.querySelector(`[data-scnt="${t.dataset.i}"]`); if (c) { const r = rows[+t.dataset.i], n = parseSerials(r.serials).length; c.textContent = `${n}/${fmtQty(num(r.qty))}`; c.className = n === num(r.qty) ? 'muted' : 'bad-txt'; } } });
+  tb.addEventListener('click', async (e) => { const b = e.target.closest('[data-spick]'); if (!b) return; const r = rows[+b.dataset.spick], it = resolveItem(items, r.item); if (!it) return;
+    const sel = await serialPicker(it, m.el.querySelector('[name=warehouse_id]').value || null, r.serials); if (!sel) return;
+    r.serials = sel.join('\n'); if (num(r.qty) < sel.length) r.qty = sel.length; draw(); });
   tb.addEventListener('change', (e) => { const t = e.target; if (t.dataset.k !== 'item') return; const it = resolveItem(items, t.value); t.classList.toggle('bad', !!t.value && !it);
     if (it) { t.value = itemLabel(it); rows[+t.dataset.i].item = t.value; if (!num(rows[+t.dataset.i].cost)) rows[+t.dataset.i].cost = num(it.purchase_price); draw(); } });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 }); draw(); });
@@ -214,7 +218,10 @@ async function docEditor(type, doc, whs, ctx) {
       if (bm && type === 'in' && !sys && !bx.batch_no) return toast(`السطر ${k + 1}: ${it.name} بده رقم دفعة`, 'err');
       if (bm && type === 'in' && !sys && it.batch_mode === 'expiry' && !bx.expiry_date) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
       if (isCount) { if (r.counted === '' || num(r.counted) < 0) return toast(`السطر ${k + 1}: اكتب الكمية الفعلية`, 'err'); out.push({ item_id: it.id, counted_qty: num(r.counted), qty: 0, unit_cost: num(r.cost), ...bx }); }
-      else { if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err'); out.push({ item_id: it.id, qty: num(r.qty), unit_cost: num(r.cost), ...bx }); }
+      else { if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err');
+        const sl = it.serial_tracked ? parseSerials(r.serials) : [];
+        if (sl.length && sl.length !== num(r.qty)) return toast(`السطر ${k + 1}: ${it.name} — عدد السيريالات (${sl.length}) لازم يساوي الكمية`, 'err');
+        out.push({ item_id: it.id, qty: num(r.qty), unit_cost: num(r.cost), ...bx, serials: sl.length ? sl : null }); }
     }
     if (!out.length) return toast('أضف صنف واحد على الأقل', 'err');
     const mn = readManual(m.el.querySelector('#sd-form'), manual);
