@@ -433,7 +433,7 @@ function renderShell() {
   document.querySelector('.pg-nav')?.addEventListener('click', (e) => {
     const b = e.target.closest('[data-nav]'); if (!b) return;
     const k = b.dataset.nav;
-    if (k === 'back') history.back(); else if (k === 'fwd') history.forward(); else if (k === 'home') location.hash = '#/home';
+    if (k === 'back') { if (history.length > 1) history.back(); else location.hash = '#/home'; } else if (k === 'fwd') history.forward(); else if (k === 'home') location.hash = '#/home';
     else {
       const r = curHash().replace(/^#\//, ''), r0 = r.split('?')[0];
       const g = NAV().find(g => g.items.some(it => it.r && (it.r === r || it.r.split('?')[0] === r0)));

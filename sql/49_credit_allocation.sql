@@ -12,10 +12,13 @@ do $$ begin
 end $$;
 
 -- رصيد الطرف (مرحّل) بسنة الفاتورة
+-- رصيد الطرف التراكمي (كل السنين): قيود الإغلاق والأرصدة المدوّرة (افتتاح سنة إلها سنة قبلها) ما بتنحسب عشان ما يتكرر الرصيد
 create or replace function public.party_balance_fy(p_party uuid, p_fy uuid) returns numeric
 language sql stable security definer set search_path = public as $$
   select coalesce(sum(l.debit - l.credit), 0) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
-   where l.party_id = p_party and e.fiscal_year_id = p_fy and e.status in ('posted','reversed');
+    join public.fiscal_years y on y.id = e.fiscal_year_id
+   where l.party_id = p_party and e.status in ('posted','reversed') and e.entry_type <> 'closing'
+     and not (e.entry_type = 'opening' and exists (select 1 from public.fiscal_years y2 where y2.company_id = y.company_id and y2.start_date < y.start_date));
 $$;
 revoke execute on function public.party_balance_fy(uuid, uuid) from public, anon, authenticated;
 
@@ -30,6 +33,7 @@ begin
   select credit_limit into lim from public.parties where id = new.party_id;
   if coalesce(lim, 0) <= 0 then return new; end if;
   if public.is_admin() or public.can(new.company_id, 'credit_override', 'edit') then return new; end if;
+  perform pg_advisory_xact_lock(hashtext('credit|' || new.party_id));
   bal := public.party_balance_fy(new.party_id, new.fiscal_year_id);
   -- قيد الفاتورة نفسها بينعمل قبل تحديث الحالة: ما بينحسب مرتين
   bal := bal - coalesce((select sum(l.debit - l.credit) from public.journal_lines l join public.journal_entries e on e.id = l.entry_id
@@ -60,12 +64,17 @@ alter table public.invoice_allocations enable row level security;
 revoke insert, update, delete on public.invoice_allocations from authenticated;
 grant select on public.invoice_allocations to authenticated;
 drop policy if exists ia_select on public.invoice_allocations;
-create policy ia_select on public.invoice_allocations for select to authenticated using (public.has_company(company_id));
+create policy ia_select on public.invoice_allocations for select to authenticated using (
+  (public.can(company_id, 'receipt_vouchers', 'view') or public.can(company_id, 'payment_vouchers', 'view')
+   or public.can(company_id, 'sales_invoices', 'view') or public.can(company_id, 'purchase_invoices', 'view'))
+  and exists (select 1 from public.invoices i where i.id = invoice_id and public.dept_ok(company_id, i.department_id)));
 
 -- الدفعة الفعّالة: مش ملغاة ولا معكوسة
 create or replace function public.alloc_live(p_entry uuid) returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.journal_entries e where e.id = p_entry and e.status in ('draft','posted') and e.reversed_by is null and e.reversal_of is null);
+  select exists (select 1 from public.journal_entries e where e.id = p_entry and e.status = 'posted' and e.reversed_by is null and e.reversal_of is null)
+     and not exists (select 1 from public.cheque_events ev join public.cheques c on c.id = ev.cheque_id
+                      where ev.entry_id = p_entry and c.status in ('returned','cancelled'));
 $$;
 
 -- فواتير الطرف الآجلة المرحّلة مع المتبقي (الفاتورة − المرتجعات المرحّلة − الموزّع من دفعات فعّالة)
@@ -73,24 +82,25 @@ create or replace function public.party_open_invoices(p_company uuid, p_party uu
 returns table (invoice_id uuid, inv_type text, doc_code text, inv_no int, inv_date date, due_date date, total numeric, returned numeric, allocated numeric, remaining numeric)
 language plpgsql stable security definer set search_path = public as $$
 begin
-  if not public.has_company(p_company) then raise exception 'ما عندك صلاحية'; end if;
+  if not (public.can(p_company, 'receipt_vouchers', 'view') or public.can(p_company, 'payment_vouchers', 'view')
+          or public.can(p_company, 'sales_invoices', 'view') or public.can(p_company, 'purchase_invoices', 'view')) then raise exception 'ما عندك صلاحية'; end if;
   return query
-  select i.id, i.inv_type, i.doc_code, i.inv_no, i.inv_date, (i.inv_date + coalesce(p.payment_terms_days, 0))::date, i.total,
+  select i.id, i.inv_type, i.doc_code, i.inv_no, i.inv_date, coalesce(i.due_date, (i.inv_date + coalesce(p.payment_terms_days, 0))::date), i.total,
          coalesce(r.amt, 0), coalesce(a.amt, 0), round(i.total - coalesce(r.amt, 0) - coalesce(a.amt, 0), 3)
     from public.invoices i join public.parties p on p.id = i.party_id
-    left join lateral (select sum(x.total) amt from public.invoices x where x.original_invoice_id = i.id and x.status = 'posted') r on true
+    left join lateral (select sum(x.total) amt from public.invoices x where x.original_invoice_id = i.id and x.status = 'posted' and x.payment_type = 'credit') r on true
     left join lateral (select sum(al.amount) amt from public.invoice_allocations al
                         where al.invoice_id = i.id and public.alloc_live(al.entry_id) and al.entry_id is distinct from p_except_entry) a on true
    where i.company_id = p_company and i.party_id = p_party and i.status = 'posted' and i.payment_type = 'credit'
-     and i.inv_type in ('sale','purchase')
+     and i.inv_type in ('sale','purchase') and public.dept_ok(p_company, i.department_id)
    order by i.inv_date, i.inv_no;
 end $$;
 
 -- مبلغ الطرف بالدفعة: القبض = دائن الزبون، الصرف = مدين المورد
 create or replace function public.entry_party_amount(p_entry uuid, p_party uuid) returns numeric
 language sql stable security definer set search_path = public as $$
-  select coalesce(sum(case when e.entry_type = 'payment' or (e.entry_type = 'journal' and p.party_type = 'supplier') then l.debit - l.credit else l.credit - l.debit end), 0)
-    from public.journal_lines l join public.journal_entries e on e.id = l.entry_id join public.parties p on p.id = l.party_id
+  select coalesce(sum(case when p.party_type = 'supplier' then l.debit - l.credit else l.credit - l.debit end), 0)
+    from public.journal_lines l join public.parties p on p.id = l.party_id
    where l.entry_id = p_entry and l.party_id = p_party;
 $$;
 
@@ -103,7 +113,10 @@ begin
   if e.id is null then raise exception 'السند مش موجود'; end if;
   scr := public.entry_screen(e.entry_type);
   if not (public.can(e.company_id, scr, 'edit') or public.can(e.company_id, scr, 'add')) or not public.tenant_writable() then raise exception 'ما عندك صلاحية'; end if;
-  if not public.alloc_live(p_entry) then raise exception 'السند ملغى أو معكوس'; end if;
+  if e.entry_type not in ('receipt','payment','journal','cheque','opening') then raise exception 'هالنوع من القيود ما بيتوزّع على الفواتير'; end if;
+  if not public.alloc_live(p_entry) then raise exception 'التوزيع بس لسند مرحّل (مش معكوس ولا شيكه راجع)'; end if;
+  if e.is_frozen then raise exception 'السند مجمّد'; end if;
+  if exists (select 1 from public.fiscal_years y where y.id = e.fiscal_year_id and y.is_closed) then raise exception 'السنة المالية مغلقة'; end if;
   if not public.dept_ok(e.company_id, e.department_id) then raise exception 'ما عندك صلاحية على هالفرع'; end if;
   avail := public.entry_party_amount(p_entry, p_party);
   if avail <= 0 then raise exception 'السند ما فيه دفعة لهالطرف'; end if;
@@ -137,6 +150,25 @@ begin
   end loop;
   return public.allocate_payment(p_entry, p_party, items);
 end $$;
+
+
+-- التوزيع بينمسح لما السند ينلغى ترحيله، أو الفاتورة تنلغى/ينلغى ترحيلها/يتغيّر طرفها
+create or replace function public.zv_alloc_cleanup() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_table_name = 'journal_entries' then
+    if old.status = 'posted' and new.status <> 'posted' then delete from public.invoice_allocations where entry_id = new.id; end if;
+  else
+    if (old.status = 'posted' and new.status <> 'posted') or new.party_id is distinct from old.party_id then
+      delete from public.invoice_allocations where invoice_id = new.id;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists zv_alloc_cleanup on public.journal_entries;
+create trigger zv_alloc_cleanup after update of status on public.journal_entries for each row execute function public.zv_alloc_cleanup();
+drop trigger if exists zv_alloc_cleanup on public.invoices;
+create trigger zv_alloc_cleanup after update of status, party_id on public.invoices for each row execute function public.zv_alloc_cleanup();
 
 revoke execute on function public.alloc_live(uuid), public.entry_party_amount(uuid, uuid) from public, anon, authenticated;
 revoke execute on function public.party_open_invoices(uuid, uuid, uuid), public.allocate_payment(uuid, uuid, jsonb), public.auto_allocate(uuid, uuid) from public, anon;

@@ -31,6 +31,15 @@ select auto_allocate('49000000-0000-0000-0000-0000000000e1','49000000-0000-0000-
 select string_agg(coalesce(doc_code, inv_no::text) || ':' || remaining, ', ' order by inv_date) as open from party_open_invoices(:'C','49000000-0000-0000-0000-000000000001');
 \echo == over allocate (expected ERROR)
 select allocate_payment('49000000-0000-0000-0000-0000000000e1','49000000-0000-0000-0000-000000000001', jsonb_build_array(jsonb_build_object('invoice_id','49000000-0000-0000-0000-0000000000a1','amount',100), jsonb_build_object('invoice_id','49000000-0000-0000-0000-0000000000a2','amount',40)));
+\echo == allocate invoice own entry (expected ERROR)
+select allocate_payment((select entry_id from invoices where id = '49000000-0000-0000-0000-0000000000a1'),'49000000-0000-0000-0000-000000000001', jsonb_build_array(jsonb_build_object('invoice_id','49000000-0000-0000-0000-0000000000a1','amount',10)));
+-- إلغاء ترحيل السند بيمسح توزيعه
+select unpost_entry('49000000-0000-0000-0000-0000000000e1');
+select count(*) as allocs_after_unpost from invoice_allocations where entry_id = '49000000-0000-0000-0000-0000000000e1';
+\echo == allocate draft receipt (expected ERROR)
+select auto_allocate('49000000-0000-0000-0000-0000000000e1','49000000-0000-0000-0000-000000000001');
+select post_entry('49000000-0000-0000-0000-0000000000e1');
+select auto_allocate('49000000-0000-0000-0000-0000000000e1','49000000-0000-0000-0000-000000000001') as reallocated;
 \echo == direct insert (expected ERROR)
 insert into invoice_allocations(company_id,entry_id,invoice_id,amount) values (:'C','49000000-0000-0000-0000-0000000000e1','49000000-0000-0000-0000-0000000000a3',1);
 -- عكس السند بيرجّع المتبقي

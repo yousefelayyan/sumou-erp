@@ -11,7 +11,7 @@ import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords } from './print.js';
@@ -501,6 +501,7 @@ async function invoiceEditor(type, inv, ctx) {
       const { data: b } = await sb.from('party_balances').select('debit,credit').eq('party_id', p.id).eq('fiscal_year_id', S.fy.id).maybeSingle();
       const bal = b ? num(b.debit) - num(b.credit) : 0;
       if (bal + header.total > p.credit_limit && !(await confirmBox(`تنبيه: رصيد العميل رح يصير ${fmtNum(bal + header.total)} وهو أكثر من سقف الائتمان ${fmtNum(p.credit_limit)}.${st.credit_limit_mode === 'block' && !can('credit_override', 'edit') ? ' الترحيل ممنوع فوق السقف، بتقدر تحفظها مسودة بس.' : ''} بدك تكمّل؟`))) return;
+      if (bal + header.total > p.credit_limit && st.credit_limit_mode === 'block' && !can('credit_override', 'edit') && !isAdmin()) post = false;   // بتنحفظ مسودة
     }
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {
