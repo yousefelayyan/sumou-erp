@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — طريقة الترقيم (تنسيق أرقام المستندات لكل شركة)
 // =====================================================================
-import { S, sb, esc, toast, arError, can, log } from './core.js';
+import { S, sb, esc, toast, arError, can, log, isAdmin } from './core.js';
 
 // أنواع المستندات اللي إلها ترقيم قابل للتنسيق
 export const NUM_KINDS = [
@@ -16,6 +16,7 @@ export const NUM_KINDS = [
   { key: 'stock_out',       label: 'سندات الإخراج',        group: 'المخزون',  family: 'stock' },
   { key: 'stock_transfer',  label: 'سندات التحويل',        group: 'المخزون',  family: 'stock' },
   { key: 'stock_count',     label: 'الجرد والتسوية',       group: 'المخزون',  family: 'stock' },
+  { key: 'm_company',       label: 'الشركات (لكل المكتب)', group: 'الرموز الأساسية', family: 'company' },
   { key: 'm_account',       label: 'دليل الحسابات',        group: 'الرموز الأساسية', family: 'master' },
   { key: 'm_customer',      label: 'العملاء',              group: 'الرموز الأساسية', family: 'master' },
   { key: 'm_supplier',      label: 'الموردين',             group: 'الرموز الأساسية', family: 'master' },
@@ -110,20 +111,22 @@ async function viewNumbering(v, ctx) {
   const all = JSON.parse(JSON.stringify(await loadNumbering(true)));
   let cur = ctx?.params?.k && KIND[ctx.params.k] ? ctx.params.k : 'journal';
   let dirty = false;
-  const groups = [...new Set(NUM_KINDS.map(k => k.group))];
+  const KINDS = NUM_KINDS.filter(k => k.key !== 'm_company' || isAdmin());
+  const groups = [...new Set(KINDS.map(k => k.group))];
+  let coNum = (await sb.rpc('company_numbering')).data || { mode: 'auto', digits: 2 };
   v.innerHTML = `<div class="page-head"><h2>🔢 طريقة الترقيم</h2><div class="spacer"></div>${editable ? '<button class="btn primary" id="save">💾 حفظ</button>' : ''}</div>
     <p class="muted">لكل نوع مستند بهالشركة: كيف ينرقّم، وإيمتى يبدأ من جديد، وشو شكل الرقم اللي بيطلع بالشاشات والطباعة. التغيير بيمشي على المستندات الجديدة بس.</p>
     <div class="grid" style="grid-template-columns:230px 1fr 1fr;gap:16px;align-items:start">
-      <div class="card" style="padding:8px" id="kinds">${groups.map(g => `<div class="kgrp" data-grp="${esc(g)}">
+      <div class="card" style="padding:8px" id="kinds"><input id="ksearch" placeholder="🔎 بحث… (فواتير، عملاء، شيكات…)" style="width:100%;margin-bottom:8px">${groups.map(g => `<div class="kgrp" data-grp="${esc(g)}">
         <button type="button" class="kgrp-title" data-toggle="${esc(g)}">${g}<span class="chev">›</span></button>
-        <div class="kgrp-items">${NUM_KINDS.filter(k => k.group === g).map(k => `<button type="button" class="btn sm" data-k="${k.key}" style="display:flex;width:100%;justify-content:flex-start;margin-bottom:4px">${k.label}<span class="badge" data-tag="${k.key}" style="margin-inline-start:auto"></span></button>`).join('')}</div></div>`).join('')}</div>
+        <div class="kgrp-items">${KINDS.filter(k => k.group === g).map(k => `<button type="button" class="btn sm" data-k="${k.key}" style="display:flex;width:100%;justify-content:flex-start;margin-bottom:4px">${k.label}<span class="badge" data-tag="${k.key}" style="margin-inline-start:auto"></span></button>`).join('')}</div></div>`).join('')}</div>
       <form class="card" id="nf-mode"></form>
       <form class="card" id="nf-fmt"></form>
     </div>`;
   const rule = () => ({ ...defaultRule(cur), ...(all[cur] || {}) });
-  const tag = (k) => { if (k.startsWith('m_') && !all[k]) return 'افتراضي'; const r = { ...defaultRule(k), ...(all[k] || {}) }; return r.mode === 'manual' ? 'يدوي' : 'تلقائي'; };
+  const tag = (k) => { if (k === 'm_company') return coNum.mode === 'manual' ? 'يدوي' : 'تلقائي'; if (k.startsWith('m_') && !all[k]) return 'افتراضي'; const r = { ...defaultRule(k), ...(all[k] || {}) }; return r.mode === 'manual' ? 'يدوي' : 'تلقائي'; };
   const openGrp = (g) => v.querySelectorAll('.kgrp').forEach(el => el.classList.toggle('open', el.dataset.grp === g));
-  const drawTags = () => NUM_KINDS.forEach(k => { v.querySelector(`[data-tag="${k.key}"]`).textContent = tag(k.key);
+  const drawTags = () => KINDS.forEach(k => { v.querySelector(`[data-tag="${k.key}"]`).textContent = tag(k.key);
     v.querySelector(`[data-k="${k.key}"]`).classList.toggle('primary', k.key === cur); });
   const radio = (name, val, label, r) => `<label class="check"><input type="radio" name="${name}" value="${val}" ${r[name] === val ? 'checked' : ''} ${dis}> ${label}</label>`;
   const chk = (name, label, r, extra = '') => `<label class="check"><input type="checkbox" name="${name}" ${r[name] ? 'checked' : ''} ${dis} ${extra}> ${label}</label>`;
@@ -147,7 +150,26 @@ async function viewNumbering(v, ctx) {
   };
   const masterPreview = (r) => { const d = Math.min(12, Math.max(0, +r.digits || 0)); let n = '7'; if (d > 1) n = n.padStart(d, (r.pad || '0').slice(0, 1));
     return (r.prefix || '') + (cur === 'm_account' && r.add_parent !== false ? '11' + (r.sep || '') : cur === 'm_item' && r.by_category ? '01' + (r.sep || '') : '') + n + (r.suffix || ''); };
+  const drawCompany = () => {
+    const ad = isAdmin() ? '' : 'disabled';
+    v.querySelector('#nf-mode').innerHTML = `<h3 style="margin-top:0">ترقيم الشركات</h3>
+      <label class="check"><input type="radio" name="co_mode" value="auto" ${coNum.mode !== 'manual' ? 'checked' : ''} ${ad}> تلقائي (01، 02، 03…) — الرمز بينحط لحاله وما بيتعدّل</label>
+      <label class="check"><input type="radio" name="co_mode" value="manual" ${coNum.mode === 'manual' ? 'checked' : ''} ${ad}> يدوي — بتكتب رمز الشركة بإيدك</label>
+      <p class="muted" style="font-size:12px">هالإعداد لكل شركات المكتب (مش لهالشركة بس). وبالحالتين ما بيصير رمزين متشابهين.</p>`;
+    v.querySelector('#nf-fmt').innerHTML = `<h3 style="margin-top:0">شكل الرمز</h3>
+      <div class="field"><label>عدد الخانات</label><input type="number" name="co_digits" min="1" max="6" value="${+coNum.digits || 2}" ${ad}></div>
+      <div class="notice info" style="margin-top:12px">مثال: <b dir="ltr" style="font-size:18px" id="pv">${'1'.padStart(+coNum.digits || 2, '0')}</b></div>
+      ${isAdmin() ? '<button type="button" class="btn primary" id="co-save">💾 حفظ ترقيم الشركات</button>' : ''}`;
+    const rd = () => { coNum = { mode: v.querySelector('[name=co_mode]:checked')?.value || 'auto', digits: Math.min(6, Math.max(1, parseInt(v.querySelector('[name=co_digits]').value) || 2)) }; v.querySelector('#pv').textContent = '1'.padStart(coNum.digits, '0'); drawTags(); };
+    v.querySelector('#nf-mode').onchange = rd; v.querySelector('#nf-fmt').oninput = rd;
+    v.querySelector('#co-save')?.addEventListener('click', async () => {
+      rd(); const { error } = await sb.rpc('set_company_numbering', { p_mode: coNum.mode, p_digits: coNum.digits });
+      if (error) return toast(arError(error), 'err'); toast('انحفظ ترقيم الشركات', 'ok');
+    });
+    drawTags();
+  };
   const draw = () => {
+    if (KIND[cur].family === 'company') return drawCompany();
     if (KIND[cur].family === 'master') return drawMaster();
     const r = rule(), K = KIND[cur], splits = SPLITS[K.family];
     v.querySelector('#nf-mode').innerHTML = `<h3 style="margin-top:0">طريقة الترقيم — ${K.label}</h3>
@@ -183,7 +205,7 @@ async function viewNumbering(v, ctx) {
     if (KIND[cur].family !== 'master') { r.year_digits = +r.year_digits === 2 ? 2 : 4; if (r.split === 'none') r.add_split = false; }
     all[cur] = r; dirty = true;
   };
-  const onChange = (e) => { read(); if (['split', 'mode', 'reset', 'by_cat'].includes(e.target.name)) draw(); else { v.querySelector('#pv').textContent = KIND[cur].family === 'master' ? masterPreview(rule()) : formatPreview(rule()); drawTags(); } };
+  const onChange = (e) => { if (KIND[cur].family === 'company') return; read(); if (['split', 'mode', 'reset', 'by_cat'].includes(e.target.name)) draw(); else { v.querySelector('#pv').textContent = KIND[cur].family === 'master' ? masterPreview(rule()) : formatPreview(rule()); drawTags(); } };
   v.querySelector('#nf-mode').addEventListener('change', onChange);
   v.querySelector('#nf-fmt').addEventListener('input', onChange);
   v.querySelector('#nf-fmt').addEventListener('change', onChange);
@@ -192,6 +214,13 @@ async function viewNumbering(v, ctx) {
     if (t) { const el = t.closest('.kgrp'); openGrp(el.classList.contains('open') ? null : t.dataset.toggle); return; }
     const b = e.target.closest('[data-k]'); if (!b) return; cur = b.dataset.k; draw(); });
   openGrp(KIND[cur].group);
+  v.querySelector('#ksearch').addEventListener('input', (e) => {
+    const t = e.target.value.trim();
+    v.querySelectorAll('#kinds [data-k]').forEach(b => { b.style.display = !t || b.textContent.includes(t) ? 'flex' : 'none'; });
+    v.querySelectorAll('#kinds .kgrp').forEach(g => { const any = [...g.querySelectorAll('[data-k]')].some(b => b.style.display !== 'none');
+      g.style.display = any ? '' : 'none'; if (t) g.classList.toggle('open', any); });
+    if (!t) openGrp(KIND[cur].group);
+  });
   v.querySelector('#save')?.addEventListener('click', async () => {
     await sb.rpc('ensure_company_settings', { p_company: S.company.id });
     const { error } = await sb.from('company_settings').update({ numbering: all, updated_at: new Date().toISOString() }).eq('company_id', S.company.id);

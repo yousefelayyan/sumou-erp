@@ -226,7 +226,7 @@ async function viewLoyalty(v) {
   const [lk, parties] = await Promise.all([loadLookups(true), loadParties(true)]);
   const types = lk.filter(r => r.kind === 'loyalty_type'), tById = Object.fromEntries(types.map(t => [t.id, t]));
   const holders = parties.filter(p => p.party_type === 'customer' && p.loyalty_type_id);
-  v.innerHTML = `<div class="page-head"><h2>💳 مركز تحكم بطاقات الولاء</h2><div class="spacer"></div><a class="btn sm" href="#/setup?k=loyalty_type">⚙️ أنواع البطاقات</a></div>
+  v.innerHTML = `<div class="page-head"><h2>💳 مركز تحكم بطاقات الولاء</h2><div class="spacer"></div><a class="btn sm" href="#/loyalty-cashback">🏅 المراتب والاسترداد النقدي</a> <a class="btn sm" href="#/setup?k=loyalty_type">⚙️ أنواع البطاقات</a></div>
     ${types.length ? '' : '<div class="notice info">عرّف أنواع البطاقات أول من «إعداد ← أنواع بطاقات الولاء» (مثلاً فضية: نقطة لكل دينار)، وبعدين أعطي العميل بطاقة من بطاقته.</div>'}
     <div class="card no-print" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
       <div class="field"><label>من</label><input type="date" id="from" value="${S.fy.start_date}"></div><div class="field"><label>إلى</label><input type="date" id="to" value="${S.fy.end_date}"></div>
@@ -340,4 +340,76 @@ async function viewCustomFields(v) {
   };
 }
 
-export const ORDER_ROUTES = { 'orders': viewOrders, 'promotions': viewPromotions, 'loyalty': viewLoyalty, 'custom-fields': viewCustomFields };
+// ---------------------------------------------------------------------
+//  مراتب الولاء والاسترداد النقدي (Cashback)
+// ---------------------------------------------------------------------
+const TIER_COLORS = ['#3f3f46', '#a16207', '#0f766e', '#c2410c', '#7c3aed', '#be123c'];
+async function viewCashback(v, ctx) {
+  if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
+  const [tiersR, parties, stR, redR] = await Promise.all([
+    sb.from('loyalty_tiers').select('*').eq('company_id', S.company.id).order('min_spend'), loadParties(true),
+    sb.from('company_settings').select('cashback_account_id').eq('company_id', S.company.id).maybeSingle(),
+    sb.from('loyalty_redemptions').select('*').eq('company_id', S.company.id).order('created_at', { ascending: false }).limit(300)]);
+  const tiers = tiersR.data || [], pBy = Object.fromEntries(parties.map(p => [p.id, p]));
+  const { data: rows, error } = await sb.rpc('loyalty_cashback', { p_company: S.company.id, p_party: null, p_date: today() });
+  if (error) return void (v.innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
+  const ed = can('marketing', 'edit'), canPost = can('marketing', 'post');
+  const tot = (rows || []).reduce((a, r) => ({ e: a.e + num(r.earned), r: a.r + num(r.redeemed), b: a.b + num(r.balance) }), { e: 0, r: 0, b: 0 });
+  const tcol = (t, i) => t?.color || TIER_COLORS[i % TIER_COLORS.length];
+  v.innerHTML = `<style>.tiers{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}.tier{flex:1;min-width:170px;border-radius:14px;color:#fff;padding:14px;position:relative;overflow:hidden}
+    .tier b{font-size:18px;display:block}.tier small{opacity:.9}.tier .pc{font-size:28px;font-weight:800;margin-top:6px}.tier .ed{position:absolute;top:8px;left:8px}
+    .prog{height:8px;background:var(--tint);border-radius:6px;overflow:hidden;min-width:120px}.prog i{display:block;height:100%;background:var(--brand)}</style>
+    <div class="page-head"><h2>🏅 مراتب الولاء والاسترداد النقدي</h2><div class="spacer"></div><a class="btn sm" href="#/loyalty">💳 نقاط الولاء</a>
+      ${ed ? '<button class="btn primary" id="addt">➕ مرتبة</button>' : ''}</div>
+    <p class="muted">المرتبة حسب مشتريات الزبون (حاملي بطاقات الولاء) آخر 12 شهر. كل فاتورة بيع مرحّلة بتجمّع استرداد بنسبة مرتبته وقتها، والرصيد بينصرف للزبون (بيخفّض ذمّته) بقيد: مدين «مصروف الاسترداد النقدي» ودائن حساب الزبون.</p>
+    ${stR.data?.cashback_account_id ? '' : '<div class="notice info">حدّد حساب «مصروف الاسترداد النقدي» من «حسابات الربط» عشان تقدر تصرف الرصيد.</div>'}
+    <div class="tiers">${tiers.map((t, i) => `<div class="tier" style="background:${esc(tcol(t, i))}"><b>🏅 ${esc(t.name)}</b><small>من ${fmtNum(t.min_spend)} دينار بالسنة</small><div class="pc">${num(t.cashback_pct)}%</div><small>استرداد نقدي</small>
+      ${ed ? `<button class="btn sm ed" data-t="${t.id}">✏️</button>` : ''}${t.is_active ? '' : '<div><span class="badge bad">موقوفة</span></div>'}</div>`).join('') || '<div class="notice info">ما في مراتب. ضيف «الأولى» من صفر دينار، و«الثانية» من 1000 دينار مثلاً.</div>'}</div>
+    <div class="grid cols-3" style="margin-bottom:10px">${[['المكتسب', tot.e], ['المصروف', tot.r], ['الرصيد المتاح', tot.b]].map(([l, x]) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${fmtNum(x)}</span></div>`).join('')}</div>
+    <div class="card table-wrap"><table class="t rep"><thead><tr><th>الزبون</th><th>رقم البطاقة</th><th>مشتريات 12 شهر</th><th>المرتبة</th><th>للمرتبة الجاية</th><th>المكتسب</th><th>المصروف</th><th>الرصيد</th><th class="no-print"></th></tr></thead><tbody>
+    ${(rows || []).sort((a, b) => num(b.spend_12m) - num(a.spend_12m)).map(r => { const p = pBy[r.party_id] || {}, ti = tiers.findIndex(t => t.id === r.tier_id);
+      const prog = r.next_min ? Math.min(100, Math.round(num(r.spend_12m) / num(r.next_min) * 100)) : 100;
+      return `<tr><td><b>${esc(p.name || '')}</b> <span class="muted">${esc(p.code || '')}</span></td><td dir="ltr" style="text-align:right">${esc(p.loyalty_card_no || '')}</td><td class="n">${fmtNum(r.spend_12m)}</td>
+        <td>${r.tier_name ? `<span class="badge" style="background:${esc(tcol(tiers[ti], ti))};color:#fff">${esc(r.tier_name)} · ${num(r.tier_pct)}%</span>` : '<span class="muted">—</span>'}</td>
+        <td>${r.next_name ? `<div class="prog"><i style="width:${prog}%"></i></div><small class="muted">باقي ${fmtNum(num(r.next_min) - num(r.spend_12m))} لـ «${esc(r.next_name)}»</small>` : '<small class="muted">أعلى مرتبة</small>'}</td>
+        <td class="n">${fmtNum(r.earned)}</td><td class="n">${fmtNum(r.redeemed)}</td><td class="n"><b style="${num(r.balance) < 0 ? 'color:#b91c1c' : ''}">${fmtNum(r.balance)}</b></td>
+        <td class="no-print">${canPost && num(r.balance) > 0 ? `<button class="btn sm" data-red="${r.party_id}" data-bal="${num(r.balance)}">💸 صرف</button>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="9" class="empty">ما في زبائن معهم بطاقات ولاء</td></tr>'}</tbody></table></div>
+    <h3>سجل الصرف</h3><div class="card table-wrap"><table class="t"><thead><tr><th>التاريخ</th><th>الزبون</th><th>المبلغ</th><th>ملاحظات</th><th></th></tr></thead><tbody>
+    ${(redR.data || []).map(r => `<tr><td>${fmtDate(r.red_date)}</td><td>${esc(pBy[r.party_id]?.name || '')}</td><td class="n">${fmtNum(r.amount)}</td><td>${esc(r.notes || '')}</td><td>${canPost ? `<button class="btn sm danger" data-cx="${r.id}">إلغاء</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">ما في</td></tr>'}</tbody></table></div>`;
+  const tierForm = (t) => {
+    const isNew = !t; t = t || { rank: (Math.max(0, ...tiers.map(x => x.rank)) + 1), name: '', min_spend: 0, cashback_pct: 1, is_active: true, color: TIER_COLORS[tiers.length % TIER_COLORS.length] };
+    const m = modal({ title: isNew ? 'مرتبة جديدة' : `المرتبة: ${t.name}`, size: 'sm', body: `<form id="f">
+      <div class="field"><label>الاسم *</label><input name="name" value="${esc(t.name)}" placeholder="المرتبة الأولى / فضية…"></div>
+      <div class="grid cols-2"><div class="field"><label>الترتيب</label><input name="rank" value="${t.rank}" inputmode="numeric" dir="ltr"></div><div class="field"><label>اللون</label><input type="color" name="color" value="${esc(t.color || '#3f3f46')}" style="height:42px;padding:3px"></div></div>
+      <div class="field"><label>أقل مشتريات بالسنة (دينار)</label><input name="min_spend" value="${num(t.min_spend)}" inputmode="decimal" dir="ltr"></div>
+      <div class="field"><label>نسبة الاسترداد %</label><input name="cashback_pct" value="${num(t.cashback_pct)}" inputmode="decimal" dir="ltr"></div>
+      <label class="check"><input type="checkbox" name="is_active" ${t.is_active ? 'checked' : ''}> فعّالة</label></form>`,
+      foot: `<button class="btn primary" data-save>💾 حفظ</button>${!isNew ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}<button class="btn" data-close>إلغاء</button>` });
+    m.el.querySelector('[data-save]').onclick = async () => {
+      const d = formData(m.el.querySelector('#f')); d.is_active = !!m.el.querySelector('[name=is_active]').checked;
+      d.rank = parseInt(d.rank, 10) || 1; d.min_spend = num(d.min_spend); d.cashback_pct = num(d.cashback_pct); if (!d.name) return toast('الاسم مطلوب', 'err');
+      const r = isNew ? await sb.from('loyalty_tiers').insert({ ...d, company_id: S.company.id }) : await sb.from('loyalty_tiers').update(d).eq('id', t.id);
+      if (r.error) return toast(arError(r.error), 'err'); toast('تم الحفظ', 'ok'); m.close(); ctx.rerender();
+    };
+    m.el.querySelector('[data-del]')?.addEventListener('click', async () => { const r = await sb.from('loyalty_tiers').delete().eq('id', t.id); if (r.error) return toast(arError(r.error), 'err'); m.close(); ctx.rerender(); });
+  };
+  v.querySelector('#addt')?.addEventListener('click', () => tierForm(null));
+  v.querySelectorAll('[data-t]').forEach(b => b.onclick = () => tierForm(tiers.find(t => t.id === b.dataset.t)));
+  v.querySelectorAll('[data-red]').forEach(b => b.onclick = () => {
+    const p = pBy[b.dataset.red], bal = num(b.dataset.bal);
+    const m = modal({ title: `💸 صرف استرداد نقدي: ${p?.name || ''}`, size: 'sm', body: `<p>الرصيد المتاح: <b>${fmtNum(bal)}</b> دينار. الصرف بيخفّض ذمّة الزبون (بينقيّد على حسابه).</p>
+      <div class="field"><label>المبلغ</label><input id="amt" value="${bal}" inputmode="decimal" dir="ltr"></div><div class="field"><label>التاريخ</label><input type="date" id="dt" value="${today()}"></div>
+      <div class="field"><label>ملاحظات</label><input id="nt"></div>`, foot: '<button class="btn primary" data-ok>✅ صرف</button><button class="btn" data-close>إلغاء</button>' });
+    m.el.querySelector('[data-ok]').onclick = async () => {
+      const a = num(m.el.querySelector('#amt').value); if (a <= 0 || a > bal + 0.0005) return toast('المبلغ مش صحيح', 'err');
+      const { error: er } = await sb.rpc('loyalty_redeem', { p_party: p.id, p_amount: a, p_date: m.el.querySelector('#dt').value, p_notes: m.el.querySelector('#nt').value });
+      if (er) return toast(arError(er), 'err'); toast('انصرف الاسترداد', 'ok'); m.close(); ctx.rerender();
+    };
+  });
+  v.querySelectorAll('[data-cx]').forEach(b => b.onclick = async () => {
+    if (!(await confirmBox('إلغاء الصرف؟ بينعمل قيد عكسي وبيرجع الرصيد للزبون.'))) return ctx.rerender();
+    const { error: er } = await sb.rpc('loyalty_redeem_cancel', { p_id: b.dataset.cx, p_date: today() }); if (er) return toast(arError(er), 'err'); toast('انلغى الصرف', 'ok'); ctx.rerender();
+  });
+}
+
+export const ORDER_ROUTES = { 'orders': viewOrders, 'promotions': viewPromotions, 'loyalty': viewLoyalty, 'loyalty-cashback': viewCashback, 'custom-fields': viewCustomFields };

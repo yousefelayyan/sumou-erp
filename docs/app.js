@@ -27,6 +27,7 @@ import { PAYROLL_ROUTES } from './payroll.js';
 import { ASSET_ROUTES } from './assets.js';
 import { SUPPLY_ROUTES } from './supply.js';
 import { ASK_ROUTES } from './ask.js';
+import { REP_ROUTES } from './rep.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
@@ -135,6 +136,19 @@ function renderPending() {
 // ---------------------------------------------------------------------
 //  الهيكل الرئيسي
 // ---------------------------------------------------------------------
+// بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات، والشاشة اللي بدها شركة بتطلب إضافة شركة
+const DEMO = () => !S.company && isAdmin();
+const NO_CO_ROUTES = new Set(['home', 'companies', 'users', 'groups', 'backup', 'log', 'subscription', 'tenants', 'obligations']);
+function viewNeedCompany(v, r) {
+  const it = NAV().flatMap(g => g.items.map(x => ({ ...x, g: g.title }))).find(x => x.r && (x.r === r || x.r.split('?')[0] === r));
+  v.innerHTML = `<div class="page-head"><h2>${it ? `${it.i} ${esc(it.l)}` : 'الشاشة'}</h2></div>
+    <div class="card" style="text-align:center;padding:30px">
+      <div style="font-size:46px">🏢</div>
+      <h3>هالشاشة بتشتغل على شركة</h3>
+      <p class="muted">${it ? `«${esc(it.l)}» من مجموعة «${esc(it.g)}». ` : ''}أضف شركة أول، وبعدها بتفتح الشاشة ببياناتها.</p>
+      <button class="btn primary" id="need-co" style="font-size:16px;padding:10px 20px">➕ إضافة شركة جديدة</button></div>`;
+  v.querySelector('#need-co').onclick = () => openCompanyForm(null);
+}
 const NAV = () => [
   { title: 'الرئيسية', items: [{ r: 'home', i: '🏠', l: 'لوحة التحكم' }] },
   { title: 'ملف', items: [
@@ -203,6 +217,7 @@ const NAV = () => [
   ]},
   { title: 'العملاء والذمم المدينة', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
+    { r: 'rep', i: '📱', l: 'تطبيق المندوب (زيارات ودفعات)', show: () => S.company && can('rep_visits', 'view') },
     { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) },
     { r: 'party-center?type=customer', i: '📒', l: 'أستاذ مساعد العملاء', show: () => S.company && can('reports', 'view') },
     { r: 'orders?t=sales_order', i: '📝', l: 'طلبات المبيعات / عروض الأسعار', show: () => S.company && can('sales_orders', 'view') },
@@ -229,6 +244,7 @@ const NAV = () => [
   { title: 'التسويق', items: [
     { r: 'promotions', i: '📢', l: 'العروض الترويجية', show: () => S.company && can('marketing', 'view') },
     { r: 'loyalty', i: '💳', l: 'مركز تحكم بطاقات الولاء', show: () => S.company && can('customers', 'view') },
+    { r: 'loyalty-cashback', i: '🏅', l: 'مراتب الولاء والاسترداد النقدي', show: () => S.company && can('marketing', 'view') },
     { r: 'setup?k=loyalty_type', i: '🎫', l: 'أنواع بطاقات الولاء', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=sales_rep', i: '🧑‍💼', l: 'مندوبي المبيعات', show: () => S.company && can('lookups', 'view') },
     { r: 'rep-sales-reps', i: '📈', l: 'مبيعات وتحصيلات المندوبين', show: () => S.company && can('reports', 'view') },
@@ -312,7 +328,7 @@ function renderShell() {
         <div class="side-brand"><img src="icons/icon.svg" alt=""><b>${APP_NAME}</b></div>
         <nav class="nav">
           ${NAV().map(g => {
-            const items = g.items.filter(it => it.soon || !it.show || it.show());
+            const items = g.items.filter(it => it.soon || !it.show || it.show() || (DEMO() && it.r));
             if (!items.length) return '';
             const open = g.title === openGroup;
             return `<div class="nav-group ${open ? 'open' : ''}" data-g="${esc(g.title)}"><button type="button" class="nav-title" aria-expanded="${open}"><span class="ico">${GROUP_ICONS[g.title] || '📁'}</span>${g.title}<span class="chev">›</span></button>
@@ -505,7 +521,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -520,6 +536,7 @@ async function route_() {
   if (S.company) { const t = tabsLoad(); t.hash[S.company.id] = location.hash || '#/home'; tabsSave(t); }
   const view = document.getElementById('view'); if (!view) return;
   view.innerHTML = '<div class="empty">جاري التحميل…</div>';
+  if (DEMO() && !NO_CO_ROUTES.has(r) && ROUTES[r]) { viewNeedCompany(view, r); try { notePageTab(); } catch {} return; }
   try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); try { enhanceReportTables(view, location.hash.slice(2)); } catch {} try { notePageTab(); } catch {} }
   catch (err) { view.innerHTML = `<div class="notice">${esc(arError(err))}</div>`; }
 }
@@ -533,7 +550,9 @@ async function viewHome(v) {
     v.innerHTML = `<div class="page-head"><h2>أهلاً ${esc(S.profile.full_name || '')} 👋</h2></div>
       <div class="notice info">${isAdmin()
         ? 'ما في شركات لسا. ابدأ بإضافة أول شركة من <a href="#/companies">الشركات</a>.'
-        : 'ما عندك صلاحية على أي شركة لسا. تواصل مع مدير النظام.'}</div>`;
+        : 'ما عندك صلاحية على أي شركة لسا. تواصل مع مدير النظام.'}</div>
+      ${isAdmin() ? '<button class="btn primary" id="first-co" style="margin-top:12px;font-size:17px;padding:12px 22px">➕ إضافة شركة جديدة</button>' : ''}`;
+    v.querySelector('#first-co')?.addEventListener('click', () => openCompanyForm(null));
     return;
   }
   const c = S.company;
@@ -600,7 +619,7 @@ function companyFormHTML(c = {}, readOnly = false) {
     </div>
     <div class="tab-panel active" data-tab="general">
       <div class="grid cols-2">
-        <div class="field"><label>رمز الشركة *</label><input name="code" required value="${esc(c.code)}" ${ro} dir="ltr"><span class="hint">تلقائي بالترتيب (01، 02، 03…)، وبتقدر تكتب الرمز بإيدك</span></div>
+        <div class="field"><label>رمز الشركة *</label>${S._coAuto ? `<input value="${esc(c.code || 'تلقائي')}" disabled dir="ltr"><span class="hint">الترقيم تلقائي (01، 02…) — بيتغيّر من «طريقة الترقيم ← الشركات»</span>` : `<input name="code" required value="${esc(c.code)}" ${ro} dir="ltr"><span class="hint">ترقيم يدوي: اكتب رمز ما بيتكرر</span>`}</div>
         <div class="field"><label>اسم الشركة *</label><input name="name" required value="${esc(c.name)}" ${ro}></div>
         <div class="field"><label>الاسم القانوني</label><input name="legal_name" value="${esc(c.legal_name)}" ${ro}></div>
         <div class="field"><label>الاسم التجاري</label><input name="trade_name" value="${esc(c.trade_name)}" ${ro}></div>
@@ -671,13 +690,14 @@ function wireLogo(root) {
 
 async function saveCompany(form, id) {
   const d = formData(form);
-  if (!d.code || !d.name) { toast('رمز الشركة واسمها مطلوبين', 'err'); return null; }
+  if ((!S._coAuto && !d.code) || !d.name) { toast('رمز الشركة واسمها مطلوبين', 'err'); return null; }
+  if (S._coAuto) delete d.code;
   if (!isAdmin()) delete d.is_active;
   let res;
   if (id) res = await sb.from('companies').update(d).eq('id', id).select().single();
   else res = await sb.from('companies').insert({ ...d, created_by: S.session.user.id }).select().single();
   if (res.error) { toast(arError(res.error), 'err'); return null; }
-  await log(id ? 'تعديل' : 'إضافة', 'companies', res.data.id, { code: d.code, name: d.name });
+  await log(id ? 'تعديل' : 'إضافة', 'companies', res.data.id, { code: res.data.code, name: d.name });
   toast('تم الحفظ', 'ok');
   return res.data;
 }
@@ -686,6 +706,7 @@ async function saveCompany(form, id) {
 //  بيانات الشركة الحالية
 // ---------------------------------------------------------------------
 async function viewCompany(v, ctx, editing = false) {
+  if (editing) { const cr = await sb.rpc('company_numbering'); S._coAuto = !cr.error && (cr.data || { mode: 'auto' }).mode !== 'manual'; }
   if (!S.company) return viewHome(v);
   const editable = can('companies', 'edit');
   editing = editing && editable;
@@ -716,7 +737,9 @@ async function nextCompanyCode() {
 }
 
 async function openCompanyForm(c) {
-  if (!c) c = { code: await nextCompanyCode(), is_active: true, currency: 'JOD' };
+  const cr = await sb.rpc('company_numbering'); const cn = cr.error ? { mode: 'manual' } : (cr.data || { mode: 'auto', digits: 2 });
+  S._coAuto = cn.mode !== 'manual';
+  if (!c) c = { code: S._coAuto ? '' : await nextCompanyCode(), is_active: true, currency: 'JOD' };
   const isNew = !c.id;
   const m = modal({ title: !isNew ? 'تعديل شركة: ' + c.name : 'شركة جديدة', body: companyFormHTML(c),
     foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });

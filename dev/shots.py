@@ -13,7 +13,7 @@ async def main():
     for r in routes:
       name,_,action=r.partition('@')
       await pg.goto('about:blank'); await pg.goto(f'http://localhost:8766/index.html#/{name}'); await pg.wait_for_timeout(800)
-      if action: await pg.click(action); await pg.wait_for_timeout(600)
+      for a in [x for x in action.split('@') if x]: await pg.click(a); await pg.wait_for_timeout(600)
       await pg.screenshot(path=f'/tmp/v_{re.sub(r"[^a-z0-9]","_",r)}.png')
     print('errors:',errs); await b.close()
 asyncio.run(main()); srv.kill()

@@ -146,7 +146,7 @@ async function viewSettings(v, ctx) {
     <h3 style="margin:16px 0 6px">🏢 الأصول الثابتة</h3>
     <div class="grid cols-2">${sel('depreciation_account_id', 'مصروف الاستهلاك (الافتراضي)')}${sel('accum_dep_account_id', 'مجمع الاستهلاك (الافتراضي)')}
       ${sel('asset_disposal_account_id', 'أرباح وخسائر بيع وشطب الأصول')}
-      <div class="field"><label>&nbsp;</label>${editable && !st.asset_disposal_account_id ? '<button type="button" class="btn sm" id="mk-disp">➕ اعمل حساب «أرباح (خسائر) بيع وشطب أصول» لحاله</button>' : ''}</div></div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
+      <div class="field"><label>&nbsp;</label>${editable && !st.asset_disposal_account_id ? '<button type="button" class="btn sm" id="mk-disp">➕ اعمل حساب «أرباح (خسائر) بيع وشطب أصول» لحاله</button>' : ''}</div></div><h3 style="margin:16px 0 6px">🏅 بطاقات الولاء</h3><div class="grid cols-2">${sel('cashback_account_id', 'مصروف الاسترداد النقدي (حساب مصاريف)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();

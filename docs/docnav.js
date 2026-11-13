@@ -39,14 +39,22 @@ export function attachDocNav(m, row, { key, open, onNew, table, canFreeze = fals
     if (hasUnsavedModal()) return toast('في تعديلات مش محفوظة: احفظ أو سكّر النافذة أول', 'err');
     m.close(); target();
   };
+  // التنقّل بيقرأ المستند من جديد (عشان الحالة بعد الترحيل/إلغاء الترحيل/التجميد تكون محدّثة)
+  const fresh = async (r) => {
+    if (!r || !table) return r;
+    const { data } = await sb.from(table).select('*').eq('id', r.id).maybeSingle();
+    if (data) { const k = list.findIndex(x => x.id === r.id); if (k >= 0) list[k] = { ...list[k], ...data }; }
+    return data ? { ...r, ...data } : r;
+  };
+  const goTo = (r) => go(async () => open(await fresh(r)));
   bar.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-n]'); if (!b || b.disabled) return;
     const n = b.dataset.n;
     if (n === 'new') return go(onNew);
-    if (n === 'first') return go(() => open(list[0]));
-    if (n === 'last') return go(() => open(list[list.length - 1]));
-    if (n === 'prev') return go(() => open(list[i - 1]));
-    if (n === 'next') return go(() => open(list[i + 1]));
+    if (n === 'first') return goTo(list[0]);
+    if (n === 'last') return goTo(list[list.length - 1]);
+    if (n === 'prev') return goTo(list[i - 1]);
+    if (n === 'next') return goTo(list[i + 1]);
     if (n === 'del') return m.el.querySelector('.modal-foot [data-del]')?.click();
     if (n === 'edit') {
       if (fr) return toast('المستند مجمّد، فك التجميد أول', 'err');

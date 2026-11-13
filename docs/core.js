@@ -53,6 +53,7 @@ export const SCREENS = [
   { key: 'customers',        label: 'العملاء وفئاتهم',      group: 'العملاء والذمم المدينة' },
   { key: 'sales_invoices',   label: 'فواتير ومردودات المبيعات', group: 'العملاء والذمم المدينة' },
   { key: 'pos',              label: 'نقطة البيع (الكاشير)', group: 'العملاء والذمم المدينة' },
+  { key: 'rep_visits',       label: 'زيارات المندوبين ودفعات الجوال', group: 'العملاء والذمم المدينة' },
   { key: 'sales_orders',     label: 'طلبات المبيعات وعروض الأسعار', group: 'العملاء والذمم المدينة' },
   { key: 'suppliers',        label: 'الموردين وفئاتهم',     group: 'الموردين والذمم الدائنة' },
   { key: 'purchase_invoices',label: 'فواتير ومردودات المشتريات', group: 'الموردين والذمم الدائنة' },
@@ -210,7 +211,7 @@ export const MODULES = [
 const SCREEN_MODULE = {
   customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales', pos: 'sales',
   suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases',
-  inventory: 'inventory', supply_requests: 'inventory', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets', asset_custody: 'assets',
+  inventory: 'inventory', supply_requests: 'inventory', rep_visits: 'sales', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets', asset_custody: 'assets',
   marketing: 'marketing', manufacturing: 'manufacturing', maintenance: 'maintenance', obligations: 'office',
 };
 export const screenModule = (screen) => SCREEN_MODULE[screen] || 'core';
