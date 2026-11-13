@@ -126,6 +126,7 @@ begin
 end $$;
 
 -- ملخص الفترة لكل موظف: أيام الحضور، الساعات، التأخير، الغياب (أيام العمل = كل الأيام ما عدا الجمعة)
+drop function if exists public.attendance_summary(uuid, date, date);   -- المرحلة 57 بتغيّر شكل النتيجة
 create or replace function public.attendance_summary(p_company uuid, p_from date, p_to date)
 returns table (employee_id uuid, code text, name text, days int, hours numeric, late_days int, late_minutes int, absent_days int, outside_days int, open_days int)
 language plpgsql stable security definer set search_path = public as $$

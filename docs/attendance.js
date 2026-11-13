@@ -2,7 +2,7 @@
 //  السمو ERP — الحضور والانصراف (route attendance?t=day|summary|locations|settings)
 //  الموظف بيسجّل من «راتبي» بالموقع (attendance_punch)، والمشرف (payroll edit) بيعدّل (attendance_set)
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, today, toast, arError, modal, formData, can } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, formData, can } from './core.js';
 import { printDoc } from './print.js';
 
 const hm = (t) => t ? new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Amman' }) : '';
@@ -111,9 +111,9 @@ async function viewAttendance(v, ctx) {
     v.innerHTML = `${head}<div class="card" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px">
       <div class="field"><label>من</label><input type="date" id="f" value="${from}"></div><div class="field"><label>إلى</label><input type="date" id="to" value="${to}"></div>
       <button class="btn primary" id="go">عرض</button><div class="spacer"></div><button class="btn" id="pr">🖨️ طباعة</button></div>
-      <div class="card table-wrap"><table class="t rep"><thead><tr><th>الرمز</th><th>الموظف</th><th>أيام الحضور</th><th>الساعات</th><th>أيام التأخير</th><th>دقائق التأخير</th><th>الغياب</th><th>برّا الموقع</th><th>بدون انصراف</th></tr></thead><tbody>
+      <div class="card table-wrap"><table class="t rep"><thead><tr><th>الرمز</th><th>الموظف</th><th>أيام الحضور</th><th>الساعات</th><th>أيام التأخير</th><th>دقائق التأخير</th><th>الغياب</th><th>إجازات</th><th>برّا الموقع</th><th>بدون انصراف</th></tr></thead><tbody>
       ${(rows || []).map(r => `<tr><td>${esc(r.code)}</td><td>${esc(r.name)}</td><td class="n">${r.days}</td><td class="n">${fmtNum(r.hours, 2)}</td><td class="n">${r.late_days}</td><td class="n">${r.late_minutes}</td>
-        <td class="n" ${r.absent_days ? 'style="color:var(--bad)"' : ''}>${r.absent_days}</td><td class="n">${r.outside_days}</td><td class="n">${r.open_days}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">ما في بيانات</td></tr>'}</tbody></table></div>
+        <td class="n" ${r.absent_days ? 'style="color:var(--bad)"' : ''}>${r.absent_days}</td><td class="n">${num(r.leave_days) || ''}</td><td class="n">${r.outside_days}</td><td class="n">${r.open_days}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">ما في بيانات</td></tr>'}</tbody></table></div>
       <p class="muted" style="font-size:12px">أيام العمل = كل الأيام ما عدا الجمعة لحد اليوم. التأخير بعد بداية الدوام + فترة السماح (من تبويب «الدوام»).</p>`;
     v.querySelector('#go').onclick = () => { location.hash = `#/attendance?t=summary&from=${v.querySelector('#f').value}&to=${v.querySelector('#to').value}`; };
     v.querySelector('#pr').onclick = () => printDoc(`ملخص الحضور ${fmtDate(from)} — ${fmtDate(to)}`, v.querySelector('table').outerHTML.replace('class="t rep"', 'class="pt"'));

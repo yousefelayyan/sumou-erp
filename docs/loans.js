@@ -4,6 +4,7 @@
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can } from './core.js';
 import { printDoc } from './print.js';
 import { punchCard } from './attendance.js';
+import { myLeavesCard } from './leaves.js';
 
 const ST = { pending: ['بانتظار الموافقة', 'warn'], approved: ['تمت الموافقة', 'ok'], rejected: ['مرفوض', 'bad'], cancelled: ['ملغى', ''], closed: ['مسدّد', 'brand'] };
 const KIND = { loan: 'قرض', advance: 'سلفة' };
@@ -130,8 +131,9 @@ async function viewMe(v, ctx) {
     <div class="page-head" style="margin-top:16px"><h3>💳 قروضي وسلفي</h3><div class="spacer"></div><button class="btn primary" id="req">➕ طلب جديد</button></div>
     ${(loans || []).map(l => `<div class="card" data-l="${l.id}" style="cursor:pointer;margin-bottom:8px;display:flex;gap:10px;align-items:center">
         <div style="flex:1"><b>${KIND[l.kind]} ${String(l.loan_no).padStart(6, '0')}</b> ${badge(l.status)}<div class="muted" style="font-size:12px">${fmtDate(l.request_date)} · ${l.installments} قسط من ${esc(l.first_month)}</div></div>
-        <b>${fmtNum(l.amount)}</b></div>`).join('') || '<div class="empty">ما في طلبات</div>'}</div>`;
+        <b>${fmtNum(l.amount)}</b></div>`).join('') || '<div class="empty">ما في طلبات</div>'}<div id="myleaves"></div></div>`;
   punchCard(v.querySelector('#punch'), emp.data);
+  myLeavesCard(v.querySelector('#myleaves'), emp.data, ctx);
   v.querySelector('#req').onclick = () => requestForm(ctx);
   v.querySelectorAll('[data-l]').forEach(c => c.onclick = () => { const l = loans.find(x => x.id === c.dataset.l); loanDetails({ ...l, emp_name: r?.emp_name || '' }, ctx, { mine: true, sup: false }); });
 }

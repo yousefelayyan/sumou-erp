@@ -35,6 +35,7 @@ import { PRICE_ROUTES } from './prices.js';
 import { DISCOUNT_ROUTES } from './discounts.js';
 import { MESSAGE_ROUTES } from './messages.js';
 import { LANDED_ROUTES } from './landed.js';
+import { LEAVE_ROUTES } from './leaves.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
@@ -239,7 +240,8 @@ const NAV = () => [
     { r: 'payroll', i: '💵', l: 'الرواتب والضمان', show: () => S.company && can('payroll', 'view') },
     { r: 'loans', i: '💳', l: 'القروض والسلف', show: () => S.company && can('payroll', 'view') },
     { r: 'attendance', i: '🕘', l: 'الحضور والانصراف', show: () => S.company && can('payroll', 'view') },
-    { r: 'me', i: '💼', l: 'راتبي (حضوري وقسيمتي وقروضي)', show: () => !!S.company },
+    { r: 'leaves', i: '🌴', l: 'الإجازات', show: () => S.company && can('payroll', 'view') },
+    { r: 'me', i: '💼', l: 'راتبي (حضوري وقسيمتي وقروضي وإجازاتي)', show: () => !!S.company },
     { r: 'employee-center', i: '📒', l: 'أستاذ مساعد الموظفين', show: () => S.company && can('payroll', 'view') },
   ]},
   { title: 'الأصول الثابتة', items: [
@@ -589,7 +591,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...LANDED_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...LANDED_ROUTES, ...LEAVE_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
