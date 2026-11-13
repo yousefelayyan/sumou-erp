@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..51). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..52). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -121,13 +121,13 @@ dev/                أدوات الفحص (شوف تحت)
 7. **تنزيل SQL على Supabase:** من متصفح يوسف (Claude in Chrome)، وهو مسجّل دخول:
    - افتح محرر SQL.
    - عبّي المحرر بالـ JS: `fetch('https://raw.githubusercontent.com/yousefelayyan/sumou-erp/main/sql/ALL_IN_ONE.sql?x='+Date.now())`، وبعدها `monaco.editor.getEditors()[0].setValue(t)`.
-   - اضغط Run، وبعدها «Run query» برسالة التحذير.
+   - اضغط Run، وبعدها «Run query» برسالة التحذير (أو «Run without RLS» إذا طلعت رسالة «Potential issues detected»؛ جداولنا كلها عليها RLS من الملفات).
    - تأكد إنه طلع `Success`، وبعدين شغّل استعلام بيتأكد إنه الدوال أو الجداول الجديدة موجودة.
    - إذا ما في متصفح، ابعتله الملف وخلّيه يلصقه بنفسه.
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.33.0)
+## اللي انبنى (لحد النسخة 4.34.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -210,6 +210,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **سقف الائتمان وتوزيع الدفعات (المرحلة 49):** `company_settings.credit_limit_mode` = warn|block (بحسابات الربط ← المخزون/المبيعات). trigger `ab_credit_limit_check` على ترحيل فاتورة بيع آجلة (draft→posted، حتى من pos/الداخلي): رصيد الزبون بسنة الفاتورة (من غير قيد الفاتورة نفسها) + المجموع > `parties.credit_limit` = منع، إلا المدير أو شاشة `credit_override` edit. `invoice_allocations` (entry ↔ invoice، مبلغ؛ كتابة من الدوال بس): `party_open_invoices(company, party, except_entry)` (الآجلة المرحّلة: المجموع − المرتجعات المرحّلة − الموزّع من سندات فعّالة `alloc_live`)، `allocate_payment(entry, party, items)` (بيستبدل توزيع السند لهالطرف؛ ما بيتعدى مبلغ الطرف بالسند `entry_party_amount` ولا المتبقي)، `auto_allocate(entry, party)` الأقدم أول. بعد المراجعة: التوزيع بس لسند مرحّل من نوع receipt/payment/journal/cheque/opening (مش قيد فاتورة)، مبلغ الطرف حسب نوعه (الزبون دائن−مدين، المورد مدين−دائن)، `alloc_live` = مرحّل ومش معكوس ومش شيك راجع/ملغى، المرتجع الآجل بس بينزّل المتبقي، `due_date` من الفاتورة، `party_open_invoices` وسياسة الجدول بصلاحية السندات/الفواتير وبتحترم الفرع، trigger `zv_alloc_cleanup` بيمسح التوزيع لما السند/الفاتورة ينلغى ترحيلها أو يتغيّر طرف الفاتورة، والسند المجمّد أو بسنة مغلقة ما بيتوزّع. سقف الائتمان بيحسب الرصيد التراكمي لكل السنين (بدون الإغلاق والافتتاح المدوّر) مع قفل على الزبون. الواجهة: زر «🧾 توزيع على الفواتير» بسند القبض/الصرف المرحّل؛ فاتورة فوق السقف بوضع المنع بتنحفظ مسودة. backup_tables: بعد invoice_lines.
 - **قوائم الأسعار وضوابط السعر (المرحلة 50):** `price_lists`/`price_list_items` (كتابة بـ items edit) و`parties.price_list_id` (`ad_party_price_list_check`)؛ `party_item_prices(company, party)` والفاتورة (invoices.js `listPrice`) بتاخذ سعر القائمة لما ينختار الصنف. ضوابط: `items.min_price`/`max_discount_pct`، `item_categories.max_discount_pct`/`min_margin_pct` (للصنف اللي ما إله)، `company_settings.block_below_cost`؛ trigger `ab_sale_price_guard` على سطور فواتير البيع (مش الداخلي، فبيستثني pos_checkout) — التجاوز للمدير أو شاشة `price_override` edit؛ السعر الشامل للضريبة بينحسب قبل الضريبة. backup_tables: price_lists قبل parties وprice_list_items بعد items.
 - **خصومات العملاء وتسوية الأرصدة (المرحلة 51):** `discount_types` (حساب فرعي من نفس الشركة؛ كتابة بشاشة `customer_discounts` edit). `customer_discount(jsonb)` (customer_discounts add + journal_entries add): قيد journal مدين حساب نوع الخصم ودائن الزبون، `post` بيرحّله إذا إله journal post وبيوزّعه على الفاتورة المختارة (`allocate_payment`). `settle_small_balances(company, type, min, max, date, apply)`: الرصيد التراكمي (`party_balance_fy`) بين حدّين (≤100)، المعاينة بصلاحية view والتنفيذ بقيد journal واحد مقابل `company_settings.settle_account_id`. backup_tables: discount_types بعد accounts.
+- **تفاصيل الشيك (المرحلة 52):** `cheques.endorser_name` (المجيّر، بنموذج الشيك الوارد) و`return_reason` (بنافذة «شيك راجع» مع قائمة أسباب) — وصفية بصلاحية cheques edit. «سجل الشيك» صار يعرض بيانات الشيك و«العمليات المالية»: كل حركة مع قيدها وسطوره.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

@@ -74,7 +74,8 @@ async function viewCheques(v, ctx) {
       <div class="field"><label>تاريخ الاستحقاق *</label><input type="date" name="due_date" value="${today()}"></div>
       <div class="field" style="grid-column:span 2"><label>${dir === 'in' ? 'العميل' : 'المورد'}</label><input list="party-list" id="c-party" placeholder="اختار من القائمة…">${partyDatalist(myParties)}</div>
       <div class="field"><label>أو حساب مقابل (إذا مش عميل/مورد)</label><select name="account_id"><option value="">—</option>${leafAccounts(accs).map(a => `<option value="${a.id}">${esc(accLabel(a))}</option>`).join('')}</select></div>
-      <div class="field"><label>اسم ${dir === 'in' ? 'الساحب' : 'المستفيد'}</label><input name="drawer_name"></div></div>
+      <div class="field"><label>اسم ${dir === 'in' ? 'الساحب' : 'المستفيد'}</label><input name="drawer_name"></div>
+      ${dir === 'in' ? '<div class="field"><label>اسم المجيّر (إذا الشيك مجيّر)</label><input name="endorser_name"></div>' : ''}</div>
       <div class="field"><label>ملاحظات</label><input name="notes"></div></form>
       <p class="muted" style="font-size:13px">${dir === 'in' ? 'بينعمل قيد: من حـ/ شيكات برسم التحصيل إلى حـ/ العميل.' : 'بينعمل قيد: من حـ/ المورد إلى حـ/ شيكات آجلة الدفع.'}</p>`,
       foot: `<button class="btn primary" data-save>💾 تسجيل</button><button class="btn" data-close>إلغاء</button>` });
@@ -84,8 +85,10 @@ async function viewCheques(v, ctx) {
       if (pi && !p) return toast('العميل/المورد مش موجود بالقائمة', 'err');
       if (!p && !d.account_id) return toast('اختار العميل/المورد أو الحساب المقابل', 'err');
       e.target.disabled = true;
-      const { error } = await sb.rpc('register_cheque', { p: { ...d, amount: num(d.amount), company_id: S.company.id, direction: dir, party_id: p?.id || null, drawer_name: d.drawer_name || p?.name || null } });
+      const endorser = d.endorser_name || null; delete d.endorser_name;
+      const { data: cid, error } = await sb.rpc('register_cheque', { p: { ...d, amount: num(d.amount), company_id: S.company.id, direction: dir, party_id: p?.id || null, drawer_name: d.drawer_name || p?.name || null } });
       if (error) { e.target.disabled = false; return toast(arError(error), 'err'); }
+      if (endorser && cid) await sb.from('cheques').update({ endorser_name: endorser }).eq('id', cid);
       toast('تم تسجيل الشيك وترحيل قيده', 'ok'); m.close(); ctx.rerender();
     };
   });
@@ -94,7 +97,16 @@ async function viewCheques(v, ctx) {
     const b = e.target.closest('[data-act]'), h = e.target.closest('[data-hist]');
     if (h) {
       const { data: ev } = await sb.from('cheque_events').select('*').eq('cheque_id', h.dataset.hist).order('created_at');
-      const hm = modal({ title: 'سجل الشيك', size: 'sm', body: `<table class="t">${(ev || []).map(x => `<tr><td>${fmtDate(x.event_date)}</td><td>${esc(x.action)}</td><td class="muted">${esc(x.note || '')}</td></tr>`).join('') || '<tr><td class="empty">ما في حركات</td></tr>'}</table>`,
+      const eids = (ev || []).map(x => x.entry_id).filter(Boolean);
+      const [{ data: jl }, { data: je }, accs2] = eids.length ? await Promise.all([sb.from('journal_lines').select('entry_id,line_no,account_id,debit,credit,description').in('entry_id', eids).order('line_no'),
+        sb.from('journal_entries').select('id,doc_code,entry_no,status').in('id', eids), loadAccounts()]) : [{ data: [] }, { data: [] }, []];
+      const accBy = Object.fromEntries((accs2 || []).map(a => [a.id, a])), jeBy = Object.fromEntries((je || []).map(x => [x.id, x]));
+      const c0 = data.find(x => x.id === h.dataset.hist);
+      const opsHTML = `<div class="grid cols-2" style="margin-bottom:8px;font-size:13px"><div>الساحب: <b>${esc(c0.drawer_name || '')}</b></div><div>المجيّر: <b>${esc(c0.endorser_name || '—')}</b></div>
+        <div>البنك: <b>${esc([c0.bank_name, c0.branch].filter(Boolean).join(' - '))}</b></div><div>سبب الإرجاع: <b>${esc(c0.return_reason || '—')}</b></div></div>
+        <h4 style="margin:6px 0">💼 العمليات المالية</h4>${(ev || []).map(x => `<div class="card" style="padding:8px;margin-bottom:6px"><b>${esc(x.action)}</b> · ${fmtDate(x.event_date)}${x.entry_id && jeBy[x.entry_id] ? ` · قيد ${esc(jeBy[x.entry_id].doc_code || String(jeBy[x.entry_id].entry_no))}` : ''} <span class="muted">${esc(x.note || '')}</span>
+          ${(jl || []).filter(l => l.entry_id === x.entry_id).length ? `<table class="t" style="margin-top:4px"><thead><tr><th>الحساب</th><th>مدين</th><th>دائن</th><th>البيان</th></tr></thead><tbody>${(jl || []).filter(l => l.entry_id === x.entry_id).map(l => `<tr><td>${esc(accBy[l.account_id] ? accBy[l.account_id].code + ' — ' + accBy[l.account_id].name : '')}</td><td class="n">${num(l.debit) ? fmtNum(l.debit) : ''}</td><td class="n">${num(l.credit) ? fmtNum(l.credit) : ''}</td><td class="muted" style="font-size:12px">${esc(l.description || '')}</td></tr>`).join('')}</tbody></table>` : ''}</div>`).join('')}`;
+      const hm = modal({ title: `سجل الشيك رقم ${c0.cheque_no}`, body: `${opsHTML || '<div class="empty">ما في حركات</div>'}`,
         foot: `<button class="btn" data-att>📎 مرفقات</button>${can('cheques', 'print') ? '<button class="btn" data-pr>🖨️ طباعة إشعار</button>' : ''}<button class="btn" data-close>إغلاق</button>` }).el; hm.querySelector('[data-att]').onclick = () => openAttachments('cheque', h.dataset.hist, 'شيك'); hm.querySelector('[data-pr]')?.addEventListener('click', () => {
           const c = data.find(x => x.id === h.dataset.hist);
           printDoc(`${dir === 'in' ? 'إشعار استلام شيك' : 'إشعار تسليم شيك'} رقم ${c.cheque_no}`, `<table class="meta">
@@ -113,6 +125,7 @@ async function viewCheques(v, ctx) {
       <div class="field"><label>التاريخ</label><input type="date" name="date" value="${today()}"></div>
       ${needBank ? `<div class="field"><label>${act === 'deposit' ? 'حساب «شيكات برسم التحصيل» عند البنك' : 'البنك'}</label>${act === 'deposit' ? depSel() : bankSel(c.bank_account_id)}</div>` : ''}
       ${act === 'deposit' ? '<p class="muted" style="font-size:12px">القيد: من حـ/ شيكات برسم التحصيل (البنك) إلى حـ/ صندوق الشيكات. ولما يتحصّل: من حـ/ البنك إلى حـ/ شيكات برسم التحصيل.</p>' : ''}
+      ${act === 'return' ? '<div class="field"><label>سبب الإرجاع</label><input name="reason" list="ret-reasons" placeholder="مثلاً: عدم كفاية الرصيد"><datalist id="ret-reasons"><option>عدم كفاية الرصيد</option><option>اختلاف التوقيع</option><option>الحساب مغلق</option><option>إيقاف صرف</option><option>خطأ بالتاريخ أو المبلغ</option></datalist></div>' : ''}
       <div class="field"><label>ملاحظة</label><input name="note"></div></form>
       <p class="muted" style="font-size:13px">${act === 'return' ? 'الشيك الراجع بيرجّع المبلغ على حساب العميل.' : act === 'cancel' ? 'الإلغاء بيرجّع المبلغ لحساب المورد.' : 'بينعمل قيد مرحّل تلقائياً.'}</p>`,
       foot: `<button class="btn primary" data-go>تأكيد</button><button class="btn" data-close>إلغاء</button>` });
@@ -120,6 +133,7 @@ async function viewCheques(v, ctx) {
       const d = formData(m.el.querySelector('#a-form')); ev.target.disabled = true;
       const { error } = await sb.rpc('cheque_action', { p_id: c.id, p_action: act, p_date: d.date, p_bank: d.bank || null, p_note: d.note });
       if (error) { ev.target.disabled = false; return toast(arError(error), 'err'); }
+      if (act === 'return' && d.reason) await sb.from('cheques').update({ return_reason: d.reason }).eq('id', c.id);
       toast('تم ✓', 'ok'); m.close(); ctx.rerender();
     };
   };
