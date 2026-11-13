@@ -408,6 +408,7 @@ const NAV = () => [
  { soon: true, i: '🧾', l: 'الفوترة الإلكترونية (جوفوترة)' },
   ]},
   { title: 'الأدوات', items: [
+    { r: 'opening-tool', i: '🧮', l: 'الأرصدة الافتتاحية', show: () => S.company && can('opening_balances', 'view') },
     { r: 'posting', i: '📮', l: 'الترحيل', show: () => S.company && ['journal_entries', 'sales_invoices', 'purchase_invoices', 'inventory', 'companies'].some(x => can(x, 'post') || can(x, 'unpost') || can(x, 'edit')) },
     { r: 'numbering', i: '🔢', l: 'طريقة الترقيم', show: () => S.company && can('companies', 'edit') },
     { r: 'backup', i: '💾', l: 'النسخ الاحتياطي', show: isAdmin },

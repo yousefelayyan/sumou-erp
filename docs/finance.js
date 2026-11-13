@@ -717,47 +717,113 @@ function printVoucher(type, e, lines, byId, chq = [], empNames = {}) {
 }
 
 // ---------------------------------------------------------------------
-//  الأرصدة الافتتاحية
+//  الأرصدة الافتتاحية: الحسابات، العملاء، الموردين، المصاريف، الموظفين، الأصول الثابتة
+//  route opening?k=acc|customer|supplier|expense|emp|ast[&from=<سنة>] — from بيفتح نافذة النسخ جاهزة
 // ---------------------------------------------------------------------
+const OB_TABS = { acc: 'الحسابات', customer: 'العملاء', supplier: 'الموردين', expense: 'المصاريف', emp: 'الموظفين', ast: 'الأصول الثابتة' };
+const r3 = (x) => Math.round((Number(x) || 0) * 1000) / 1000;
+const obVal = (x) => x ? fmtNum(x).replace(/,/g, '') : '';
+
 async function viewOpening(v, ctx) {
   if (!needCompanyFY(v)) return;
+  const qs = new URLSearchParams(location.hash.split('?')[1] || '');
   const [accs, parties] = await Promise.all([loadAccounts(), loadParties()]);
   if (!accs.length) return void (v.innerHTML = `<div class="notice">لازم يكون في دليل حسابات أول. <a href="#/accounts">روح لدليل الحسابات</a></div>`);
-  const { data: ents, error } = await sb.from('journal_entries').select('*').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id).eq('entry_type', 'opening').order('created_at', { ascending: false });
-  if (error) throw error;
-  let entry = (ents || []).find(x => x.status !== 'reversed') || null;
+  const [entsR, empR, astR] = await Promise.all([
+    sb.from('journal_entries').select('*').eq('company_id', S.company.id).eq('fiscal_year_id', S.fy.id).eq('entry_type', 'opening').order('created_at', { ascending: false }),
+    can('payroll', 'view') ? sb.from('employees').select('id,code,name,account_id,is_active').eq('company_id', S.company.id).order('code') : { data: [] },
+    can('fixed_assets', 'view') ? sb.from('fixed_assets').select('id,code,name,cost,opening_accum,asset_account_id,accum_account_id,status,purchase_date').eq('company_id', S.company.id).order('code') : { data: [] }]);
+  if (entsR.error) throw entsR.error;
+  const emps = empR.data || [], assets = astR.data || [];
+  let entry = (entsR.data || []).find(x => x.status !== 'reversed') || null;
   let lines = [];
-  if (entry) { const r = await sb.from('journal_lines').select('*').eq('entry_id', entry.id); lines = r.data || []; }
-  // أرصدة الحسابات العادية، وأرصدة العملاء والموردين لحالها
-  const vals = {}, pvals = {};
-  lines.forEach(l => { const t = l.party_id ? (pvals[l.party_id] ||= { d: 0, c: 0 }) : (vals[l.account_id] ||= { d: 0, c: 0 }); t.d += num(l.debit); t.c += num(l.credit); });
-  // حسابات إجمالية بتتعبّى من أرصدة الأطراف (إلا إذا إلها رصيد قديم بدون طرف)
-  const partyAcc = new Set(parties.map(p => p.account_id).filter(id => !(vals[id] && (vals[id].d || vals[id].c))));
-  const leaves = accs.filter(a => !a.is_group && (a.is_active || vals[a.id] || partyAcc.has(a.id))).sort((x, y) => x.code.localeCompare(y.code, 'en', { numeric: true }));
+  if (entry) { const r = await sb.from('journal_lines').select('*').eq('entry_id', entry.id).order('line_no'); lines = r.data || []; }
+  const accById = Object.fromEntries(accs.map(a => [a.id, a]));
+  const empById = Object.fromEntries(emps.map(e => [e.id, e]));
+  // الحالة: vals = حسابات مباشرة، pvals = أطراف، erows = موظفين [{emp, acc, d, c}]، avals = أصول {cost, accum}
+  const vals = {}, pvals = {}, avals = {}; let erows = [];
+  lines.forEach(l => {
+    const d = num(l.debit), c = num(l.credit);
+    if (l.asset_id) { const x = avals[l.asset_id] ||= { cost: 0, accum: 0 }; x.cost += d; x.accum += c; return; }
+    if (l.employee_id) { const r = erows.find(z => z.emp === l.employee_id && z.acc === l.account_id); if (r) { r.d += d; r.c += c; } else erows.push({ emp: l.employee_id, acc: l.account_id, d, c }); return; }
+    const t = l.party_id ? (pvals[l.party_id] ||= { d: 0, c: 0 }) : (vals[l.account_id] ||= { d: 0, c: 0 }); t.d += d; t.c += c;
+  });
+  const empAccDefault = (e) => e?.account_id || accs.find(a => !a.is_group && a.is_active && a.account_type === 'employee')?.id || '';
+  emps.filter(e => e.is_active && !erows.some(r => r.emp === e.id)).forEach(e => erows.push({ emp: e.id, acc: empAccDefault(e), d: 0, c: 0 }));
   const plist = parties.filter(p => p.is_active || pvals[p.id]);
+  const byType = { customer: plist.filter(p => p.party_type === 'customer'), supplier: plist.filter(p => p.party_type === 'supplier'), expense: plist.filter(p => p.party_type === 'expense') };
+  const alist = assets.filter(a => a.status === 'active' || avals[a.id]);
+  // سطور أصول ما بيقدر يشوفها (بدون صلاحية الأصول): بتضل زي ما هي بالحفظ
+  const keepAst = lines.filter(l => l.asset_id && !alist.some(a => a.id === l.asset_id));
+  keepAst.forEach(l => delete avals[l.asset_id]);
+  const partyAcc = new Set(parties.map(p => p.account_id).filter(Boolean));
+  const empAccs = accs.filter(a => !a.is_group && a.is_active && a.category !== 'revenue' && a.category !== 'expenses');
   const readOnly = (entry && entry.status !== 'draft') || !(entry ? can('opening_balances', 'edit') : can('opening_balances', 'add'));
   const dis = readOnly ? 'disabled' : '';
   const CAT = { assets: 'موجودات', liabilities: 'مطلوبات', equity: 'حقوق ملكية', revenue: 'إيرادات', expenses: 'مصاريف' };
+  const tabs = ['acc', 'customer', 'supplier', ...(byType.expense.length ? ['expense'] : []), ...(can('payroll', 'view') ? ['emp'] : []), ...(can('fixed_assets', 'view') ? ['ast'] : [])];
+  let tab = tabs.includes(qs.get('k')) ? qs.get('k') : 'acc';
+
+  // مجموع التفصيلي (أطراف، موظفين، أصول) على كل حساب
+  const subSums = () => {
+    const m = {};
+    plist.forEach(p => { const x = pvals[p.id]; if (x && p.account_id) m[p.account_id] = (m[p.account_id] || 0) + (x.d || 0) - (x.c || 0); });
+    erows.forEach(r => { if (r.acc && (r.d || r.c)) m[r.acc] = (m[r.acc] || 0) + (r.d || 0) - (r.c || 0); });
+    keepAst.forEach(l => { m[l.account_id] = (m[l.account_id] || 0) + num(l.debit) - num(l.credit); });
+    alist.forEach(a => { const x = avals[a.id]; if (!x) return;
+      if (x.cost && a.asset_account_id) m[a.asset_account_id] = (m[a.asset_account_id] || 0) + x.cost;
+      if (x.accum && a.accum_account_id) m[a.accum_account_id] = (m[a.accum_account_id] || 0) - x.accum; });
+    return m;
+  };
+  const leavesFor = () => { const sub = subSums();
+    return accs.filter(a => !a.is_group && (a.is_active || vals[a.id] || sub[a.id])).sort((x, y) => x.code.localeCompare(y.code, 'en', { numeric: true })); };
+
+  const partyTable = (type) => `<table class="t lines" data-tbl="${type}">
+      <thead><tr><th style="width:90px">الرقم</th><th>الاسم</th><th>الحساب</th><th style="width:150px">مدين</th><th style="width:150px">دائن</th></tr></thead>
+      <tbody>${byType[type].map(p => `<tr data-row="p:${p.id}" data-s="${esc((p.code + ' ' + p.name).toLowerCase())}">
+        <td>${esc(p.code)}</td><td>${esc(p.name)}</td><td class="muted">${esc(accById[p.account_id]?.name || '')}</td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="d" value="${obVal(pvals[p.id]?.d)}" ${dis}></td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="c" value="${obVal(pvals[p.id]?.c)}" ${dis}></td></tr>`).join('')
+        || '<tr><td colspan="5" class="muted">ما في بطاقات</td></tr>'}</tbody></table>
+      <p class="muted" style="font-size:13px">${type === 'customer' ? 'رصيد العميل عادة مدين (إله علينا نحصّله).' : type === 'supplier' ? 'رصيد المورد عادة دائن (إلنا عليه ندفعله).' : 'رصيد بطاقة المصروف عادة مدين.'}</p>`;
+  const empOpts = (sel) => emps.map(e => `<option value="${e.id}" ${e.id === sel ? 'selected' : ''}>${esc(e.code)} — ${esc(e.name)}</option>`).join('');
+  const accOpts = (sel) => `<option value="">— الحساب —</option>` + empAccs.map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(a.code)} — ${esc(a.name)}</option>`).join('');
+  const empBody = () => erows.map((r, i) => `<tr data-row="e:${i}" data-s="${esc(((empById[r.emp]?.code || '') + ' ' + (empById[r.emp]?.name || '')).toLowerCase())}">
+      <td><select class="cell" data-ei="${i}" data-k="emp" ${dis}>${empOpts(r.emp)}</select></td>
+      <td><select class="cell" data-ei="${i}" data-k="acc" ${dis}>${accOpts(r.acc)}</select></td>
+      <td><input class="cell n" dir="ltr" inputmode="decimal" data-ei="${i}" data-k="d" value="${obVal(r.d)}" ${dis}></td>
+      <td><input class="cell n" dir="ltr" inputmode="decimal" data-ei="${i}" data-k="c" value="${obVal(r.c)}" ${dis}></td>
+      <td>${dis ? '' : `<button type="button" class="btn sm" data-edel="${i}" title="حذف السطر">✕</button>`}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">ما في موظفين</td></tr>';
+
   v.innerHTML = `
     <div class="page-head"><h2>🧮 الأرصدة الافتتاحية</h2><span class="muted">${esc(S.fy.name || S.fy.code)} — بتاريخ ${fmtDate(S.fy.start_date)}</span>
       ${entry ? statusBadge(entry.status) : ''}<div class="spacer"></div>
+      ${!readOnly ? `<button class="btn" id="ob-copy">📋 نسخ من سنة سابقة</button><button class="btn" id="ob-clear">🧹 تفريغ هالقسم</button>` : ''}
       <input class="search" id="q" placeholder="بحث…">
       <label class="check" style="margin:0"><input type="checkbox" id="only"> اللي إلها رصيد بس</label></div>
-    ${entry?.status === 'posted' ? `<div class="notice info">الأرصدة الافتتاحية مرحّلة. لأي تعديل اعمل <a href="#/journal">سند قيد</a> تسوية.</div>` : ''}
-    ${plist.length ? `<div class="tabs"><div class="tab active" data-tab="acc">الحسابات</div><div class="tab" data-tab="par">العملاء والموردين (${plist.length})</div></div>` : ''}
-    <div class="tab-panel active" data-tab="acc"><div class="card table-wrap"><table class="t lines" id="ob">
-      <thead><tr><th style="width:120px">رقم الحساب</th><th>اسم الحساب</th><th>التصنيف</th><th style="width:160px">مدين</th><th style="width:160px">دائن</th></tr></thead>
-      <tbody>${leaves.map(a => `<tr data-row="a:${a.id}" data-s="${esc((a.code + ' ' + a.name).toLowerCase())}">
-        <td dir="ltr" style="text-align:right">${esc(a.code)}</td><td>${esc(a.name)}${partyAcc.has(a.id) ? ' <span class="badge brand">من أرصدة العملاء/الموردين</span>' : ''}</td><td class="muted">${CAT[a.category] || ''}</td>
-        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="d" value="${vals[a.id]?.d || ''}" ${dis || (partyAcc.has(a.id) ? 'disabled' : '')}></td>
-        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="c" value="${vals[a.id]?.c || ''}" ${dis || (partyAcc.has(a.id) ? 'disabled' : '')}></td></tr>`).join('')}</tbody></table></div></div>
-    <div class="tab-panel" data-tab="par"><div class="card table-wrap"><table class="t lines" id="obp">
-      <thead><tr><th style="width:90px">الرقم</th><th>الاسم</th><th>النوع</th><th>الحساب</th><th style="width:160px">مدين</th><th style="width:160px">دائن</th></tr></thead>
-      <tbody>${plist.map(p => `<tr data-row="p:${p.id}" data-s="${esc((p.code + ' ' + p.name).toLowerCase())}">
-        <td>${esc(p.code)}</td><td>${esc(p.name)}</td><td>${p.party_type === 'customer' ? 'عميل' : p.party_type === 'supplier' ? 'مورد' : 'مصروف'}</td><td class="muted">${esc(accs.find(a => a.id === p.account_id)?.name || '')}</td>
-        <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="d" value="${pvals[p.id]?.d || ''}" ${dis}></td>
-        <td><input class="cell n" dir="ltr" inputmode="decimal" data-p="${p.id}" data-k="c" value="${pvals[p.id]?.c || ''}" ${dis}></td></tr>`).join('')}</tbody></table></div>
-      <p class="muted" style="font-size:13px">رصيد العميل عادة مدين (إله علينا نحصّله)، ورصيد المورد عادة دائن.</p></div>
+    ${entry?.status === 'posted' ? `<div class="notice info">الأرصدة الافتتاحية مرحّلة. لأي تعديل اعمل <a href="#/journal">سند قيد</a> تسوية، أو ألغِ ترحيلها من «الترحيل».</div>` : ''}
+    ${entry?.reference === 'AUTO-CLOSE' ? `<div class="notice info">هالأرصدة انعملت تلقائياً من إغلاق السنة السابقة وتدويرها.</div>` : ''}
+    <div class="tabs" id="ob-tabs">${tabs.map(t => `<div class="tab ${t === tab ? 'active' : ''}" data-tab="${t}">${OB_TABS[t]}</div>`).join('')}</div>
+    <div class="tab-panel ${tab === 'acc' ? 'active' : ''}" data-tab="acc"><div class="card table-wrap"><table class="t lines" data-tbl="acc">
+      <thead><tr><th style="width:120px">رقم الحساب</th><th>اسم الحساب</th><th>التصنيف</th><th style="width:150px">مدين</th><th style="width:150px">دائن</th></tr></thead>
+      <tbody id="ob-acc"></tbody></table></div>
+      <p class="muted" style="font-size:13px">الحسابات اللي إلها أرصدة تفصيلية (عملاء، موردين، موظفين، أصول) بتتعبّى لحالها من تبويباتها.</p></div>
+    ${['customer', 'supplier', 'expense'].filter(t => tabs.includes(t)).map(t => `<div class="tab-panel ${tab === t ? 'active' : ''}" data-tab="${t}"><div class="card table-wrap">${partyTable(t)}</div></div>`).join('')}
+    ${tabs.includes('emp') ? `<div class="tab-panel ${tab === 'emp' ? 'active' : ''}" data-tab="emp"><div class="card table-wrap"><table class="t lines" data-tbl="emp">
+      <thead><tr><th>الموظف</th><th>الحساب (ذمم/سلف)</th><th style="width:150px">مدين</th><th style="width:150px">دائن</th><th style="width:40px"></th></tr></thead>
+      <tbody id="ob-emp">${empBody()}</tbody></table>
+      ${dis || !emps.length ? '' : '<button type="button" class="btn sm" id="ob-eadd" style="margin-top:8px">➕ سطر موظف</button>'}</div>
+      <p class="muted" style="font-size:13px">سلفة الموظف أو ذمته علينا = مدين. مستحقاته (رواتب مستحقة مثلاً) = دائن.</p></div>` : ''}
+    ${tabs.includes('ast') ? `<div class="tab-panel ${tab === 'ast' ? 'active' : ''}" data-tab="ast"><div class="card table-wrap"><table class="t lines" data-tbl="ast">
+      <thead><tr><th style="width:90px">الرقم</th><th>الأصل</th><th>حساب الأصل / المجمع</th><th style="width:150px">الكلفة (مدين)</th><th style="width:150px">مجمع الاستهلاك (دائن)</th><th style="width:120px">صافي القيمة</th></tr></thead>
+      <tbody>${alist.map(a => `<tr data-row="a2:${a.id}" data-s="${esc((a.code + ' ' + a.name).toLowerCase())}">
+        <td>${esc(a.code)}</td><td>${esc(a.name)}</td>
+        <td class="muted" style="font-size:12px">${esc(accById[a.asset_account_id]?.name || '⚠️ بدون حساب')} / ${esc(accById[a.accum_account_id]?.name || '⚠️ بدون حساب')}</td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-as="${a.id}" data-k="cost" value="${obVal(avals[a.id]?.cost)}" ${dis}></td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-as="${a.id}" data-k="accum" value="${obVal(avals[a.id]?.accum)}" ${dis}></td>
+        <td class="n" data-nbv="${a.id}"></td></tr>`).join('') || '<tr><td colspan="6" class="muted">ما في أصول ثابتة</td></tr>'}</tbody></table>
+      ${dis || !alist.length ? '' : '<button type="button" class="btn sm" id="ob-acards" style="margin-top:8px">📇 تعبئة من بطاقات الأصول</button>'}</div>
+      <p class="muted" style="font-size:13px">الكلفة بتنزل مدين على حساب الأصل، ومجمع الاستهلاك دائن على حساب المجمع، لكل أصل.</p></div>` : ''}
     <div class="card" style="margin-top:12px;display:flex;gap:24px;flex-wrap:wrap;align-items:center">
       <div>مجموع المدين: <b id="td" dir="ltr"></b></div><div>مجموع الدائن: <b id="tc" dir="ltr"></b></div><div>الفرق: <b id="tf" dir="ltr"></b></div>
       <div class="spacer" style="flex:1"></div>
@@ -765,47 +831,181 @@ async function viewOpening(v, ctx) {
       ${!readOnly && can('opening_balances', 'post') ? `<button class="btn primary" id="savepost">✅ حفظ وترحيل</button>` : ''}
       ${entry && can('opening_balances', 'print') ? `<button class="btn" id="prn">🖨️ طباعة</button>` : ''}
     </div>`;
-  v.querySelectorAll('.tabs').forEach(tabs => tabs.addEventListener('click', ev => {
-    const t = ev.target.closest('.tab'); if (!t) return;
-    tabs.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
-    v.querySelectorAll('.tab-panel').forEach(x => x.classList.toggle('active', x.dataset.tab === t.dataset.tab));
-  }));
-  const syncPartyAccounts = () => {     // مجموع أرصدة الأطراف على حساباتهم الإجمالية
-    const sums = {};
-    plist.forEach(p => { const x = pvals[p.id]; if (!x) return; const s2 = sums[p.account_id] ||= 0; sums[p.account_id] = s2 + (x.d || 0) - (x.c || 0); });
-    partyAcc.forEach(id => { const n = sums[id] || 0;
-      const d = v.querySelector(`[data-a="${id}"][data-k="d"]`), c = v.querySelector(`[data-a="${id}"][data-k="c"]`);
-      if (d) d.value = n > 0 ? fmtNum(n) : ''; if (c) c.value = n < 0 ? fmtNum(-n) : ''; });
+
+  // جدول الحسابات (بيتعاد رسمه لما تتغيّر الأرصدة التفصيلية)
+  const drawAcc = () => {
+    const sub = subSums();
+    v.querySelector('#ob-acc').innerHTML = leavesFor().map(a => {
+      const direct = vals[a.id] && (vals[a.id].d || vals[a.id].c);
+      const auto = !direct && (partyAcc.has(a.id) || r3(sub[a.id]));
+      const n = r3(sub[a.id]);
+      const dv = auto ? (n > 0 ? obVal(n) : '') : obVal(vals[a.id]?.d), cv = auto ? (n < 0 ? obVal(-n) : '') : obVal(vals[a.id]?.c);
+      return `<tr data-row="a:${a.id}" data-s="${esc((a.code + ' ' + a.name).toLowerCase())}">
+        <td dir="ltr" style="text-align:right">${esc(a.code)}</td><td>${esc(a.name)}${auto ? ' <span class="badge brand">تفصيلي</span>' : direct && r3(sub[a.id]) ? ` <span class="badge warn" title="في كمان أرصدة تفصيلية على هالحساب">+ تفصيلي ${fmtNum(sub[a.id])}</span>` : ''}</td><td class="muted">${CAT[a.category] || ''}</td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="d" value="${dv}" ${dis || (auto ? 'disabled' : '')}></td>
+        <td><input class="cell n" dir="ltr" inputmode="decimal" data-a="${a.id}" data-k="c" value="${cv}" ${dis || (auto ? 'disabled' : '')}></td></tr>`;
+    }).join('');
+    filter();
   };
   const tot = () => {
     let d = 0, c = 0;
-    Object.entries(vals).forEach(([id, x]) => { if (!partyAcc.has(id)) { d += x.d || 0; c += x.c || 0; } });
-    Object.values(pvals).forEach(x => { d += x.d || 0; c += x.c || 0; });
+    Object.values(vals).forEach(x => { d += x.d || 0; c += x.c || 0; });
+    plist.forEach(p => { const x = pvals[p.id]; if (x) { d += x.d || 0; c += x.c || 0; } });
+    erows.forEach(r => { if (r.acc) { d += r.d || 0; c += r.c || 0; } });
+    keepAst.forEach(l => { d += num(l.debit); c += num(l.credit); });
+    alist.forEach(a => { const x = avals[a.id]; if (x) { d += x.cost || 0; c += x.accum || 0; } const el = v.querySelector(`[data-nbv="${a.id}"]`); if (el) el.textContent = x && (x.cost || x.accum) ? fmtNum((x.cost || 0) - (x.accum || 0)) : ''; });
     v.querySelector('#td').textContent = fmtNum(d); v.querySelector('#tc').textContent = fmtNum(c);
-    const f = Math.round((d - c) * 1000) / 1000, el = v.querySelector('#tf');
+    const f = r3(d - c), el = v.querySelector('#tf');
     el.textContent = f ? fmtNum(Math.abs(f)) + (f > 0 ? ' (مدين أكثر)' : ' (دائن أكثر)') : '✓ متوازن'; el.style.color = f ? 'var(--bad)' : 'var(--ok)';
-    syncPartyAccounts();
   };
-  tot();
-  const onInput = (e) => {
-    const t = e.target; if (!t.dataset.k || !(t.dataset.a || t.dataset.p)) return;
-    const store = t.dataset.a ? vals : pvals, key = t.dataset.a || t.dataset.p, attr = t.dataset.a ? 'a' : 'p';
-    const x = store[key] ||= { d: 0, c: 0 };
-    x[t.dataset.k] = num(t.value);
-    if (x[t.dataset.k]) { const o = t.dataset.k === 'd' ? 'c' : 'd'; x[o] = 0; v.querySelector(`[data-${attr}="${key}"][data-k="${o}"]`).value = ''; }
-    tot();
-  };
-  v.querySelectorAll('#ob, #obp').forEach(t => t.addEventListener('input', onInput));
   const filter = () => {
     const q = v.querySelector('#q').value.trim().toLowerCase(), only = v.querySelector('#only').checked;
-    v.querySelectorAll('[data-row]').forEach(r => { const [k, id] = r.dataset.row.split(':'); const x = k === 'a' ? vals[id] : pvals[id];
-      r.style.display = (!q || r.dataset.s.includes(q)) && (!only || (x && (x.d || x.c)) || (k === 'a' && partyAcc.has(id))) ? '' : 'none'; });
+    v.querySelectorAll('[data-row]').forEach(r => {
+      const has = [...r.querySelectorAll('input')].some(i => num(i.value));
+      r.style.display = (!q || (r.dataset.s || '').includes(q)) && (!only || has) ? '' : 'none'; });
   };
+  const redrawEmp = () => { const b = v.querySelector('#ob-emp'); if (b) b.innerHTML = empBody(); };
+  const refresh = () => { drawAcc(); tot(); };
+  refresh();
+
+  v.querySelector('#ob-tabs').addEventListener('click', ev => {
+    const t = ev.target.closest('.tab'); if (!t) return; tab = t.dataset.tab;
+    v.querySelectorAll('#ob-tabs .tab').forEach(x => x.classList.toggle('active', x === t));
+    v.querySelectorAll('.tab-panel').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
+    if (tab === 'acc') drawAcc();
+    try { history.replaceState(null, '', '#/opening?k=' + tab); } catch {}
+  });
+  const pair = (x, k, val) => { x[k] = val; if (val) x[k === 'd' ? 'c' : 'd'] = 0; };
+  v.addEventListener('input', (e) => {
+    const t = e.target, k = t.dataset.k; if (!k) return;
+    if (t.dataset.a) { pair(vals[t.dataset.a] ||= { d: 0, c: 0 }, k, num(t.value)); if (num(t.value)) { const o = v.querySelector(`[data-a="${t.dataset.a}"][data-k="${k === 'd' ? 'c' : 'd'}"]`); if (o) o.value = ''; } }
+    else if (t.dataset.p) { pair(pvals[t.dataset.p] ||= { d: 0, c: 0 }, k, num(t.value)); if (num(t.value)) v.querySelector(`[data-p="${t.dataset.p}"][data-k="${k === 'd' ? 'c' : 'd'}"]`).value = ''; }
+    else if (t.dataset.ei != null && (k === 'd' || k === 'c')) { pair(erows[+t.dataset.ei], k, num(t.value)); if (num(t.value)) v.querySelector(`[data-ei="${t.dataset.ei}"][data-k="${k === 'd' ? 'c' : 'd'}"]`).value = ''; }
+    else if (t.dataset.as) { (avals[t.dataset.as] ||= { cost: 0, accum: 0 })[k] = num(t.value); }
+    else return;
+    tot();
+  });
+  v.addEventListener('change', (e) => {
+    const t = e.target; if (t.dataset.ei == null || !['emp', 'acc'].includes(t.dataset.k)) return;
+    erows[+t.dataset.ei][t.dataset.k] = t.value;
+    if (t.dataset.k === 'emp' && !erows[+t.dataset.ei].acc) { erows[+t.dataset.ei].acc = empAccDefault(empById[t.value]); redrawEmp(); }
+    tot();
+  });
+  v.addEventListener('click', (e) => {
+    const del = e.target.closest('[data-edel]'); if (del) { erows.splice(+del.dataset.edel, 1); redrawEmp(); tot(); }
+  });
+  v.querySelector('#ob-eadd')?.addEventListener('click', () => { const e0 = emps.find(e => e.is_active) || emps[0]; erows.push({ emp: e0.id, acc: empAccDefault(e0), d: 0, c: 0 }); redrawEmp(); tot(); });
+  v.querySelector('#ob-acards')?.addEventListener('click', async () => {
+    // الكلفة ومجمع الاستهلاك لحد آخر يوم قبل بداية السنة، من بطاقة الأصل ودورات الاستهلاك المرحّلة
+    const prev = new Date(S.fy.start_date); prev.setDate(prev.getDate() - 1);
+    const until = prev.toISOString().slice(0, 10);
+    const { data: dl } = await sb.from('depreciation_lines').select('asset_id,amount,to_date,depreciation_runs!inner(status)').eq('depreciation_runs.status', 'posted').lte('to_date', until).in('asset_id', alist.map(a => a.id));
+    const dep = {}; (dl || []).forEach(x => { dep[x.asset_id] = (dep[x.asset_id] || 0) + num(x.amount); });
+    alist.forEach(a => { if (a.purchase_date > until) return; avals[a.id] = { cost: num(a.cost), accum: r3(num(a.opening_accum) + (dep[a.id] || 0)) };
+      const ci = v.querySelector(`[data-as="${a.id}"][data-k="cost"]`), ai = v.querySelector(`[data-as="${a.id}"][data-k="accum"]`);
+      if (ci) ci.value = obVal(avals[a.id].cost); if (ai) ai.value = obVal(avals[a.id].accum); });
+    tot(); toast('تعبّت من بطاقات الأصول. راجعها قبل الحفظ', 'ok');
+  });
   v.querySelector('#q').oninput = filter; v.querySelector('#only').onchange = filter;
+
+  // تفريغ القسم الحالي
+  const clearTab = (t) => {
+    if (t === 'acc') Object.keys(vals).forEach(k => delete vals[k]);
+    else if (byType[t]) byType[t].forEach(p => delete pvals[p.id]);
+    else if (t === 'emp') erows.forEach(r => { r.d = 0; r.c = 0; });
+    else if (t === 'ast') Object.keys(avals).forEach(k => delete avals[k]);
+  };
+  const redrawTab = (t) => {
+    if (t === 'emp') return redrawEmp();
+    if (byType[t]) byType[t].forEach(p => ['d', 'c'].forEach(k => { const i = v.querySelector(`[data-p="${p.id}"][data-k="${k}"]`); if (i) i.value = obVal(pvals[p.id]?.[k]); }));
+    if (t === 'ast') alist.forEach(a => ['cost', 'accum'].forEach(k => { const i = v.querySelector(`[data-as="${a.id}"][data-k="${k}"]`); if (i) i.value = obVal(avals[a.id]?.[k]); }));
+  };
+  v.querySelector('#ob-clear')?.addEventListener('click', async () => {
+    if (!(await confirmBox(`تفريغ كل أرصدة «${OB_TABS[tab]}» من الشاشة؟ (ما بينحفظ إلا لما تضغط حفظ)`))) return;
+    clearTab(tab); redrawTab(tab); refresh();
+  });
+
+  // نسخ من سنة سابقة
+  const copyDialog = (preYear) => {
+    const years = (S.fiscalYearsAll || S.fiscalYears).filter(y => y.id !== S.fy.id).sort((a, b) => b.start_date.localeCompare(a.start_date));
+    if (!years.length) return toast('ما في سنة مالية ثانية لهالشركة تنسخ منها', 'err');
+    const before = years.filter(y => y.end_date < S.fy.start_date);
+    const def = preYear && years.some(y => y.id === preYear) ? preYear : (before[0] || years[0]).id;
+    const eq = accs.filter(a => !a.is_group && a.is_active && a.category === 'equity');
+    const retDef = eq.find(a => /مدور|محتجز|retained/i.test(a.name))?.id || eq[0]?.id || '';
+    const m = modal({ title: '📋 نسخ الأرصدة من سنة سابقة', size: 'sm', body: `<form id="cp-f">
+      <label>السنة اللي بدك تنسخ أرصدة نهايتها<select name="fy">${years.map(y => `<option value="${y.id}" ${y.id === def ? 'selected' : ''}>${esc(y.name || y.code)} (${fmtDate(y.start_date)} ← ${fmtDate(y.end_date)})${y.is_closed ? ' — مغلقة' : ''}</option>`).join('')}</select></label>
+      <div style="margin:10px 0 4px"><b>الأقسام</b></div>
+      ${tabs.map(t => `<label class="check"><input type="checkbox" name="t_${t}" ${t === tab ? 'checked' : ''}> ${OB_TABS[t]}</label>`).join('')}
+      <label style="margin-top:10px">طريقة النسخ<select name="mode"><option value="replace">استبدال أرصدة القسم بالمنسوخ</option><option value="empty">تعبئة الفاضي بس (ما بيلمس اللي مكتوب)</option></select></label>
+      <label>حساب الأرباح المدورة (لنتيجة السنة إذا ما انقفلت)<select name="ret"><option value="">—</option>${eq.map(a => `<option value="${a.id}" ${a.id === retDef ? 'selected' : ''}>${esc(a.code)} — ${esc(a.name)}</option>`).join('')}</select></label>
+      <p class="muted" style="font-size:13px">بينسخ الأرصدة المرحّلة بنهاية السنة اللي بتختارها. الإيرادات والمصاريف ما بتنسخ، صافيها بيروح على الأرباح المدورة. بعد النسخ راجع الأرقام واحفظ.</p></form>`,
+      foot: '<button class="btn primary" data-go>📋 نسخ</button><button class="btn" data-close>إلغاء</button>' });
+    m.el.querySelector('[data-go]').onclick = async (e) => {
+      const f = formData(m.el.querySelector('#cp-f')), sel = tabs.filter(t => m.el.querySelector(`[name="t_${t}"]`).checked);
+      if (!sel.length) return toast('اختار قسم واحد على الأقل', 'err');
+      e.target.disabled = true;
+      try {
+        const call = (kind, type) => sb.rpc('opening_source', { p_company: S.company.id, p_from_fy: f.fy, p_kind: kind, p_type: type || null }).then(r => { if (r.error) throw r.error; return r.data || []; });
+        let n = 0; const miss = [];
+        for (const t of sel) {
+          const rows = await call(t === 'acc' ? 'accounts' : t === 'emp' ? 'employees' : t === 'ast' ? 'assets' : 'parties', byType[t] ? t : null);
+          if (f.mode === 'replace') clearTab(t);
+          if (t === 'acc') {
+            for (const r of rows) {
+              let aid = r.account_id, bal = num(r.amount);
+              if (!aid) { if (!f.ret) { miss.push('نتيجة السنة (ما اخترت حساب أرباح مدورة)'); continue; } aid = f.ret; }
+              const x = vals[aid] ||= { d: 0, c: 0 };
+              if (f.mode === 'empty' && (x.d || x.c) && r.account_id) continue;
+              const net = r3((x.d || 0) - (x.c || 0) + bal);   // نتيجة السنة بتنضاف على رصيد الأرباح المدورة
+              x.d = net > 0 ? net : 0; x.c = net < 0 ? -net : 0; n++;
+            }
+          } else if (byType[t]) {
+            for (const r of rows) {
+              if (!byType[t].some(p => p.id === r.party_id)) { miss.push('طرف موقوف أو مش موجود'); continue; }
+              const x = pvals[r.party_id] ||= { d: 0, c: 0 };
+              if (f.mode === 'empty' && (x.d || x.c)) continue;
+              const b = num(r.amount); x.d = b > 0 ? b : 0; x.c = b < 0 ? -b : 0; n++;
+            }
+          } else if (t === 'emp') {
+            for (const r of rows) {
+              if (!empById[r.employee_id]) { miss.push('موظف'); continue; }
+              let row = erows.find(z => z.emp === r.employee_id && z.acc === r.account_id) || erows.find(z => z.emp === r.employee_id && !z.d && !z.c);
+              if (row && f.mode === 'empty' && (row.d || row.c)) continue;
+              if (!row) erows.push(row = { emp: r.employee_id, acc: r.account_id, d: 0, c: 0 });
+              const b = num(r.amount); row.acc = r.account_id; row.d = b > 0 ? b : 0; row.c = b < 0 ? -b : 0; n++;
+            }
+          } else if (t === 'ast') {
+            for (const r of rows) {
+              if (!alist.some(a => a.id === r.asset_id)) { miss.push('أصل مستبعد'); continue; }
+              const x = avals[r.asset_id] ||= { cost: 0, accum: 0 };
+              if (f.mode === 'empty' && (x.cost || x.accum)) continue;
+              x.cost = num(r.amount); x.accum = num(r.amount2); n++;
+            }
+          }
+          redrawTab(t);
+        }
+        refresh(); m.close();
+        toast(`تم نسخ ${n} رصيد${miss.length ? ` — ما انتسخ ${miss.length}: ${[...new Set(miss)].join('، ')}` : ''}. راجع واحفظ`, miss.length ? 'warn' : 'ok');
+      } catch (err) { e.target.disabled = false; toast(arError(err), 'err'); }
+    };
+  };
+  v.querySelector('#ob-copy')?.addEventListener('click', () => copyDialog());
+  if (qs.get('from') && !readOnly) { try { history.replaceState(null, '', '#/opening?k=' + tab); } catch {} copyDialog(qs.get('from')); }
+
   const save = async (post) => {
     const out = [];
-    Object.entries(vals).forEach(([id, x]) => { if (!partyAcc.has(id) && (x.d || x.c)) out.push({ account_id: id, party_id: null, debit: x.d || 0, credit: x.c || 0, description: 'رصيد افتتاحي' }); });
-    plist.forEach(p => { const x = pvals[p.id]; if (x && (x.d || x.c)) out.push({ account_id: p.account_id, party_id: p.id, debit: x.d || 0, credit: x.c || 0, description: 'رصيد افتتاحي - ' + p.name }); });
+    Object.entries(vals).forEach(([id, x]) => { if (x.d || x.c) out.push({ account_id: id, party_id: null, employee_id: null, asset_id: null, debit: x.d || 0, credit: x.c || 0, description: 'رصيد افتتاحي' }); });
+    plist.forEach(p => { const x = pvals[p.id]; if (x && (x.d || x.c)) out.push({ account_id: p.account_id, party_id: p.id, employee_id: null, asset_id: null, debit: x.d || 0, credit: x.c || 0, description: 'رصيد افتتاحي - ' + p.name }); });
+    for (const r of erows) { if (!(r.d || r.c)) continue;
+      if (!r.acc) return toast(`اختار الحساب لسطر الموظف ${empById[r.emp]?.name || ''}`, 'err');
+      out.push({ account_id: r.acc, party_id: null, employee_id: r.emp, asset_id: null, debit: r.d || 0, credit: r.c || 0, description: 'رصيد افتتاحي - ' + (empById[r.emp]?.name || '') }); }
+    for (const a of alist) { const x = avals[a.id]; if (!x || !(x.cost || x.accum)) continue;
+      if ((x.cost && !a.asset_account_id) || (x.accum && !a.accum_account_id)) return toast(`الأصل ${a.code} بدون حساب أصل/مجمع. عدّل بطاقته أول`, 'err');
+      if (x.cost < 0 || x.accum < 0) return toast(`أرصدة الأصل ${a.code} لازم موجبة`, 'err');
+      if (x.cost) out.push({ account_id: a.asset_account_id, party_id: null, employee_id: null, asset_id: a.id, debit: x.cost, credit: 0, description: 'كلفة أصل - ' + a.name });
+      if (x.accum) out.push({ account_id: a.accum_account_id, party_id: null, employee_id: null, asset_id: a.id, debit: 0, credit: x.accum, description: 'مجمع استهلاك - ' + a.name }); }
+    keepAst.forEach(l => out.push({ account_id: l.account_id, party_id: null, employee_id: null, asset_id: l.asset_id, debit: num(l.debit), credit: num(l.credit), description: l.description }));
     if (out.length < 2) return toast('أدخل أرصدة لحسابين على الأقل', 'err');
     const d = out.reduce((s2, l) => s2 + l.debit, 0), c = out.reduce((s2, l) => s2 + l.credit, 0);
     if (post && Math.abs(d - c) > 0.0005) return toast('الأرصدة مش متوازنة، ما بتنرحّل', 'err');
@@ -826,15 +1026,42 @@ async function viewOpening(v, ctx) {
   };
   v.querySelector('#save')?.addEventListener('click', () => save(false));
   v.querySelector('#savepost')?.addEventListener('click', () => save(true));
-  v.querySelector('#prn')?.addEventListener('click', () => {
-    const byId = Object.fromEntries(accs.map(a => [a.id, a]));
-    printVoucher('opening', entry, lines, byId);
-  });
+  v.querySelector('#prn')?.addEventListener('click', () => printVoucher('opening', entry, lines, accById));
+}
+
+// أداة الأرصدة الافتتاحية (الأدوات): اختيار القسم والمصدر
+async function viewOpeningTool(v) {
+  if (!needCompanyFY(v)) return;
+  const years = (S.fiscalYearsAll || S.fiscalYears).filter(y => y.id !== S.fy.id).sort((a, b) => b.start_date.localeCompare(a.start_date));
+  const before = years.find(y => y.end_date < S.fy.start_date);
+  const parts = [['acc', '📒', 'أرصدة الحسابات', 'رصيد كل حساب من الدليل (صندوق، بنوك، رأس المال…)'],
+    ['customer', '🧑‍💼', 'أرصدة العملاء', 'ذمة كل عميل لحاله'], ['supplier', '🏭', 'أرصدة الموردين', 'رصيد كل مورد لحاله'],
+    ...(can('payroll', 'view') ? [['emp', '👷', 'أرصدة الموظفين', 'سلف وذمم ومستحقات كل موظف']] : []),
+    ...(can('fixed_assets', 'view') ? [['ast', '🏗️', 'أرصدة الأصول الثابتة', 'كلفة ومجمع استهلاك كل أصل']] : [])];
+  v.innerHTML = `<div class="page-head"><h2>🧮 الأرصدة الافتتاحية</h2><span class="muted">للسنة ${esc(S.fy.name || S.fy.code)} — بتاريخ ${fmtDate(S.fy.start_date)}</span></div>
+    <div class="card" style="max-width:820px">
+      <h3 style="margin-top:0">١. شو بدك تدخل؟</h3>
+      <div class="launch-grid" id="ot-parts">${parts.map(([k, i, l, d], n) => `<label class="launch-tile sub ot-part ${n === 0 ? 'on' : ''}" style="cursor:pointer"><input type="radio" name="part" value="${k}" ${n === 0 ? 'checked' : ''} hidden><span class="li">${i}</span><b>${l}</b><small>${d}</small></label>`).join('')}</div>
+      <h3>٢. من وين الأرصدة؟</h3>
+      <label class="check"><input type="radio" name="src" value="manual" checked> ✍️ إدخال يدوي</label>
+      <label class="check"><input type="radio" name="src" value="copy" ${years.length ? '' : 'disabled'}> 📋 نسخ أرصدة نهاية سنة سابقة</label>
+      <div id="ot-year" style="margin:6px 26px 0;display:none"><select id="ot-fy">${years.map(y => `<option value="${y.id}" ${y.id === before?.id ? 'selected' : ''}>${esc(y.name || y.code)} (${fmtDate(y.start_date)} ← ${fmtDate(y.end_date)})${y.is_closed ? ' — مغلقة' : ''}</option>`).join('')}</select></div>
+      ${years.length ? '' : '<p class="muted" style="font-size:13px">ما في سنة ثانية لهالشركة تنسخ منها.</p>'}
+      <div style="margin-top:16px"><button class="btn primary" id="ot-go">فتح ←</button></div>
+      <p class="muted" style="font-size:13px;margin-top:12px">كل الأقسام بتنحفظ بقيد افتتاحي واحد للسنة. إذا السنة السابقة انقفلت وتدوّرت من «السنوات المالية»، الأرصدة بتكون جاهزة لحالها.</p>
+    </div>`;
+  v.querySelector('#ot-parts').addEventListener('change', () => v.querySelectorAll('.ot-part').forEach(x => x.classList.toggle('on', x.querySelector('input').checked)));
+  v.querySelectorAll('[name="src"]').forEach(r => r.onchange = () => { v.querySelector('#ot-year').style.display = v.querySelector('[name="src"]:checked').value === 'copy' ? '' : 'none'; });
+  v.querySelector('#ot-go').onclick = () => {
+    const k = v.querySelector('[name="part"]:checked').value, copy = v.querySelector('[name="src"]:checked').value === 'copy';
+    location.hash = '#/opening?k=' + k + (copy ? '&from=' + v.querySelector('#ot-fy').value : '');
+  };
 }
 
 export const FINANCE_ROUTES = {
   'accounts': viewAccounts,
   'opening': viewOpening,
+  'opening-tool': viewOpeningTool,
   'journal': voucherList('journal'),
   'receipts': voucherList('receipt'),
   'payments': voucherList('payment'),

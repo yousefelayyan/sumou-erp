@@ -4282,3 +4282,51 @@ No screen found with that name
 🆕 A new version of the program is available
 Update now
 Something is open and unsaved. Update and lose it
+There are also detailed balances on this account
+Accounts with detailed balances (customers, suppliers, employees, assets) fill automatically from their tabs
+➕ Employee line
+No fixed assets
+📇 Fill from asset cards
+Filled from asset cards. Review before saving
+Clear all balances of
+from the screen? (Nothing is saved until you press Save
+There is no other fiscal year for this company to copy from
+📋 Copy balances from a previous year
+The year whose closing balances you want to copy
+Copy method
+Replace the section's balances with the copied ones
+Fill empty only (doesn't touch what's entered
+Retained earnings account (for the year's result if not closed
+Copies posted balances at the end of the chosen year. Revenues and expenses are not copied; their net goes to retained earnings. Review the figures after copying and save
+📋 Copy
+Choose at least one section
+Year result (no retained earnings account chosen
+Inactive or missing party
+Disposed asset
+Copied
+}. Review and save
+Choose the account for the employee line
+has no asset/accumulated depreciation account. Edit its card first
+Balances of asset
+must be positive
+Asset cost
+Accumulated depreciation
+Account balances
+Balance of each account in the chart (cash, banks, capital
+Each customer's receivable
+Each supplier's balance
+Each employee's advances, receivables and dues
+Fixed asset balances
+Cost and accumulated depreciation of each asset
+for the year
+1. What do you want to enter
+2. Where do the balances come from
+✍️ Manual entry
+📋 Copy closing balances of a previous year
+Open →
+All sections are saved in one opening entry for the year. If the previous year was closed and rolled over from "Fiscal years", the balances are ready automatically
+An asset line can't have a customer/supplier or employee
+The asset is not from the same company
+You don't have permission on opening balances
+Copying balances is for head-office staff only, not branch staff
+Invalid balance type
