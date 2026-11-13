@@ -6,7 +6,7 @@
 // =====================================================================
 const KEY = 'sumou.lang';
 export let LANG = (() => { try { return localStorage.getItem(KEY) === 'en' ? 'en' : 'ar'; } catch { return 'ar'; } })();
-let DICT = null, NUMD = null;
+let DICT = null, NUMD = null, TPLS = [];
 const MISS = (() => { try { return localStorage.getItem('sumou.i18n.debug') ? (window.__i18nMissing = new Set()) : null; } catch { return null; } })();   // للفحص: النصوص اللي ما إلها ترجمة
 const AR = /[؀-ۿ]/;
 const EDGE = /^[\s:•·—–\-*()،.؟?!«»"'/|,;؛✓✔⚠️…]+|[\s:•·—–\-*()،.؟?!«»"'/|,;؛✓✔⚠️…]+$/g;
@@ -25,6 +25,8 @@ export function tr(text) {
   // نص فيه أرقام: «باقي 12 يوم» ← «باقي # يوم»
   const nums = []; const pat = text.trim().replace(NUM, (m) => { nums.push(m); return '#'; });
   if (nums.length && NUMD[pat] != null) { let k = 0; return NUMD[pat].replace(/#/g, () => nums[k++] ?? ''); }
+  // رسائل قاعدة البيانات اللي فيها قيم: «الأصل «سيارة» مستبعد» ← قالب «الأصل «%» مستبعد»
+  for (const [re, en] of TPLS) { const m = text.trim().match(re); if (m) { let k = 1; return en.replace(/\u0001/g, () => m[k++] ?? ''); } }
   if (nums.length === 1) {   // «9 شاشة» / «باقي 12»: الرقم بالأول أو بالآخر والباقي نص معروف
     const m = pat.match(/^#\s*(.+)$/) || pat.match(/^(.+?)\s*#$/);
     const x = m && lookup(m[1]); if (x != null) return pat.startsWith('#') ? `${nums[0]} ${x}` : `${x} ${nums[0]}`;
@@ -52,7 +54,11 @@ export async function initLang() {
   document.documentElement.lang = LANG; document.documentElement.dir = LANG === 'en' ? 'ltr' : 'rtl';
   document.documentElement.classList.toggle('lang-en', LANG === 'en');
   if (LANG !== 'en') return;
-  DICT = (await import('./i18n/en.js')).default;
+  const mod = await import('./i18n/en.js'); DICT = mod.default;
+  const rx = (t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  TPLS = (mod.TPL || []).map(([a, e]) => { const A = a.replace(/%%/g, '\u0002'), E = e.replace(/%%/g, '\u0002').replace(/%/g, '\u0001').replace(/\u0002/g, '%');
+    const parts = A.split('%').map(x => rx(x).replace(/\u0002/g, '%'));
+    return [new RegExp('^' + parts.join('(.+?)') + '$'), E, A.replace(/%/g, '').length]; }).sort((x, y) => y[2] - x[2]);   // الأطول أول (الأدق)
   NUMD = {};
   for (const [k, v] of Object.entries(DICT)) { if (NUM.test(k)) { NUM.lastIndex = 0; NUMD[k.replace(NUM, '#')] = v.replace(NUM, '#'); } NUM.lastIndex = 0; }
   walk(document.body);

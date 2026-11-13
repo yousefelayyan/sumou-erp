@@ -135,19 +135,24 @@ async function viewSalesReps(v) {
   v.innerHTML = `<div class="page-head"><h2>🧑‍💼 تقرير مندوبي المبيعات</h2><div class="spacer"></div><a class="btn sm no-print" href="#/setup?k=sales_rep">⚙️ المندوبين</a></div>
     ${reps.length ? '' : '<div class="notice info">ما في مندوبين لسا. عرّفهم من «إعداد ← مندوبي المبيعات» واربطهم على العملاء والفواتير.</div>'}
     ${bar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>
-    <p class="muted" style="font-size:12px">المبيعات من الفواتير المرحّلة (قبل الضريبة وبعد الخصم). التحصيلات = سندات القبض المرحّلة من عملاء المندوب. العمولة = صافي المبيعات × النسبة.</p>`;
+    <p class="muted" style="font-size:12px">المبيعات من الفواتير المرحّلة (قبل الضريبة وبعد الخصم) حسب مندوب كل سطر، وإذا السطر بدون مندوب فمندوب الفاتورة. التحصيلات = سندات القبض المرحّلة من عملاء المندوب. العمولة = صافي المبيعات × النسبة.</p>`;
   const box = v.querySelector('#db'), f = (n) => box.querySelector(`[data-f=${n}]`);
   let out = [];
   async function run() {
     const from = f('from').value, to = f('to').value, q = f('q').value.trim().toLowerCase();
     const [iR, rR] = await Promise.all([
-      sb.from('invoices').select('id,inv_type,subtotal,discount_total,total,sales_rep_id,party_id').eq('company_id', S.company.id).in('inv_type', ['sale', 'sale_return']).eq('status', 'posted').gte('inv_date', from).lte('inv_date', to).limit(10000),
+      sb.from('invoice_lines').select('subtotal,sales_rep_id,invoices!inner(id,company_id,inv_type,status,inv_date,sales_rep_id,party_id,original_invoice_id)').eq('invoices.company_id', S.company.id).in('invoices.inv_type', ['sale', 'sale_return']).eq('invoices.status', 'posted').gte('invoices.inv_date', from).lte('invoices.inv_date', to).limit(50000),
       sb.from('journal_lines').select('party_id,credit,debit,journal_entries!inner(company_id,entry_type,status,entry_date)').eq('journal_entries.company_id', S.company.id).eq('journal_entries.entry_type', 'receipt').eq('journal_entries.status', 'posted').gte('journal_entries.entry_date', from).lte('journal_entries.entry_date', to).not('party_id', 'is', null).limit(20000)]);
     if (iR.error) return toast(arError(iR.error), 'err');
     const repOfParty = Object.fromEntries(parties.map(p => [p.id, p.sales_rep_id]));
     const t = {}; const get = (id) => (t[id || '-'] ||= { n: 0, s: 0, r: 0, c: 0, cust: new Set() });
-    (iR.data || []).forEach(i => { const x = get(i.sales_rep_id); const net = num(i.subtotal);   // subtotal بعد الخصم أصلاً
-      if (i.inv_type === 'sale') { x.n++; x.s += net; } else x.r += net; if (i.party_id) x.cust.add(i.party_id); });
+    // مندوب كل سطر (المرحلة 77): السطر ← الفاتورة ← الفاتورة الأصلية للمرتجع
+    const origIds = [...new Set((iR.data || []).filter(l => !l.sales_rep_id && !l.invoices.sales_rep_id && l.invoices.original_invoice_id).map(l => l.invoices.original_invoice_id))];
+    const origRep = origIds.length ? Object.fromEntries(((await sb.from('invoices').select('id,sales_rep_id').in('id', origIds.slice(0, 500))).data || []).map(o => [o.id, o.sales_rep_id])) : {};
+    const invs = {};
+    (iR.data || []).forEach(l => { const i = l.invoices, rid = l.sales_rep_id || i.sales_rep_id || origRep[i.original_invoice_id] || null; const x = get(rid); const net = num(l.subtotal);   // subtotal بعد الخصم أصلاً
+      if (i.inv_type === 'sale') { x.s += net; (invs[rid || '-'] ||= new Set()).add(i.id); } else x.r += net; if (i.party_id) x.cust.add(i.party_id); });
+    Object.entries(invs).forEach(([k, set]) => { get(k === '-' ? null : k).n = set.size; });
     (rR.data || []).forEach(l => { const x = get(repOfParty[l.party_id]); x.c += num(l.credit) - num(l.debit); });
     const list = [...reps, ...(t['-'] ? [{ id: '-', code: '', name: 'بدون مندوب', rate: 0 }] : [])]
       .filter(r => !q || qm([r.code, r.name], q));

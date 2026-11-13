@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — الطباعة والتفقيط
 // =====================================================================
-import { translateDoc } from './i18n.js';
+import { translateDoc, LANG } from './i18n.js';
 import { S, sb, esc, fmtDateTime } from './core.js';
 
 // ---------------------------------------------------------------------
@@ -198,7 +198,21 @@ export function intToWords(n) {
   return parts.join(' و');
 }
 
+// التفقيط بالإنجليزي (لما لغة الواجهة إنجليزي)
+function enWords(n) {
+  const O = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const T = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  const h = (x) => { const a = Math.floor(x / 100), r = x % 100; const t = r < 20 ? O[r] : T[Math.floor(r / 10)] + (r % 10 ? '-' + O[r % 10] : '');
+    return [a ? O[a] + ' hundred' : '', t].filter(Boolean).join(' and '); };
+  if (!n) return 'zero';
+  const S2 = ['', ' thousand', ' million', ' billion']; const out = []; let i = 0;
+  while (n > 0 && i < S2.length) { const c = n % 1000; if (c) out.unshift(h(c) + S2[i]); n = Math.floor(n / 1000); i++; }
+  return out.join(' ');
+}
 export function amountToWords(amount) {
+  if (LANG === 'en') { const a = Math.round(Math.abs(Number(amount) || 0) * 1000), jd = Math.floor(a / 1000), fils = a % 1000;
+    const w = [jd ? enWords(jd) + (jd === 1 ? ' Jordanian dinar' : ' Jordanian dinars') : '', fils ? enWords(fils) + ' fils' : ''].filter(Boolean).join(' and ');
+    return 'Only ' + (w || 'zero dinars') + ' (no more)'; }
   const a = Math.round(Math.abs(Number(amount) || 0) * 1000);
   const jd = Math.floor(a / 1000), fils = a % 1000;
   const jdW = jd ? (jd === 1 ? 'دينار واحد' : jd === 2 ? 'ديناران' : intToWords(jd) + (jd % 100 >= 3 && jd % 100 <= 10 ? ' دنانير' : ' دينار')) : '';

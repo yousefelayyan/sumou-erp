@@ -1,0 +1,124 @@
+% مش موجود	% not found
+«خصم السلف» للموظف % (%) أقل من أقساط القروض المستحقة (%)؛ عدّله أو أجّل القسط	"Advance deduction" for employee % (%) is less than the due loan installments (%); edit it or defer the installment
+أصل مش موجود (سطر %)	Asset not found (line %)
+إنت برّا موقع العمل «%» (بعيد % متر، المسموح %)	You are outside the work location "%" (% m away, allowed %)
+إنت بعيد عن موقع العميل (% متر، والمسموح % متر)	You are far from the customer location (% m, allowed % m)
+اسم المستخدم «%» موجود من قبل	Username "%" already exists
+اكتب رقم الشيك للموظف %	Enter the cheque number for employee %
+اكتب سعر البيع للأصل «%»	Enter the sale price for asset "%"
+الأصل «%» إله استهلاك مرحّل بعد تاريخ الحركة	Asset "%" has posted depreciation after the movement date
+الأصل «%» إله استهلاك مرحّل بعد شهر الحركة. ألغِ دورة الاستهلاك أو غيّر التاريخ	Asset "%" has posted depreciation after the movement month. Cancel the depreciation run or change the date
+الأصل «%» انستبعد أو انباع بحركة مرحّلة؛ ألغِ الحركة أول	Asset "%" was disposed or sold by a posted movement; cancel that movement first
+الأصل «%» بحركة ثانية لسا ما ترحّلت	Asset "%" is in another unposted movement
+الأصل «%» بعهدة حدا، استعمل «نقل»	Asset "%" is in someone's custody; use "Transfer"
+الأصل «%» بمستند عهدة ثاني لسا ما انتهى	Asset "%" is in another custody document that hasn't finished
+الأصل «%» عليه مستند عهدة بتاريخ أحدث	Asset "%" has a custody document with a later date
+الأصل «%» لازم يكون مستهلك لنهاية %. رحّل الاستهلاك أول	Asset "%" must be depreciated to the end of %. Post depreciation first
+الأصل «%» ما عاد بالدائرة المنقول لها، ما بينلغى النقل	Asset "%" is no longer in the destination department; the transfer can't be cancelled
+الأصل «%» ما عاد بالدائرة المنقول منها	Asset "%" is no longer in the source department
+الأصل «%» مستبعد	Asset "%" is disposed
+الأصل «%» مستبعد، ما بينرجع عن عهدته	Asset "%" is disposed; its custody can't be reversed
+الأصل «%» مش بالدائرة المنقول منها	Asset "%" is not in the source department
+الأصل «%» مش بعهدة المسلِّم	Asset "%" is not in the deliverer's custody
+الإيميل «%» مش صحيح	Email "%" is not valid
+الباركود «%» مستعمل كباركود إضافي لصنف ثاني	Barcode "%" is used as an extra barcode for another item
+الباركود «%» مستعمل لصنف (الباركود الأساسي)	Barcode "%" is used for an item (main barcode)
+البيع الآجل موقوف على هالعميل%. بدها صلاحية «تجاوز سقف الائتمان وإيقاف البيع»	Credit sales are stopped for this customer%. Requires the "Override credit limit and sales stop" permission
+الحساب «% - %» حساب رئيسي، اختار حساب فرعي	Account "% - %" is a group account; choose a sub-account
+الحساب «% - %» موقوف	Account "% - %" is inactive
+الخصم (%) أكبر من مجموع الفاتورة (%)	Discount (%) is larger than the invoice total (%)
+الخصم أكبر من قيمة السطر %	Discount is larger than the line value %
+الخصم أكبر من قيمة السطر (%)	Discount is larger than the line value (%)
+الخصم على «%» (% %%) أكثر من المسموح (% %%)	Discount on "%" (% %%) exceeds the allowed (% %%)
+الدفعة «%» مسجّلة من قبل بتاريخ انتهاء % (مش %) — صحّح التاريخ أو استعمل رقم دفعة ثاني	Batch "%" already exists with expiry date % (not %) — fix the date or use another batch number
+الدفعة «%» مش موجودة للصنف %	Batch "%" not found for item %
+الدفعة «%» من الصنف % فيها % بس بالمستودع	Batch "%" of item % has only % in the warehouse
+الدفعة «%» من الصنف % منتهية بتاريخ %	Batch "%" of item % expired on %
+الرصيد ما بيكفي: الحد % يوم، المستعمل %، المطلوب %	Insufficient balance: limit % days, used %, requested %
+الرقم % موجود على مستند ثاني بنفس السنة	Number % already exists on another document in the same year
+الزبون تجاوز سقف الائتمان (السقف %، الرصيد بعد الفاتورة %). بدها صلاحية «تجاوز سقف الائتمان»	Customer exceeded the credit limit (limit %, balance after invoice %). Requires the "Override credit limit" permission
+السطر %: عدد السيريالات (%) لازم يساوي الكمية (%)	Line %: number of serials (%) must equal the quantity (%)
+السطر %: عدد السيريالات المعدودة (%) لازم يساوي الكمية الفعلية (%)	Line %: number of counted serials (%) must equal the counted quantity (%)
+السطر %: مرتجع البيع لازم يكون بسيريال انباع من قبل	Line %: a sales return must use a serial that was sold before
+السعر سالب (%)	Negative price (%)
+السيريال «%» (%) مش موجود بالمستودع بتاريخ الحركة	Serial "%" (%) is not in the warehouse on the movement date
+السيريال «%» (%) موجود بالمخزون من قبل	Serial "%" (%) is already in stock
+الشركة «%» فيها حركات (%)، ما بتنحذف. أوقفها بدل الحذف	Company "%" has transactions (%), it can't be deleted. Deactivate it instead
+الشركة «%» موجودة. الاسترجاع بيرجّع شركة انحذفت أو لقاعدة جديدة بس	Company "%" exists. Restore only brings back a deleted company or into a new database
+الشيك رقم %: المبلغ لازم أكبر من صفر	Cheque no. %: amount must be greater than zero
+الشيك رقم %: تاريخ الاستحقاق مطلوب	Cheque no. %: due date is required
+الشيك رقم %: رقم الشيك مطلوب	Cheque no. %: cheque number is required
+الصنف «%» ما إله مخزون	Item "%" has no stock
+الصنف «%» مكرر	Item "%" is duplicated
+الطلب مخالف لضوابط القروض: %	The request violates the loan rules: %
+العملة «%» مش معرّفة بالشركة (مراكز الكلفة والعملات)	Currency "%" is not defined in the company (cost centers & currencies)
+العميل عليه رصيد مدين % والبيع الآجل موقوف لحد ما يسدّد. بدها صلاحية «تجاوز سقف الائتمان وإيقاف البيع»	The customer has a debit balance of % and credit sales are stopped until paid. Requires the "Override credit limit and sales stop" permission
+الفاتورة الآجلة لازم يكون إلها % 	A credit invoice must have a %
+الفترة % مقفولة لقسم «%»، ما بينضاف أو بينعدّل فيها شي	Period % is locked for section "%"; nothing can be added or edited in it
+الفترة % مقفولة للمالية، ما بينرحّل عليها	Period % is locked for finance; posting isn't allowed
+الفترة % مقفولة للمالية، ما بينلغى الترحيل فيها	Period % is locked for finance; unposting isn't allowed
+الفترة % مقفولة للمخزون	Period % is locked for inventory
+القيد مش متوازن: المدين % والدائن %	Entry is unbalanced: debit % and credit %
+الكمية المتوفرة من «%» بمستودع «%» (%) أقل من المطلوب (%). البيع بالسالب ممنوع بإعدادات الشركة	Available quantity of "%" in warehouse "%" (%) is less than required (%). Negative stock is blocked in company settings
+الكمية للصنف «%» لازم أكبر من صفر	Quantity for item "%" must be greater than zero
+الكمية مش منطقية (%)	Unreasonable quantity (%)
+المبلغ على الفاتورة % أكبر من المتبقي (%)	Amount on invoice % is greater than the remaining (%)
+المجموع الموزّع (%) أكبر من مبلغ الدفعة (%)	Allocated total (%) is greater than the payment amount (%)
+المدفوع (%) أقل من المطلوب (%)	Paid (%) is less than required (%)
+المرتجع أكثر من الفاتورة الأصلية: «%»	Return exceeds the original invoice: "%"
+المصروف %: اختار حساب فرعي (المورد أو الصندوق أو المصروف المستحق)	Expense %: choose a sub-account (supplier, cash or accrued expense)
+المصروف %: الطرف مش من هالشركة أو موقوف	Expense %: party is not from this company or is inactive
+المصروف %: المبلغ لازم أكبر من صفر	Expense %: amount must be greater than zero
+تاريخ القيد لازم يكون جوّا السنة المالية (% إلى %)	Entry date must be within the fiscal year (% to %)
+تاريخ المستند لازم يكون بعد تاريخ فاتورة الشراء %	Document date must be after purchase invoice date %
+حدّد حساب % بشاشة «حسابات الربط»	Set the % account in "Linked accounts"
+حدّد حساب الأصل ومجمع الاستهلاك للأصل «%»	Set the asset and accumulated depreciation accounts for asset "%"
+حدّد حساب مصروف الاستهلاك ومجمع الاستهلاك للأصل «%»	Set the depreciation expense and accumulated depreciation accounts for asset "%"
+حساب وسيلة الدفع «%» لازم يكون حساب فرعي فعّال من نفس الشركة	Payment method account "%" must be an active sub-account of the same company
+حسابات مش مسموحة بنوع السند «%»: %	Accounts not allowed in document type "%": %
+رصيد الاسترداد (%) أقل من المبلغ	Cashback balance (%) is less than the amount
+رقم الجوال مش صحيح%	Invalid mobile number%
+رقم السند % مستعمل من قبل بنفس التسلسل	Voucher number % is already used in the same sequence
+رقم الفاتورة % مستعمل من قبل بنفس التسلسل	Invoice number % is already used in the same sequence
+رقم المستند % مستعمل من قبل بنفس التسلسل	Document number % is already used in the same sequence
+رمز الشركة «%» مستخدم	Company code "%" is in use
+رمز المشترك «%» مستخدم	Subscriber code "%" is in use
+سجّلت انصراف اليوم الساعة %	You already checked out today at %
+سجّلت حضور اليوم الساعة %	You already checked in today at %
+سطر % مش صحيح	Line % is invalid
+سطر على حساب الذمم لازم يكون عليه عميل/مورد: %	A line on a receivables/payables account must have a customer/supplier: %
+سعر «%» أقل من هامش الربح الأدنى لفئته (% %%)	Price of "%" is below the minimum margin of its category (% %%)
+سعر «%» بعد الخصم (%) أقل من أقل سعر بيع (%)	Price of "%" after discount (%) is below the minimum sale price (%)
+سعر «%» بعد الخصم (%) أقل من الكلفة (%)	Price of "%" after discount (%) is below cost (%)
+شهر أول قسط (%) فات؛ لازم من الشهر الحالي أو بعده	First installment month (%) has passed; it must be this month or later
+صنف مش موجود (سطر %)	Item not found (line %)
+صنف مش موجود أو موقوف (سطر %)	Item not found or inactive (line %)
+على الأصل «%» حركة بعد هاي، ألغِها أول	Asset "%" has a later movement; cancel it first
+على الأصل «%» حركة عهدة لاحقة، ارجع عنها أول	Asset "%" has a later custody movement; reverse it first
+فاتورة الشراء % لازم تكون مرحّلة للمحاسبة والمخزون	Purchase invoice % must be posted to finance and inventory
+فاتورة الشراء مستعملة بمستند الكلفة المحمّلة رقم %. ألغيه أو شيل الفاتورة منه أول	The purchase invoice is used in landed cost document no. %. Cancel it or remove the invoice first
+في % فاتورة مسودة بهالسنة. رحّلها أو احذفها قبل الإغلاق	There are % draft invoices in this year. Post or delete them before closing
+في % فاتورة و% سند مخزون مرحّلين ترحيل ناقص (محاسبة بدون مخزون أو العكس). كمّل ترحيلهم من «الأدوات ← الترحيل» قبل إغلاق السنة	There are % invoices and % stock documents partially posted (finance without inventory or vice versa). Complete posting from "Tools ← Posting" before closing the year
+في % قيد/سند مسودة بهالسنة. رحّلهم أو احذفهم قبل الإغلاق	There are % draft entries/vouchers in this year. Post or delete them before closing
+قيمة «%» مش منطقية	Value of "%" is not reasonable
+كلمة السر لازم تكون % أحرف على الأقل	Password must be at least % characters
+ما بتنرحّل: وثائق الطرف مش مكتملة — %	Can't be posted: party documents are incomplete — %
+ما بينفع: الدفعة «%» من الصنف % طلع منها بمستندات بعد هالمستند — ألغِ ترحيلها أول	Not allowed: batch "%" of item % was issued by later documents — unpost them first
+ما بينفع: سيريالات الفاتورة انحركت بعدها (%)	Not allowed: the invoice serials moved after it (%)
+ما بينفع: سيريالات هالمستند انحركت بعده (%)	Not allowed: this document's serials moved after it (%)
+ما في سنة مالية مفتوحة بتاريخ %	No open fiscal year on %
+مجموع حصص الموردين الثانيين (%) لازم يكون أقل من مجموع الفاتورة (%)	Total of the other suppliers' shares (%) must be less than the invoice total (%)
+ملف النسخة مش سليم (جدول %)	Backup file is invalid (table %)
+ملف النسخة مش سليم (رابط % بجدول %)	Backup file is invalid (link % in table %)
+نسبة العمولة من 0 لـ 20%%	Commission rate is 0 to 20%%
+نوع السند «%» بدّه مرفق قبل الترحيل (📎 مرفقات)	Document type "%" requires an attachment before posting (📎 Attachments)
+نوع السند «%» موقوف	Document type "%" is inactive
+نوع السند «%»: التاريخ لازم يكون تاريخ اليوم	Document type "%": the date must be today
+نوع السند «%»: الدائرة مقفولة على دائرتك	Document type "%": the department is locked to your department
+نوع السند «%»: انتهت مدة التعديل/الحذف (% يوم)	Document type "%": the edit/delete period has ended (% days)
+وصلت الحد المسموح من الشركات باشتراكك (%). تواصل معنا لزيادته	You reached the company limit of your subscription (%). Contact us to increase it
+وصلت الحد المسموح من المستخدمين باشتراكك (%). وقّف مستخدم أو تواصل معنا لزيادة العدد	You reached the user limit of your subscription (%). Deactivate a user or contact us to increase it
+وصلت حد الإيميلات اليومي (%)	You reached the daily email limit (%)
+وصلت حد الحركات بالتجربة المجانية (%). تواصل معنا للاشتراك	You reached the free trial transactions limit (%). Contact us to subscribe
+وصلت حد الرسائل اليومي (%)	You reached the daily message limit (%)
+«%» عليه بونص % حبة؛ اكتب سيريالات البونص	"%" has a bonus of % pcs; enter the bonus serials

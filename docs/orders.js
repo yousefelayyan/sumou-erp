@@ -4,7 +4,7 @@ import { attachFollow } from './follow.js';
 // =====================================================================
 import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, fmtPrice, fmtQty, qm } from './core.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
-import { loadItems, openInvoicePrefill, bilingualDoc } from './invoices.js';
+import { loadItems, openInvoicePrefill, bilingualDoc, bestBonus } from './invoices.js';
 import { printDoc, amountToWords } from './print.js';
 import { loadLookups, repOptions, hasReps } from './lookups.js';
 import { downloadCSV } from './finance.js';
@@ -79,7 +79,9 @@ async function orderEditor(type, ord, ctx) {
   if (ord) lines = (await sb.from('order_lines').select('*').eq('order_id', ord.id).order('line_no')).data || [];
   const ro = (ord && ord.status !== 'open') || (ord ? !can(O.screen, 'edit') : !can(O.screen, 'add')) ? 'disabled' : '';
   const o0 = ord || { order_date: today(), party_id: null, reference: '', notes: '' };
-  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
+  const isSO = type === 'sales_order';
+  const promos = isSO ? ((await sb.from('promotions').select('*').eq('company_id', S.company.id).eq('is_active', true)).data || []) : [];
+  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), bonus: num(l.bonus_qty), manualBonus: num(l.bonus_qty) > 0 }));
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 });
   const inv0 = ord?.invoice_id ? (await sb.from('invoices').select('id,inv_no,doc_code,inv_date,status').eq('id', ord.invoice_id).maybeSingle()).data : null;
   const canFlags = ord && can(O.screen, 'edit') && !ord.is_frozen;
@@ -105,7 +107,7 @@ async function orderEditor(type, ord, ctx) {
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(o0.notes || '')}" ${ro}></div>
     </div></form>
     <datalist id="item-list">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}">`).join('')}</datalist>
-    <div class="table-wrap"><table class="t lines"><thead><tr><th>#</th><th>الصنف</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الضريبة %</th><th>السعر شامل</th><th>المجموع شامل</th><th></th></tr></thead><tbody id="ol"></tbody></table></div>
+    <div class="table-wrap"><table class="t lines"><thead><tr><th>#</th><th>الصنف</th><th>البيان</th><th>الكمية</th>${isSO ? '<th title="كمية مجانية (بونص)">🎁 كمية+</th>' : ''}<th>السعر</th><th>الخصم</th><th>الضريبة %</th><th>السعر شامل</th><th>المجموع شامل</th><th></th></tr></thead><tbody id="ol"></tbody></table></div>
     ${ro ? '' : '<button class="btn sm" id="add-line" type="button">➕ سطر</button>'}
     <div class="inv-totals"><div><span>الكمية</span><b id="t-qty" dir="ltr"></b></div><div><span>الإجمالي قبل الخصم</span><b id="t-gross" dir="ltr"></b></div><div><span>قيمة الخصم</span><b id="t-disc" dir="ltr"></b></div>
       <div><span>قبل الضريبة</span><b id="t-sub" dir="ltr"></b></div><div><span>الضريبة</span><b id="t-tax" dir="ltr"></b></div><div class="big"><span>الصافي</span><b id="t-tot" dir="ltr"></b></div></div>
@@ -129,13 +131,17 @@ async function orderEditor(type, ord, ctx) {
     m.el.querySelector('#t-sub').textContent = fmtNum(s); m.el.querySelector('#t-tax').textContent = fmtNum(t); m.el.querySelector('#t-tot').textContent = fmtNum(s + t); };
   const draw = () => { tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input list="item-list" class="cell" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td><td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!ro || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}</td>
-      ${['qty', 'price', 'disc', 'rate'].map(k => `<td><input class="cell n" dir="ltr" inputmode="decimal" data-i="${i}" data-k="${k}" value="${esc(k === 'rate' ? String(r[k] ?? '') : (r[k] || ''))}" ${ro || (k === 'rate' && taxOff()) ? 'disabled' : ''}></td>`).join('')}
+      ${['qty', ...(isSO ? ['bonus'] : []), 'price', 'disc', 'rate'].map(k => `<td><input class="cell n" dir="ltr" inputmode="decimal" data-i="${i}" data-k="${k}" value="${esc(k === 'rate' ? String(r[k] ?? '') : (r[k] || ''))}" ${ro || (k === 'rate' && taxOff()) ? 'disabled' : ''}></td>`).join('')}
       <td><input class="cell n" dir="ltr" inputmode="decimal" data-pinc="${i}" title="السعر شامل الضريبة — اكتبه وبيتحسب السعر قبل الضريبة" ${ro}></td>
       <td class="n" data-tot="${i}"></td><td>${ro ? '' : `<button class="btn sm" type="button" data-rm="${i}">✕</button>`}</td></tr>`).join(''); totals(); };
   draw();
   tb.addEventListener('input', (e) => { const t = e.target;
     if (t.dataset.pinc != null) { const r = rows[+t.dataset.pinc]; r.price = r3(num(t.value) / (1 + num(r.rate) / 100)); const pe = tb.querySelector(`[data-i="${t.dataset.pinc}"][data-k="price"]`); if (pe) pe.value = r.price || ''; totals(); return; }
-    if (!t.dataset.k) return; rows[+t.dataset.i][t.dataset.k] = t.value; totals(); });
+    if (!t.dataset.k) return; const r0 = rows[+t.dataset.i]; r0[t.dataset.k] = t.value;
+    if (t.dataset.k === 'bonus') r0.manualBonus = true;
+    if (t.dataset.k === 'qty' && isSO && !r0.manualBonus) { const it = resolveItem(items, r0.item); const b = it ? bestBonus(promos, it, m.el.querySelector('[name=order_date]').value, num(r0.qty)) : null;
+      r0.bonus = b ? b.qty : 0; const be = tb.querySelector(`[data-i="${t.dataset.i}"][data-k="bonus"]`); if (be) be.value = r0.bonus || ''; }
+    totals(); });
   m.el.querySelector('#o-taxmode')?.addEventListener('change', () => { if (taxOff()) rows.forEach(r => r.rate = 0); else rows.forEach(r => { const it = resolveItem(items, r.item); r.rate = it ? num(it.tax_rate) : 16; }); draw(); });
   m.el.querySelector('#o-dapply')?.addEventListener('click', () => { const pc = num(m.el.querySelector('#o-dpct').value); if (pc < 0 || pc > 100) return toast('النسبة بين 0 و 100', 'err');
     rows.forEach(r => r.disc = r3(num(r.qty) * num(r.price) * pc / 100)); draw(); toast(`انطبق خصم ${pc}% على كل السطور`, 'ok'); });
@@ -145,7 +151,8 @@ async function orderEditor(type, ord, ctx) {
     toast(cb.checked ? (cb.dataset.flag === 'closed' ? 'انغلق الطلب' : 'تم التسليم') : 'انشال', 'ok'); ctx.rerender(); }));
   tb.addEventListener('change', (e) => { const t = e.target; if (t.dataset.k !== 'item') return; const it = resolveItem(items, t.value), r = rows[+t.dataset.i];
     t.classList.toggle('bad', !!t.value && !it);
-    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(type === 'sales_order' ? it.sale_price : it.purchase_price) || r.price; r.rate = taxOff() ? 0 : num(it.tax_rate); draw(); } });
+    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(type === 'sales_order' ? it.sale_price : it.purchase_price) || r.price; r.rate = taxOff() ? 0 : num(it.tax_rate);
+      if (isSO && !r.manualBonus) { const bb = bestBonus(promos, it, m.el.querySelector('[name=order_date]').value, num(r.qty)); r.bonus = bb ? bb.qty : 0; } draw(); } });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: taxOff() ? 0 : 16 }); draw(); });
   m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: taxOff() ? 0 : 16 }); draw(); });
   if (ord) { attachAudit(m.el, ord); attachFollow(m.el, 'orders', ord, type, O.screen); }
@@ -158,7 +165,7 @@ async function orderEditor(type, ord, ctx) {
       const it = resolveItem(items, r.item); if (r.item && !it) { toast(`السطر ${k + 1}: الصنف مش موجود`, 'err'); return null; }
       if (num(r.qty) <= 0) { toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err'); return null; }
       if (num(r.disc) > num(r.qty) * num(r.price)) { toast(`السطر ${k + 1}: الخصم أكبر من قيمة السطر`, 'err'); return null; }
-      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate) });
+      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate), ...(isSO ? { bonus_qty: Math.max(0, num(r.bonus)) } : {}) });
     }
     if (!out.length) { toast('ضيف سطر واحد على الأقل', 'err'); return null; }
     return out;
@@ -207,7 +214,7 @@ async function orderEditor(type, ord, ctx) {
     if (cur?.status !== 'open') { toast('الطلب مش مفتوح، يمكن حدا حوّله من قبل', 'err'); m.close(); return ctx.rerender(); }
     m.close();
     openInvoicePrefill(O.inv, { inv: { inv_type: O.inv, party_id: ord.party_id, party_name: ord.party_name, payment_type: 'credit', sales_rep_id: ord.sales_rep_id, notes: ord.notes, project: ord.project, tax_mode: ord.tax_mode || 'normal' },
-      lines, orderReserve: ord.reserve ? lines : null, ref: `من ${O.label} رقم ${ord.order_no}${ord.reference ? ' — ' + ord.reference : ''}`,
+      lines: lines.flatMap(l => num(l.bonus_qty) > 0 && l.item_id ? [l, { item_id: l.item_id, description: '', qty: num(l.bonus_qty), unit_price: 0, discount: 0, tax_rate: 0, is_bonus: true }] : [l]), orderReserve: ord.reserve ? lines : null, ref: `من ${O.label} رقم ${ord.order_no}${ord.reference ? ' — ' + ord.reference : ''}`,
       onSaved: async (invId) => { const { error } = await sb.rpc('link_order_invoice', { p_order: ord.id, p_invoice: invId }); if (error) toast(arError(error), 'err'); else toast('الطلب تحوّل لفاتورة', 'ok'); } }, ctx);
   });
   m.el.querySelector('[data-cancelord]')?.addEventListener('click', async () => {

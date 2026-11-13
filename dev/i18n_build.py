@@ -14,7 +14,16 @@ if os.path.exists(ex):
             a, e = line.rstrip('\n').split('\t', 1)
             if a.strip() and e.strip(): d[a.strip()] = e.strip()
 os.makedirs(os.path.join(ROOT, 'docs/i18n'), exist_ok=True)
+# قوالب رسائل قاعدة البيانات اللي فيها قيم (%)
+tpl = []
+tp = os.path.join(ROOT, 'dev/i18n/templates.tsv')
+if os.path.exists(tp):
+    for line in open(tp, encoding='utf-8'):
+        if '\t' in line:
+            a, e = line.rstrip('\n').split('\t', 1)
+            if a.strip() and e.strip(): tpl.append([a.strip(), e.strip()])
 open(os.path.join(ROOT, 'docs/i18n/en.js'), 'w', encoding='utf-8').write(
-  '// مولّد من dev/i18n_build.py — لا تعدّله بإيدك\nexport default ' + json.dumps(d, ensure_ascii=False, separators=(',', ':')) + ';\n')
+  '// مولّد من dev/i18n_build.py — لا تعدّله بإيدك\nexport default ' + json.dumps(d, ensure_ascii=False, separators=(',', ':')) + ';\n'
+  + 'export const TPL = ' + json.dumps(tpl, ensure_ascii=False, separators=(',', ':')) + ';\n')
 missing = [a for i, a in enumerate(ar) if a and not (i < len(en) and en[i].strip())]
 print('translated', len(d), 'missing', len(missing))

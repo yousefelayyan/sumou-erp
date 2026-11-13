@@ -771,7 +771,7 @@ async function invoiceEditor(type, inv, ctx) {
 }
 let returnPrefill = null;
 // فتح فاتورة جديدة معبّاة من طلب (طلب مبيعات/تزويد)
-function bestBonus(promos, it, date, qty) {   // اشترِ N خذ M (ومضاعفاتها)
+export function bestBonus(promos, it, date, qty) {   // اشترِ N خذ M (ومضاعفاتها)
   return promos.filter(p => num(p.free_qty) > 0 && num(p.buy_qty) > 0 && p.date_from <= date && p.date_to >= date && num(qty) >= num(p.min_qty) && num(qty) >= num(p.buy_qty)
       && (p.item_id ? p.item_id === it.id : p.category_id ? p.category_id === it.category_id : true))
     .map(p => ({ name: p.name, qty: (p.free_repeat !== false ? Math.floor(num(qty) / num(p.buy_qty) + 1e-9) : 1) * num(p.free_qty) }))

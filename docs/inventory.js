@@ -165,7 +165,7 @@ async function docEditor(type, doc, whs, ctx) {
         <small class="muted">${type === 'in' ? 'مثلاً لبضاعة أول المدة اختار رأس المال أو الأرصدة الافتتاحية' : 'مثلاً مصروف تالف أو هدايا'}</small></div>` : ''}
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(d0.notes)}" ${ro}></div></div></form>
     <datalist id="sd-items">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}"></option>`).join('')}</datalist>
-    ${isCount ? `<div class="notice info">اكتب الكمية الفعلية اللي عدّيتها. لما ترحّل، النظام بيحسب الفرق عن رصيد الدفاتر وبيعمل تسوية.</div>
+    ${isCount ? `<div class="notice info">اكتب الكمية الفعلية اللي عدّيتها. لما ترحّل، النظام بيحسب الفرق عن رصيد الدفاتر وبيعمل تسوية. للأصناف بالسيريال اكتب السيريالات اللي لقيتها (اختياري): الناقص بيطلع من المستودع والزايد بيدخل.</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${!readOnly ? '<button class="btn sm" type="button" id="cn-fill">📥 تعبئة الأصناف</button><button class="btn sm" type="button" id="cn-sys">🔄 رصيد الدفاتر</button><button class="btn sm" type="button" id="cn-same">= الفعلي مثل الدفاتر للفاضي</button>' : ''}<button class="btn sm" type="button" id="cn-sheet">🖨️ ورقة جرد للعدّ</button></div>` : ''}
     <table class="t lines" id="sdl"><thead><tr><th>#</th><th style="min-width:240px">الصنف</th>${isCount && doc?.status !== 'posted' ? '<th style="width:100px">الدفاتر</th>' : ''}<th style="width:130px">${isCount ? 'الكمية الفعلية' : 'الكمية'}</th>${isCount && doc?.status !== 'posted' ? '<th style="width:90px">الفرق</th>' : ''}${isCount && doc?.status === 'posted' ? '<th style="width:120px">التسوية</th>' : ''}<th style="width:130px">الكلفة للوحدة</th><th></th></tr></thead><tbody></tbody></table>
     ${!readOnly ? '<button class="btn sm" id="sd-add" type="button" style="margin-top:6px">➕ سطر</button>' : ''}`,
@@ -192,7 +192,7 @@ async function docEditor(type, doc, whs, ctx) {
   const diffCell = (r) => { if (r.sys == null || r.counted === '' || r.counted == null) return ''; const d = num(r.counted) - num(r.sys); return d ? `<span style="color:${d < 0 ? 'var(--bad)' : 'var(--ok)'}">${d > 0 ? '+' : ''}${fmtQty(d)}</span>` : '<span class="muted">✓</span>'; };
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
-      <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${batchCell(r, i)}${isCount ? '' : serialCellHTML(r, i, resolveItem(items, r.item), ro, type === 'in')}</td>
+      <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${batchCell(r, i)}${isCount ? serialCellHTML({ serials: r.serials, qty: r.counted }, i, resolveItem(items, r.item), ro, true) : serialCellHTML(r, i, resolveItem(items, r.item), ro, type === 'in')}</td>
       ${isCount && doc?.status !== 'posted' ? `<td class="n muted">${r.sys == null ? '' : fmtQty(r.sys)}</td>` : ''}
       <td><input class="cell n" data-i="${i}" data-k="${isCount ? 'counted' : 'qty'}" value="${isCount ? r.counted : (r.qty || '')}" inputmode="decimal" ${ro}></td>
       ${isCount && doc?.status !== 'posted' ? `<td class="n" data-diff="${i}">${diffCell(r)}</td>` : ''}
@@ -203,7 +203,7 @@ async function docEditor(type, doc, whs, ctx) {
   draw(); loadBal(); m.el.querySelector('[name=warehouse_id]')?.addEventListener('change', loadBal);
   tb.addEventListener('input', (e) => { const t = e.target; if (t.dataset.k) rows[+t.dataset.i][t.dataset.k] = t.value;
     if (t.dataset.k === 'counted') { const c = tb.querySelector(`[data-diff="${t.dataset.i}"]`); if (c) c.innerHTML = diffCell(rows[+t.dataset.i]); }
-    if (t.dataset.k === 'serials' || t.dataset.k === 'qty') { const c = tb.querySelector(`[data-scnt="${t.dataset.i}"]`); if (c) { const r = rows[+t.dataset.i], n = parseSerials(r.serials).length; c.textContent = `${n}/${fmtQty(num(r.qty))}`; c.className = n === num(r.qty) ? 'muted' : 'bad-txt'; } } });
+    if (['serials', 'qty', 'counted'].includes(t.dataset.k)) { const c = tb.querySelector(`[data-scnt="${t.dataset.i}"]`); if (c) { const r = rows[+t.dataset.i], n = parseSerials(r.serials).length, q = num(isCount ? r.counted : r.qty); c.textContent = `${n}/${fmtQty(q)}`; c.className = n === q ? 'muted' : 'bad-txt'; } } });
   tb.addEventListener('click', async (e) => { const b = e.target.closest('[data-spick]'); if (!b) return; const r = rows[+b.dataset.spick], it = resolveItem(items, r.item); if (!it) return;
     const sel = await serialPicker(it, m.el.querySelector('[name=warehouse_id]').value || null, r.serials); if (!sel) return;
     r.serials = sel.join('\n'); if (num(r.qty) < sel.length) r.qty = sel.length; draw(); });
@@ -267,7 +267,9 @@ async function docEditor(type, doc, whs, ctx) {
       const sys = doc?.supply_request_id || doc?.production_id;
       if (bm && type === 'in' && !sys && !bx.batch_no) return toast(`السطر ${k + 1}: ${it.name} بده رقم دفعة`, 'err');
       if (bm && type === 'in' && !sys && it.batch_mode === 'expiry' && !bx.expiry_date) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
-      if (isCount) { if (r.counted === '' || num(r.counted) < 0) return toast(`السطر ${k + 1}: اكتب الكمية الفعلية`, 'err'); out.push({ item_id: it.id, counted_qty: num(r.counted), qty: 0, unit_cost: num(r.cost), ...bx }); }
+      if (isCount) { if (r.counted === '' || num(r.counted) < 0) return toast(`السطر ${k + 1}: اكتب الكمية الفعلية`, 'err'); const sc = it.serial_tracked ? parseSerials(r.serials) : [];
+        if (sc.length && sc.length !== num(r.counted)) return toast(`السطر ${k + 1}: ${it.name} — عدد السيريالات المعدودة (${sc.length}) لازم يساوي الكمية الفعلية`, 'err');
+        out.push({ item_id: it.id, counted_qty: num(r.counted), qty: 0, unit_cost: num(r.cost), ...bx, serials: sc.length ? sc : null }); }
       else { if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err');
         const sl = it.serial_tracked ? parseSerials(r.serials) : [];
         if (sl.length && sl.length !== num(r.qty)) return toast(`السطر ${k + 1}: ${it.name} — عدد السيريالات (${sl.length}) لازم يساوي الكمية`, 'err');

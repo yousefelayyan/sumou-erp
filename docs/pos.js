@@ -9,6 +9,7 @@ import { loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadWarehouses } from './inventory.js';
 import { posMethods, loadLookups } from './lookups.js';
 import { loadParties } from './parties.js';
+import { bestBonus } from './invoices.js';
 
 const localDate = () => new Date().toLocaleDateString('en-CA');   // تاريخ الجهاز (مش UTC)
 const r3 = (x) => Math.round((Number(x) || 0) * 1000) / 1000;
@@ -51,11 +52,14 @@ async function viewPos(v, ctx) {
     ? methods.map(x => ({ id: x.id, label: x.pos_label || x.name, sub: x.name2 || '', cash: accType(x.account_id) === 'cash' }))
     : [{ id: '', method: 'cash', label: '💵 نقدي', cash: true }, { id: '', method: 'card', label: '💳 بطاقة', cash: false }];
   const [{ data: items, error }, { data: cats }] = await Promise.all([
-    sb.from('items').select('id,code,name,barcode,sale_price,tax_rate,unit,image,category_id,item_type').eq('company_id', S.company.id).eq('is_active', true).order('name').limit(3000),
+    sb.from('items').select('id,code,name,barcode,sale_price,tax_rate,unit,image,category_id,item_type,serial_tracked,batch_mode,track_stock').eq('company_id', S.company.id).eq('is_active', true).order('name').limit(3000),
     sb.from('item_categories').select('id,code,name').eq('company_id', S.company.id).order('code'),
   ]);
   if (error) return void (v.innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
   const catList = (cats || []).filter(c => items.some(i => i.category_id === c.id));
+  const promos = ((await sb.from('promotions').select('*').eq('company_id', S.company.id).eq('is_active', true)).data || []).filter(x => num(x.free_qty) > 0);
+  const posDay = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Amman' });
+  const bonusOf = (l) => { const b = bestBonus(promos, l.item, posDay, l.qty); return b ? b.qty : 0; };
   const altBc = (await sb.from('item_barcodes').select('item_id,barcode,factor').eq('company_id', S.company.id)).data || [];
   const cartKey = 'sumou.pos.cart.' + S.company.id;
   const parties = (await loadParties()).filter(x => x.party_type === 'customer' && x.is_active);
@@ -63,7 +67,7 @@ async function viewPos(v, ctx) {
   try {
     const sv = JSON.parse(localStorageGet(cartKey) || '[]') || [];
     const rows = Array.isArray(sv) ? sv : (sv.lines || []);
-    cart = rows.map(l => ({ ...l, item: items.find(i => i.id === l.id) })).filter(l => l.item);
+    cart = rows.map(l => ({ ...l, item: items.find(i => i.id === l.id), serials: l.serials || [], bonus_serials: l.bonus_serials || [], batch: l.batch || '' })).filter(l => l.item);
     if (!Array.isArray(sv)) { cust = parties.find(x => x.id === sv.cust) || null; invDisc = num(sv.disc); }
   } catch { cart = []; }
   const lastKey = 'sumou.pos.last.' + S.company.id;
@@ -76,7 +80,7 @@ async function viewPos(v, ctx) {
   const canEditPrice = can('sales_invoices', 'edit');
   if (!canEditPrice) cart.forEach(l => { l.price = num(l.item.sale_price); l.discount = 0; });   // السعر الحالي للصنف
   const saveCart = () => localStorageSet(cartKey, cart.length || cust || invDisc
-    ? JSON.stringify({ lines: cart.map(l => ({ id: l.item.id, qty: l.qty, price: l.price, discount: l.discount || 0 })), cust: cust?.id || null, disc: invDisc })
+    ? JSON.stringify({ lines: cart.map(l => ({ id: l.item.id, qty: l.qty, price: l.price, discount: l.discount || 0, serials: l.serials || [], bonus_serials: l.bonus_serials || [], batch: l.batch || '' })), cust: cust?.id || null, disc: invDisc })
     : null);
   const td = localDate(); const yearOk = S.fy && !S.fy.is_closed && td >= S.fy.start_date && td <= S.fy.end_date;
 
@@ -121,7 +125,10 @@ async function viewPos(v, ctx) {
   const drawCart = () => {
     const t = totals(cart, cfg, invDisc);
     $('#pos-lines').innerHTML = cart.map((l, k) => `<div class="pos-line ${k === sel ? 'sel' : ''}" data-l="${k}">
-        <div class="pl-name">${esc(l.item.name)}<small>${fmtPrice(l.price)} × ${fmtQty(l.qty, l.qty % 1 ? 3 : 0)}${l.discount ? ` − خصم ${fmtNum(l.discount)}` : ''}</small></div>
+        <div class="pl-name">${esc(l.item.name)}<small>${fmtPrice(l.price)} × ${fmtQty(l.qty, l.qty % 1 ? 3 : 0)}${l.discount ? ` − خصم ${fmtNum(l.discount)}` : ''}</small>
+          ${bonusOf(l) ? `<small style="color:var(--ok,#15803d);font-weight:700">🎁 بونص ${fmtQty(bonusOf(l))}</small>` : ''}
+          ${l.item.serial_tracked || (l.item.batch_mode && l.item.batch_mode !== 'none') ? `<span class="pl-extra">${l.item.serial_tracked ? `<button class="pos-link" data-ser="${k}" style="${(l.serials || []).length === l.qty && (l.bonus_serials || []).length === bonusOf(l) ? '' : 'color:var(--bad,#b91c1c)'}">🔢 سيريال ${(l.serials || []).length}/${fmtQty(l.qty)}${bonusOf(l) ? ` + ${(l.bonus_serials || []).length}/${fmtQty(bonusOf(l))}` : ''}</button>` : ''}
+            ${l.item.batch_mode && l.item.batch_mode !== 'none' ? `<button class="pos-link" data-bat="${k}">🧪 ${esc(l.batch || 'الدفعة: الأقرب انتهاء')}</button>` : ''}</span>` : ''}</div>
         <div class="pl-qty"><button data-m="${k}">－</button><b>${fmtQty(l.qty, l.qty % 1 ? 3 : 0)}</b><button data-p="${k}">＋</button></div>
         <div class="pl-tot">${fmtNum(r3(l.qty * l.price - (l.discount || 0)))}</div></div>`).join('')
       || '<div class="pos-empty">اضغط على صنف عشان ينضاف للفاتورة</div>';
@@ -157,7 +164,28 @@ async function viewPos(v, ctx) {
     if (!it) { const b = altBc.find(x => x.barcode === t); if (b) { it = items.find(i => i.id === b.item_id); qty = num(b.factor) || 1; } }   // باركود إضافي (كرتونة = 12)
     if (it) { addItem(it, qty); qi.value = ''; q = ''; drawGrid(); } else toast('ما في صنف بهالباركود', 'err');
   };
+  // السيريالات والدفعة لسطر بالكاشير
+  const serialDialog = (k) => { const l = cart[k]; if (!l) return; const bq = bonusOf(l);
+    const m = modal({ title: `🔢 ${l.item.name}`, size: 'sm', body: `<div class="field"><label>أرقام السيريال (${fmtQty(l.qty)}) — كل رقم بسطر، أو امسحها بالماسح</label><textarea id="sr" style="min-height:120px;direction:ltr">${esc((l.serials || []).join('\n'))}</textarea></div>
+      ${bq ? `<div class="field"><label>🎁 سيريالات البونص (${fmtQty(bq)})</label><textarea id="sb" style="min-height:70px;direction:ltr">${esc((l.bonus_serials || []).join('\n'))}</textarea></div>` : ''}`,
+      foot: '<button class="btn primary" data-ok>تمام</button><button class="btn" data-close>إلغاء</button>' });
+    const parse = (t) => [...new Set(String(t || '').split(/[\n,;]+/).map(x => x.trim()).filter(Boolean))];
+    m.el.querySelector('[data-ok]').onclick = () => { const a = parse(m.el.querySelector('#sr').value), b = parse(m.el.querySelector('#sb')?.value);
+      if (a.length !== l.qty) return toast(`عدد السيريالات (${a.length}) لازم يساوي الكمية (${fmtQty(l.qty)})`, 'err');
+      if (bq && b.length !== bq) return toast(`سيريالات البونص لازم ${fmtQty(bq)}`, 'err');
+      if (a.some(x => b.includes(x))) return toast('نفس السيريال مكرر', 'err');
+      l.serials = a; l.bonus_serials = b; m.close(); drawCart(); };
+  };
+  const batchDialog = async (k) => { const l = cart[k]; if (!l) return;
+    const { data } = await sb.rpc('batch_balances', { p_company: S.company.id, p_warehouse: cfg.warehouse_id || null, p_item: l.item.id, p_all: false });
+    const bs = (data || []).filter(x => x.batch_id && num(x.qty) > 0);
+    const m = modal({ title: `🧪 ${l.item.name}`, size: 'sm', body: `<div class="field"><label>الدفعة (فاضي = الأقرب انتهاء)</label><select id="bt"><option value="">— الأقرب انتهاء —</option>${bs.map(x => `<option value="${esc(x.batch_no)}" ${x.batch_no === l.batch ? 'selected' : ''}>${esc(x.batch_no)} — ${fmtQty(x.qty)}${x.expiry_date ? ' — ينتهي ' + esc(x.expiry_date) : ''}</option>`).join('')}</select></div>`,
+      foot: '<button class="btn primary" data-ok>تمام</button><button class="btn" data-close>إلغاء</button>' });
+    m.el.querySelector('[data-ok]').onclick = () => { l.batch = m.el.querySelector('#bt').value; m.close(); drawCart(); };
+  };
   $('#pos-lines').onclick = (e) => {
+    const sr = e.target.closest('[data-ser]'); if (sr) { e.stopPropagation(); return serialDialog(+sr.dataset.ser); }
+    const bt = e.target.closest('[data-bat]'); if (bt) { e.stopPropagation(); return batchDialog(+bt.dataset.bat); }
     const m = e.target.closest('[data-m]'), p = e.target.closest('[data-p]'), l = e.target.closest('[data-l]');
     if (m) { const k = +m.dataset.m; cart[k].qty = r3(cart[k].qty - 1); if (cart[k].qty <= 0) { cart.splice(k, 1); sel = Math.min(sel, cart.length - 1); } typed = ''; return drawCart(); }
     if (p) { const k = +p.dataset.p; cart[k].qty = r3(cart[k].qty + 1); sel = k; typed = ''; return drawCart(); }
@@ -217,6 +245,8 @@ async function viewPos(v, ctx) {
   }
   function discDialog() {
     if (!cart.length) return toast('السلة فاضية', 'err');
+    { const bad = cart.findIndex(l => l.item.serial_tracked && ((l.serials || []).length !== l.qty || (l.bonus_serials || []).length !== bonusOf(l)));
+      if (bad >= 0) { toast(`«${cart[bad].item.name}» بدّه أرقام السيريال قبل الدفع`, 'err'); return serialDialog(bad); } }
     const G = cart.reduce((a, l) => a + r3(l.qty * l.price - (l.discount || 0)), 0);
     const m = modal({ title: '٪ خصم على الفاتورة', size: 'sm', body: `<div class="grid cols-2">
       <div class="field"><label>مبلغ</label><input id="da" inputmode="decimal" dir="ltr" value="${invDisc || ''}"></div>
@@ -262,7 +292,7 @@ async function viewPos(v, ctx) {
       const p = paid === '' ? t.total : num(paid);
       if (pm.cash && p + 0.0005 < t.total) return toast('المدفوع أقل من المطلوب', 'err');
       saveBtn.disabled = true; saveBtn.textContent = '⏳ جاري الحفظ…';
-      const lines = cart.map(l => ({ item_id: l.item.id, qty: l.qty, price: l.price, discount: l.discount || 0 }));
+      const lines = cart.map(l => ({ item_id: l.item.id, qty: l.qty, price: l.price, discount: l.discount || 0, ...(l.item.serial_tracked ? { serials: l.serials || [], bonus_serials: l.bonus_serials || [] } : {}), ...(l.batch ? { batch_no: l.batch } : {}) }));
       const r = await sb.rpc('pos_checkout', { p: { company_id: S.company.id, fiscal_year_id: S.fy.id, ...(pm.id ? { method_id: pm.id } : { method: pm.method }), paid: pm.cash ? p : t.total, party_id: cust?.id || null, sales_rep_id: rep?.id || null, party_name: m.el.querySelector('#pp-name')?.value.trim() || '', discount: invDisc, lines } });
       if (r.error) { saveBtn.disabled = false; saveBtn.textContent = '✅ حفظ وطباعة'; return toast(arError(r.error), 'err'); }
       const sale = r.data; const change = r3(num(sale.paid) - num(sale.total)); const name = m.el.querySelector('#pp-name')?.value.trim() || cust?.name || '';
@@ -294,7 +324,7 @@ function receiptHTML({ sale, paid, change, method, cfg, name }) {
   <div>فاتورة رقم: <b>${esc(sale.doc_code || sale.no)}</b></div><div>${fmtDateTime(sale.created_at || new Date())}</div>
   <div>الكاشير: ${esc(who)}${name ? ` · الزبون: ${esc(name)}` : ''}</div>
   <div class="hr"></div>
-  <table>${lines.map(l => `<tr><td>${esc(l.name)}<br><small>${fmtQty(l.qty, l.qty % 1 ? 3 : 0)} × ${fmtPrice(l.price)}${num(l.discount) ? ` − ${fmtNum(l.discount)}` : ''}</small></td>
+  <table>${lines.map(l => `<tr><td>${esc(l.name)}<br><small>${fmtQty(l.qty, l.qty % 1 ? 3 : 0)} × ${l.bonus ? 'مجاناً 🎁' : fmtPrice(l.price)}${num(l.discount) ? ` − ${fmtNum(l.discount)}` : ''}</small></td>
     <td class="n">${fmtNum(l.total)}</td></tr>`).join('')}</table>
   <div class="hr"></div>
   <table><tr><td>قبل الضريبة</td><td class="n">${fmtNum(sale.subtotal)}</td></tr><tr><td>ضريبة المبيعات</td><td class="n">${fmtNum(sale.tax)}</td></tr>

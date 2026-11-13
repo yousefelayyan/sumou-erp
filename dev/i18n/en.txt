@@ -4551,3 +4551,23 @@ The order is not from this company
 You don't have permission on sales orders
 Enter the coupon value
 Invalid period
+number of counted serials
+must equal the counted quantity
+Free quantity (bonus
+🔢 Serial
+Serial numbers
+one per line, or scan them
+Bonus serials must be
+Duplicate serial
+Batch (empty = nearest expiry
+Nearest expiry
+needs serial numbers before payment
+Free 🎁
+The advance payment must be from the order's customer
+The order is cancelled or closed
+The order belongs to another branch
+The order has a posted advance payment; cancel the order instead of deleting (or reverse the payment first
+The voucher is posted and its type requires an attachment; the last attachment can't be deleted
+Payment method is not from this company or not enabled for this type
+The discount wasn't fully spread over the lines; reduce the discount
+In a serial count each item goes on one line (put all its serials on the same line
