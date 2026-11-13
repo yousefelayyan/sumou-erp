@@ -149,6 +149,9 @@ async function viewSettings(v, ctx) {
       ${sel('asset_disposal_account_id', 'أرباح وخسائر بيع وشطب الأصول')}
       <div class="field"><label>&nbsp;</label>${editable && !st.asset_disposal_account_id ? '<button type="button" class="btn sm" id="mk-disp">➕ اعمل حساب «أرباح (خسائر) بيع وشطب أصول» لحاله</button>' : ''}</div></div><h3 style="margin:16px 0 6px">🏅 بطاقات الولاء</h3><div class="grid cols-2">${sel('cashback_account_id', 'مصروف الاسترداد النقدي (حساب مصاريف)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div>
       <h3 style="margin:16px 0 6px">📦 المخزون</h3>
+      <div class="field" style="max-width:520px"><label>سقف الائتمان للزبائن (الفاتورة الآجلة)</label><select name="credit_limit_mode" ${editable ? '' : 'disabled'}>
+        <option value="warn" ${st.credit_limit_mode !== 'block' ? 'selected' : ''}>تنبيه بس</option>
+        <option value="block" ${st.credit_limit_mode === 'block' ? 'selected' : ''}>منع الترحيل فوق السقف (إلا لمين إله صلاحية «تجاوز سقف الائتمان»)</option></select></div>
       <label class="check"><input type="checkbox" name="block_negative_stock" ${st.block_negative_stock ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع والإخراج بأكثر من الكمية المتوفرة بالمستودع (البيع بالسالب)</label>
       <p class="muted" style="font-size:12px;margin:2px 0 0">الصنف اللي مأشّر عليه «تجاهل تتبع الكمية» بنوع المستند ما بيتفحص.</p>
       <h3 style="margin:16px 0 6px">🧾 بيان قيود الشيكات</h3>
@@ -157,7 +160,7 @@ async function viewSettings(v, ctx) {
         .map(([k, l]) => `<div class="field"><label>${l}</label><input data-ctpl="${k}" value="${esc((st.cheque_templates || {})[k] || '')}" placeholder="${k === 'deposit' ? 'إيداع شيك وارد رقم: [رقم الشيك] / [البنك] حق [الاستحقاق]' : ''}" ${editable ? '' : 'disabled'}></div>`).join('')}</div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
-    d.block_negative_stock = !!d.block_negative_stock;
+    d.block_negative_stock = !!d.block_negative_stock; d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
     d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
     const { error } = await sb.from('company_settings').upsert(d);
@@ -486,7 +489,7 @@ async function invoiceEditor(type, inv, ctx) {
     if (p && isSale && type === 'sale' && p.credit_limit > 0 && h.payment_type === 'credit') {
       const { data: b } = await sb.from('party_balances').select('debit,credit').eq('party_id', p.id).eq('fiscal_year_id', S.fy.id).maybeSingle();
       const bal = b ? num(b.debit) - num(b.credit) : 0;
-      if (bal + header.total > p.credit_limit && !(await confirmBox(`تنبيه: رصيد العميل رح يصير ${fmtNum(bal + header.total)} وهو أكثر من سقف الائتمان ${fmtNum(p.credit_limit)}. بدك تكمّل؟`))) return;
+      if (bal + header.total > p.credit_limit && !(await confirmBox(`تنبيه: رصيد العميل رح يصير ${fmtNum(bal + header.total)} وهو أكثر من سقف الائتمان ${fmtNum(p.credit_limit)}.${st.credit_limit_mode === 'block' && !can('credit_override', 'edit') ? ' الترحيل ممنوع فوق السقف، بتقدر تحفظها مسودة بس.' : ''} بدك تكمّل؟`))) return;
     }
     const btns = m.el.querySelectorAll('.modal-foot .btn'); btns.forEach(b => b.disabled = true);
     try {

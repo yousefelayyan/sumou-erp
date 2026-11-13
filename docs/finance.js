@@ -358,6 +358,7 @@ async function voucherEditor(type, entry, ctx) {
       ${entry?.status === 'posted' && can(T.screen, 'post') && !entry.reversal_of ? `<button class="btn" data-reverse>↩️ قيد عكسي</button>` : ''}
       ${entry && can(T.screen, 'print') ? `<button class="btn" data-print>🖨️ طباعة</button>` : ''}
       ${entry ? `<button class="btn" data-attach>📎 مرفقات</button>` : ''}
+      ${entry && isCash && ['draft', 'posted'].includes(entry.status) && !entry.reversal_of && lines.some(l => l.party_id) ? `<button class="btn" data-alloc>🧾 توزيع على الفواتير</button>` : ''}
       ${entry && ['journal', 'receipt', 'payment'].includes(type) && can('journal_entries', 'add') ? `<button class="btn" data-recur>🔁 تكرار شهري</button>` : ''}
       ${entry?.status === 'draft' && can(T.screen, 'delete') ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>` : ''}
       <button class="btn" data-close>إغلاق</button>` });
@@ -528,6 +529,7 @@ async function voucherEditor(type, entry, ctx) {
   m.el.querySelector('[data-postdo=gl]')?.addEventListener('click', (ev) => { if (!readOnly) { ev.stopImmediatePropagation(); save(true); } });
   if (entry) wirePostBar(m.el, 'entry', entry.id, () => reopen(entry.id));
   m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('entry', entry.id, `${T.label} رقم ${docNo(entry)}`));
+  m.el.querySelector('[data-alloc]')?.addEventListener('click', () => allocateDialog(entry, [...new Set(lines.filter(l => l.party_id).map(l => l.party_id))], pById));
   m.el.querySelector('[data-recur]')?.addEventListener('click', () => recurringDialog(entry));
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (!(await confirmBox(`حذف ${T.label} رقم ${docNo(entry)}؟`))) return;
@@ -685,3 +687,37 @@ export const FINANCE_ROUTES = {
   'receipts': voucherList('receipt'),
   'payments': voucherList('payment'),
 };
+
+// توزيع الدفعة على فواتير الطرف الآجلة المفتوحة
+async function allocateDialog(entry, partyIds, pById) {
+  const blocks = await Promise.all(partyIds.map(async pid => {
+    const [o, a] = await Promise.all([sb.rpc('party_open_invoices', { p_company: S.company.id, p_party: pid, p_except_entry: entry.id }),
+      sb.from('invoice_allocations').select('invoice_id,amount').eq('entry_id', entry.id)]);
+    if (o.error) throw o.error;
+    const mine = Object.fromEntries((a.data || []).map(x => [x.invoice_id, num(x.amount)]));
+    return { pid, rows: (o.data || []).filter(r => num(r.remaining) > 0.0005 || mine[r.invoice_id]), mine };
+  })).catch(e => { toast(arError(e), 'err'); return null; });
+  if (!blocks) return;
+  const m = modal({ title: `🧾 توزيع ${docNo(entry)} على الفواتير`, body: blocks.map(b => `<h4 style="margin:8px 0">${esc(pById[b.pid]?.name || '')}</h4>
+    <div class="table-wrap"><table class="t" data-p="${b.pid}"><thead><tr><th>الفاتورة</th><th>التاريخ</th><th>الاستحقاق</th><th>المبلغ</th><th>المتبقي</th><th style="width:130px">من هالدفعة</th></tr></thead><tbody>
+    ${b.rows.map(r => `<tr><td>${esc(r.doc_code || String(r.inv_no))}</td><td>${fmtDate(r.inv_date)}</td><td ${r.due_date < today() ? 'style="color:var(--bad)"' : ''}>${fmtDate(r.due_date)}</td>
+      <td class="n">${fmtNum(r.total - r.returned)}</td><td class="n">${fmtNum(r.remaining)}</td>
+      <td><input class="cell n" dir="ltr" inputmode="decimal" data-inv="${r.invoice_id}" data-max="${r.remaining}" value="${b.mine[r.invoice_id] || ''}"></td></tr>`).join('') || '<tr><td colspan="6" class="empty">ما في فواتير آجلة مفتوحة</td></tr>'}</tbody></table></div>
+    <div style="margin:6px 0"><button class="btn sm" data-auto="${b.pid}">⚡ تلقائي (الأقدم أول)</button></div>`).join(''),
+    foot: '<button class="btn primary" data-save>💾 حفظ التوزيع</button><button class="btn" data-close>إغلاق</button>' });
+  m.el.querySelectorAll('[data-auto]').forEach(btn => btn.onclick = async () => {
+    const { error } = await sb.rpc('auto_allocate', { p_entry: entry.id, p_party: btn.dataset.auto });
+    if (error) return toast(arError(error), 'err');
+    toast('انوزّعت الدفعة على الأقدم أول', 'ok'); m.close(true); allocateDialog(entry, partyIds, pById);
+  });
+  m.el.querySelector('[data-save]').onclick = async () => {
+    for (const t of m.el.querySelectorAll('table[data-p]')) {
+      const items = [...t.querySelectorAll('[data-inv]')].map(i => ({ invoice_id: i.dataset.inv, amount: num(i.value) })).filter(x => x.amount > 0);
+      const bad = items.find((x, k) => x.amount > num(t.querySelectorAll('[data-inv]')[k]?.dataset.max) + 0.0005 && false);
+      if (bad) return;
+      const { error } = await sb.rpc('allocate_payment', { p_entry: entry.id, p_party: t.dataset.p, p_items: items });
+      if (error) return toast(arError(error), 'err');
+    }
+    toast('انحفظ التوزيع', 'ok'); m.close(true);
+  };
+}

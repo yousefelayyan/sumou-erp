@@ -396,7 +396,12 @@ function renderShell() {
       <div class="main">
         <div class="tabs-head no-print">
           <div class="co-tabs" id="co-tabs">${coTabsHTML()}</div>
-          <div class="pg-tabs" id="pg-tabs">${pgTabsHTML()}</div>
+          <div class="pg-bar"><div class="pg-nav">
+            <button type="button" data-nav="back" title="رجوع للشاشة السابقة">→</button>
+            <button type="button" data-nav="fwd" title="للأمام">←</button>
+            <button type="button" data-nav="up" title="أزرار مجموعة هالشاشة">▦</button>
+            <button type="button" data-nav="home" title="الرئيسية">🏠</button></div>
+          <div class="pg-tabs" id="pg-tabs">${pgTabsHTML()}</div></div>
         </div>
         ${subBannerHTML()}
         <section class="content" id="view"></section>
@@ -422,6 +427,16 @@ function renderShell() {
     const x = e.target.closest('[data-close-tab]'); if (x) { e.stopPropagation(); return closeCompanyTab(x.dataset.closeTab); }
     if (e.target.closest('[data-add-tab]')) return switchCompanyDialog();
     const t = e.target.closest('[data-co-tab]'); if (t && t.dataset.coTab !== S.company?.id) activateCompany(t.dataset.coTab);
+  });
+  document.querySelector('.pg-nav')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-nav]'); if (!b) return;
+    const k = b.dataset.nav;
+    if (k === 'back') history.back(); else if (k === 'fwd') history.forward(); else if (k === 'home') location.hash = '#/home';
+    else {
+      const r = curHash().replace(/^#\//, ''), r0 = r.split('?')[0];
+      const g = NAV().find(g => g.items.some(it => it.r && (it.r === r || it.r.split('?')[0] === r0)));
+      location.hash = g && g.title !== 'الرئيسية' ? `#/home?g=${encodeURIComponent(g.title)}` : '#/home';
+    }
   });
   document.getElementById('pg-tabs').addEventListener('click', (e) => {
     const x = e.target.closest('[data-close-pg]'); if (x) { e.stopPropagation(); return closePageTab(x.dataset.closePg); }

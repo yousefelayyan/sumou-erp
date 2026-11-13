@@ -371,3 +371,10 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .launch-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .launch-head h3 { margin: 0; font-size: 20px; }
 @media (max-width: 600px) { .launch-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; } .launch-tile { min-height: 100px; padding: 12px 6px; } .launch-tile .li { font-size: 30px; width: 52px; height: 52px; } }
+/* شريط التنقل: رجوع/للأمام/مجموعة الشاشة/الرئيسية */
+.pg-bar { display: flex; align-items: center; background: #fff; border-bottom: 1px solid var(--line, var(--tint)); }
+.pg-bar .pg-tabs { flex: 1; border-bottom: 0; min-width: 0; }
+.pg-bar .pg-tabs:empty { display: block; }
+.pg-nav { display: flex; gap: 4px; padding: 5px 10px; border-inline-end: 1px solid var(--tint); }
+.pg-nav button { border: 1px solid var(--tint-2); background: var(--tint); color: var(--brand); border-radius: 8px; min-width: 34px; height: 30px; font-size: 16px; font-weight: 700; cursor: pointer; }
+.pg-nav button:hover { background: var(--brand); color: #fff; }
