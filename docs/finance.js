@@ -304,6 +304,9 @@ async function voucherEditor(type, entry, ctx) {
     lines = data;
   }
   const isCash = type === 'receipt' || type === 'payment';
+  let linkedChq = [];
+  if (entry && type === 'receipt') { const { data } = await sb.from('cheques').select('id,cheque_no,bank_name,due_date,amount,status,drawer_name').eq('receipt_entry_id', entry.id).order('due_date'); linkedChq = data || []; }
+  const chqAdd = type === 'receipt' && can('cheques', 'add') && (!entry || !['reversed', 'cancelled'].includes(entry.status) && !entry.reversal_of && !entry.is_frozen);
   const readOnly = entry && entry.status !== 'draft' || (entry ? !can(T.screen, 'edit') : !can(T.screen, 'add'));
   const manual = await isManual(type);
   await loadPosting();
@@ -352,7 +355,17 @@ async function voucherEditor(type, entry, ctx) {
         ${isCash ? '<td><b id="t-amt" dir="ltr"></b></td>' : '<td><b id="t-dr" dir="ltr"></b></td><td><b id="t-cr" dir="ltr"></b></td>'}<td></td></tr>
         ${!isCash ? `<tr><td></td><td></td><td></td><td style="text-align:left" colspan="${1 + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}">الفرق</td><td colspan="2"><b id="t-diff" dir="ltr"></b></td><td></td></tr>` : ''}
         <tr><td></td><td colspan="${(isCash ? 5 : 6) + (ccs.length ? 1 : 0) + (curs.length ? 3 : 0)}" class="muted" id="t-words" style="font-size:13px"></td></tr></tfoot>
-    </table></div>`,
+    </table></div>
+    ${type === 'receipt' && (linkedChq.length || chqAdd) ? `<div class="card" id="chq-box" style="margin-top:12px;padding:10px 12px">
+      <h4 style="margin:0 0 8px">📑 شيكات مستلمة بهالسند</h4>
+      ${linkedChq.length ? `<table class="t"><thead><tr><th>رقم الشيك</th><th>البنك</th><th>الاستحقاق</th><th>الساحب</th><th>الحالة</th><th style="text-align:left">المبلغ</th></tr></thead><tbody>
+        ${linkedChq.map(c => `<tr><td dir="ltr">${esc(c.cheque_no)}</td><td>${esc(c.bank_name || '')}</td><td>${fmtDate(c.due_date)}</td><td>${esc(c.drawer_name || '')}</td><td>${esc(CHQ_ST[c.status] || c.status)}</td><td class="n">${fmtNum(c.amount)}</td></tr>`).join('')}
+        </tbody><tfoot><tr><td colspan="5"><b>مجموع الشيكات</b></td><td class="n"><b>${fmtNum(linkedChq.reduce((t, c) => t + num(c.amount), 0))}</b></td></tr></tfoot></table>` : ''}
+      ${chqAdd ? `<div class="grid cols-3" style="margin-top:6px"><div class="field"><label>العميل (صاحب الشيكات) *</label><input list="party-list" id="chq-party" placeholder="بينعبّى من أول سطر فيه عميل"></div></div>
+        <datalist id="bank-list">${(S._lk?.rows || []).filter(x => x.kind === 'bank' && x.is_active !== false).map(b => `<option value="${esc(b.name)}">`).join('')}</datalist>
+        <div class="table-wrap"><table class="t lines" id="chq-new"><thead><tr><th>رقم الشيك *</th><th>البنك</th><th>الاستحقاق *</th><th>الساحب</th><th>المجيّر</th><th style="width:130px">المبلغ *</th><th style="width:40px"></th></tr></thead><tbody></tbody>
+        <tfoot><tr><td colspan="5"><button class="btn sm" type="button" id="chq-addrow">➕ شيك</button> <span class="muted" style="font-size:12px">كل شيك بينسجّل بمحفظة الشيكات بقيد استلام لحاله (مدين صندوق الشيكات، دائن العميل) وبينربط بالسند.</span></td><td class="n"><b id="chq-tot"></b></td><td></td></tr></tfoot></table></div>
+        ${readOnly && entry ? '<button class="btn primary sm" type="button" id="chq-save">💾 تسجيل الشيكات</button>' : ''}` : ''}</div>` : ''}`,
     foot: `
       ${!readOnly ? `<button class="btn primary" data-save>💾 حفظ</button>` : ''}
       ${entry?.status === 'posted' && can(T.screen, 'post') && !entry.reversal_of ? `<button class="btn" data-reverse>↩️ قيد عكسي</button>` : ''}
@@ -455,6 +468,53 @@ async function voucherEditor(type, entry, ctx) {
   };
   m.el.querySelector('#add-line')?.addEventListener('click', () => addLine());
 
+  // ---- الشيكات الجديدة بالسند
+  const chqRows = [];
+  const chqTb = m.el.querySelector('#chq-new tbody');
+  const chqDraw = () => {
+    if (!chqTb) return;
+    chqTb.innerHTML = chqRows.map((c, i) => `<tr>
+      <td><input class="cell" dir="ltr" data-ci="${i}" data-ck="cheque_no" value="${esc(c.cheque_no || '')}"></td>
+      <td><input class="cell" list="bank-list" data-ci="${i}" data-ck="bank_name" value="${esc(c.bank_name || '')}"></td>
+      <td><input class="cell" type="date" data-ci="${i}" data-ck="due_date" value="${esc(c.due_date || '')}"></td>
+      <td><input class="cell" data-ci="${i}" data-ck="drawer_name" value="${esc(c.drawer_name || '')}"></td>
+      <td><input class="cell" data-ci="${i}" data-ck="endorser_name" value="${esc(c.endorser_name || '')}"></td>
+      <td><input class="cell n" dir="ltr" inputmode="decimal" data-ci="${i}" data-ck="amount" value="${c.amount || ''}"></td>
+      <td><button class="x" type="button" data-crm="${i}">×</button></td></tr>`).join('') || '<tr><td colspan="7" class="muted" style="font-size:13px">ما في شيكات جديدة.</td></tr>';
+    chqTot();
+  };
+  const chqTot = () => { const el = m.el.querySelector('#chq-tot'); if (el) el.textContent = fmtNum(chqRows.reduce((t, c) => t + num(c.amount), 0)); };
+  const chqPartyGuess = () => { const pi = m.el.querySelector('#chq-party'); if (pi && !pi.value) { const r = rows.find(x => resolveParty(parties, x.party)); if (r) pi.value = r.party; } };
+  if (chqTb) {
+    chqDraw(); chqPartyGuess();
+    if (entry) { const lp = lines.find(l => l.party_id); const pi = m.el.querySelector('#chq-party'); if (lp && pi) pi.value = partyLabel(pById[lp.party_id]); }
+    m.el.querySelector('#chq-addrow').onclick = () => { const last = chqRows.at(-1); chqRows.push({ bank_name: last?.bank_name || '', drawer_name: last?.drawer_name || '' }); chqPartyGuess(); chqDraw(); chqTb.querySelector(`[data-ci="${chqRows.length - 1}"][data-ck="cheque_no"]`)?.focus(); };
+    chqTb.addEventListener('input', (ev) => { const t = ev.target; if (t.dataset.ck) { chqRows[+t.dataset.ci][t.dataset.ck] = t.value; if (t.dataset.ck === 'amount') chqTot(); } });
+    chqTb.addEventListener('click', (ev) => { const b = ev.target.closest('[data-crm]'); if (b) { chqRows.splice(+b.dataset.crm, 1); chqDraw(); } });
+  }
+  const chqCheck = () => {   // بيرجّع {party, rows} أو رسالة خطأ
+    const list = chqRows.filter(c => c.cheque_no || num(c.amount) || c.due_date);
+    if (!list.length) return { rows: [] };
+    for (const [i, c] of list.entries()) {
+      if (!(c.cheque_no || '').trim()) return { err: `الشيك ${i + 1}: رقم الشيك مطلوب` };
+      if (!c.due_date) return { err: `الشيك ${i + 1}: تاريخ الاستحقاق مطلوب` };
+      if (!(num(c.amount) > 0)) return { err: `الشيك ${i + 1}: المبلغ مطلوب` };
+    }
+    const p = resolveParty(parties, m.el.querySelector('#chq-party')?.value || '');
+    if (!p) return { err: 'اختار العميل اللي استلمنا منه الشيكات' };
+    return { party: p, rows: list.map(c => ({ ...c, amount: num(c.amount) })) };
+  };
+  const chqSend = async (entryId, date) => {
+    const ck = chqCheck(); if (!ck.rows.length) return true;
+    const { error } = await sb.rpc('receipt_cheques', { p_company: S.company.id, p_entry: entryId, p_party: ck.party.id, p_date: date, p_rows: ck.rows });
+    if (error) { toast('الشيكات ما انسجّلت: ' + arError(error), 'err'); return false; }
+    toast(`انسجّل ${ck.rows.length} شيك بالمحفظة`, 'ok'); chqRows.length = 0; return true;
+  };
+  m.el.querySelector('#chq-save')?.addEventListener('click', async (ev) => {
+    const ck = chqCheck(); if (ck.err) return toast(ck.err, 'err'); if (!ck.rows.length) return toast('أضف شيك أول', 'err');
+    ev.target.disabled = true; if (await chqSend(entry.id, entry.entry_date)) reopen(entry.id); else ev.target.disabled = false;
+  });
+
   const fxBad = (r) => r.cur && num(r.fxa) && Math.abs(num(r.fxa) * num(r.fxr) - (isCash ? num(r.amount) : num(r.debit) + num(r.credit))) > 0.0015;
   const extra = (r) => ({ cost_center_id: r.cc || null, currency: r.cur || null, fx_rate: r.cur && num(r.fxr) ? num(r.fxr) : null, fx_amount: r.cur && num(r.fxa) ? num(r.fxa) : null });
   const save = async (post) => {
@@ -480,6 +540,13 @@ async function voucherEditor(type, entry, ctx) {
         if (!num(r.debit) && !num(r.credit)) return toast(`السطر ${i + 1}: اكتب مبلغ مدين أو دائن`, 'err');
         out.push({ account_id: a.id, party_id, description: r.desc || null, debit: num(r.debit), credit: num(r.credit), ...extra(r) });
       }
+    }
+    const ckv = type === 'receipt' && chqTb ? chqCheck() : { rows: [] };
+    if (ckv.err) return toast(ckv.err, 'err');
+    if (isCash && !out.length && ckv.rows.length && !entry) {   // شيكات بس، بدون نقد: بتنسجّل بدون سند
+      if (!(await confirmBox(`ما في مبلغ نقدي. نسجّل ${ckv.rows.length} شيك بالمحفظة بدون سند قبض؟`))) return;
+      if (await chqSend(null, h.entry_date)) { m.close(); ctx.rerender(); }
+      return;
     }
     if (isCash) {
       if (!h.cash_account_id) return toast('اختار حساب الصندوق أو البنك', 'err');
@@ -512,6 +579,7 @@ async function voucherEditor(type, entry, ctx) {
       }
       const li = await sb.from('journal_lines').insert(out.map((l, k) => ({ ...l, entry_id: id, line_no: k + 1 })));
       if (li.error) throw li.error;
+      if (ckv.rows.length) await chqSend(id, h.entry_date);
       await log(entry && entry.id === id && !post ? 'حفظ' : 'إضافة', T.screen, id, { no: entry?.entry_no });
       if (post) { const p = await sb.rpc('post_entry', { p_id: id }); if (p.error) { toast(arError(p.error), 'err'); return reopen(id); } toast('انحفظ وانرحّل للمحاسبة', 'ok'); }
       else toast('تم الحفظ', 'ok');
@@ -545,10 +613,11 @@ async function voucherEditor(type, entry, ctx) {
     if (error) return toast(arError(error), 'err');
     toast('تم عمل القيد العكسي وترحيله', 'ok'); m.close(); ctx.rerender();
   });
-  m.el.querySelector('[data-print]')?.addEventListener('click', () => printVoucher(type, entry, lines, byId));
+  m.el.querySelector('[data-print]')?.addEventListener('click', () => printVoucher(type, entry, lines, byId, linkedChq));
 }
 
-function printVoucher(type, e, lines, byId) {
+const CHQ_ST = { portfolio: 'بالمحفظة', deposited: 'مودع', collected: 'محصّل', returned: 'راجع', cancelled: 'ملغى', issued: 'صادر', paid: 'مصروف' };
+function printVoucher(type, e, lines, byId, chq = []) {
   const T = ENTRY_TYPES[type];
   const isCash = type === 'receipt' || type === 'payment';
   const body = isCash ? lines.filter(l => l.line_no !== 1 && !(type === 'receipt' && num(l.debit) > 0)) : lines;
@@ -561,7 +630,11 @@ function printVoucher(type, e, lines, byId) {
     <table class="pt"><thead><tr><th>#</th><th>رقم الحساب</th><th>اسم الحساب</th><th>البيان</th>${isCash ? '<th>المبلغ</th>' : '<th>مدين</th><th>دائن</th>'}</tr></thead><tbody>
       ${body.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(byId[l.account_id]?.code)}</td><td>${esc(byId[l.account_id]?.name)}${l.party_id && S.parties ? ' — ' + esc(S.parties.find(p => p.id === l.party_id)?.name || '') : ''}</td><td>${esc(l.description || '')}</td>
         ${isCash ? `<td class="n">${fmtNum(num(l.debit) + num(l.credit))}</td>` : `<td class="n">${num(l.debit) ? fmtNum(l.debit) : ''}</td><td class="n">${num(l.credit) ? fmtNum(l.credit) : ''}</td>`}</tr>`).join('')}
-      </tbody><tfoot><tr><td colspan="4"><b>المجموع</b> — ${amountToWords(total)}</td>${isCash ? `<td class="n"><b>${fmtNum(total)}</b></td>` : `<td class="n"><b>${fmtNum(total)}</b></td><td class="n"><b>${fmtNum(lines.reduce((s, l) => s + num(l.credit), 0))}</b></td>`}</tr></tfoot></table>`, { kind: type === 'receipt' ? 'receipt' : type === 'payment' ? 'payment' : 'journal', copies: docCopies(e.doc_type_id) });
+      </tbody><tfoot><tr><td colspan="4"><b>المجموع</b> — ${amountToWords(total)}</td>${isCash ? `<td class="n"><b>${fmtNum(total)}</b></td>` : `<td class="n"><b>${fmtNum(total)}</b></td><td class="n"><b>${fmtNum(lines.reduce((s, l) => s + num(l.credit), 0))}</b></td>`}</tr></tfoot></table>
+    ${chq.length ? `<h4 style="margin:12px 0 6px">الشيكات المستلمة</h4><table class="pt"><thead><tr><th>#</th><th>رقم الشيك</th><th>البنك</th><th>الاستحقاق</th><th>المبلغ</th></tr></thead><tbody>
+      ${chq.map((c, i) => `<tr><td>${i + 1}</td><td>${esc(c.cheque_no)}</td><td>${esc(c.bank_name || '')}</td><td>${fmtDate(c.due_date)}</td><td class="n">${fmtNum(c.amount)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="4"><b>مجموع الشيكات</b></td><td class="n"><b>${fmtNum(chq.reduce((t, c) => t + num(c.amount), 0))}</b></td></tr>
+      <tr><td colspan="4"><b>إجمالي المقبوض (نقد + شيكات)</b> — ${amountToWords(total + chq.reduce((t, c) => t + num(c.amount), 0))}</td><td class="n"><b>${fmtNum(total + chq.reduce((t, c) => t + num(c.amount), 0))}</b></td></tr></tfoot></table>` : ''}`, { kind: type === 'receipt' ? 'receipt' : type === 'payment' ? 'payment' : 'journal', copies: docCopies(e.doc_type_id) });
 }
 
 // ---------------------------------------------------------------------
