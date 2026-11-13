@@ -137,8 +137,11 @@ export function arError(err) {
   return m;
 }
 
-export function modal({ title, body, foot = '', size = '' }) {
-  const root = document.getElementById('modal-root');
+export function modal({ title, body, foot = '', size = '', stack = false }) {
+  // stack: نافذة فرعية فوق النافذة المفتوحة (ما بتسكّرها)، وإغلاقها بيشيلها هي بس
+  const root0 = document.getElementById('modal-root');
+  let root = root0;
+  if (stack && root0.firstElementChild) { root = document.createElement('div'); root.className = 'modal-layer'; root0.appendChild(root); }
   root.innerHTML = `
     <div class="modal-back">
       <div class="modal ${size}">
@@ -148,7 +151,7 @@ export function modal({ title, body, foot = '', size = '' }) {
       </div>
     </div>`;
   const back = root.firstElementChild;
-  const close = () => { root.innerHTML = ''; };
+  const close = () => { if (root !== root0) root.remove(); else root.innerHTML = ''; };
   // أي تعديل جوّا نموذج = شغل مش محفوظ؛ الإغلاق (× أو إلغاء أو برّا النافذة) بيسأل أول
   back.addEventListener('input', e => { if (e.target.closest('.modal-body form')) back.dataset.dirty = '1'; }, true);
   back.addEventListener('click', e => {

@@ -407,6 +407,7 @@ async function invoiceEditor(type, inv, ctx) {
       ${inv?.status === 'posted' && !type.endsWith('return') && can(T.screen, 'add') ? `<button class="btn" data-return>↩️ ${type === 'sale' ? 'مرتجع بيع' : 'مرتجع شراء'} منها</button>` : ''}
       ${inv && can(T.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
       ${inv && inv.party_id && isSaleType(type) && inv.status !== 'cancelled' ? '<button class="btn" data-wa>💬 واتساب</button>' : ''}
+      ${inv && type === 'purchase' && inv.payment_type === 'credit' ? '<button class="btn" data-splits>🏭 فواتير الموردين</button>' : ''}
       ${inv ? '<button class="btn" data-attach>📎 مرفقات</button>' : ''}
       ${inv?.status === 'draft' && !inv.stock_posted && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
@@ -628,6 +629,7 @@ async function invoiceEditor(type, inv, ctx) {
     sendWhatsApp({ party_id: p.id, phone: ph, kind: 'invoice', ref_id: inv.id, body });
   });
   m.el.querySelector('[data-attach]')?.addEventListener('click', () => openAttachments('invoice', inv.id, `${T.label} رقم ${docNo(inv)}`));
+  m.el.querySelector('[data-splits]')?.addEventListener('click', () => supplierSplits(inv, myParties));
 }
 let returnPrefill = null;
 // فتح فاتورة جديدة معبّاة من طلب (طلب مبيعات/تزويد)
@@ -801,7 +803,7 @@ export async function priceHistory(p, it, kind, onPick) {
   if (error) return toast(arError(error), 'err');
   const rows = data || [], last = rows[0];
   const nets = rows.map(r => num(r.net_price));
-  const m = modal({ title: `🕘 سجل أسعار ${esc(it.name)} — ${esc(p.name)}`, body: !rows.length ? '<p class="muted">ما في فواتير مرحّلة لهالصنف مع هالطرف.</p>' : `
+  const m = modal({ stack: true, title: `🕘 سجل أسعار ${it.name} — ${p.name}`, body: !rows.length ? '<p class="muted">ما في فواتير مرحّلة لهالصنف مع هالطرف.</p>' : `
     <div class="cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">
       <div class="card" style="padding:8px"><div class="muted" style="font-size:12px">آخر سعر صافي</div><b dir="ltr">${fmtPrice(last.net_price)}</b></div>
       <div class="card" style="padding:8px"><div class="muted" style="font-size:12px">أقل / أعلى</div><b dir="ltr">${fmtPrice(Math.min(...nets))} – ${fmtPrice(Math.max(...nets))}</b></div>
@@ -815,4 +817,49 @@ export async function priceHistory(p, it, kind, onPick) {
     foot: '<button class="btn" data-close>إغلاق</button>' });
   m.el.querySelector('.modal').style.maxWidth = '820px';
   m.el.querySelectorAll('[data-use]').forEach(b => b.onclick = () => { onPick(num(b.dataset.use)); m.close(); });
+}
+
+// فاتورة الشراء على أكثر من مورد (المرحلة 69): حصص موردين ثانيين، والمورد الرئيسي بياخذ الباقي
+async function supplierSplits(inv, parties) {
+  const { data, error } = await sb.from('invoice_party_splits').select('*').eq('invoice_id', inv.id).order('line_no');
+  if (error) return toast(arError(error), 'err');
+  const sup = parties.filter(p => p.party_type === 'supplier' && p.id !== inv.party_id), main = parties.find(p => p.id === inv.party_id);
+  const ed = inv.status === 'draft' && can('purchase_invoices', 'edit');
+  let rows = (data || []).map(x => ({ party: partyLabel(parties.find(p => p.id === x.party_id)), amount: num(x.amount), ref: x.supplier_ref || '' }));
+  if (!rows.length && ed) rows.push({ party: '', amount: 0, ref: '' });
+  const total = num(inv.total);
+  const m = modal({ stack: true, title: `🏭 فواتير الموردين — فاتورة ${docNo(inv)}`, body: `
+    <p class="muted" style="margin:0 0 8px">لما تكون الفاتورة على أكثر من مورد (مثلاً بضاعة + شحن + تخليص): حط حصة كل مورد ثاني، والمورد الرئيسي <b>${esc(main?.name || '')}</b> بياخذ الباقي. القيد بيتوزّع لحاله لما ترحّل الفاتورة.</p>
+    ${inv.status === 'draft' ? '' : '<div class="notice info">الفاتورة مرحّلة — الحصص للعرض بس.</div>'}
+    ${partyDatalist(sup, 'spl-list')}
+    <table class="t lines"><thead><tr><th>#</th><th style="min-width:260px">المورد</th><th>المبلغ</th><th>رقم فاتورة المورد</th><th></th></tr></thead><tbody id="spl"></tbody></table>
+    ${ed ? '<button class="btn sm" id="spl-add" type="button">➕ مورد</button>' : ''}
+    <div class="inv-totals" style="margin-top:10px"><div><span>مجموع الفاتورة</span><b dir="ltr">${fmtNum(total)}</b></div><div><span>حصص الموردين الثانيين</span><b id="spl-sum" dir="ltr"></b></div><div class="big"><span>حصة ${esc(main?.name || 'المورد الرئيسي')}</span><b id="spl-main" dir="ltr"></b></div></div>`,
+    foot: `${ed ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
+  const tb = m.el.querySelector('#spl');
+  const sums = () => { const sm = rows.reduce((a, r) => a + num(r.amount), 0); m.el.querySelector('#spl-sum').textContent = fmtNum(sm);
+    const el = m.el.querySelector('#spl-main'); el.textContent = fmtNum(total - sm); el.style.color = total - sm <= 0 ? 'var(--bad)' : ''; };
+  const draw = () => { tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
+      <td><input class="cell" list="spl-list" data-i="${i}" data-k="party" value="${esc(r.party)}" ${ed ? '' : 'disabled'}></td>
+      <td><input class="cell n" data-i="${i}" data-k="amount" value="${r.amount || ''}" inputmode="decimal" ${ed ? '' : 'disabled'}></td>
+      <td><input class="cell" data-i="${i}" data-k="ref" value="${esc(r.ref)}" ${ed ? '' : 'disabled'}></td>
+      <td>${ed ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">الفاتورة كلها على المورد الرئيسي</td></tr>'; sums(); };
+  draw();
+  tb.addEventListener('input', (e) => { const t = e.target; if (!t.dataset.k) return; rows[+t.dataset.i][t.dataset.k] = t.value; sums(); });
+  tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); draw(); });
+  m.el.querySelector('#spl-add')?.addEventListener('click', () => { rows.push({ party: '', amount: 0, ref: '' }); draw(); });
+  m.el.querySelector('[data-save]')?.addEventListener('click', async () => {
+    const out = []; const seen = new Set();
+    for (const [i, r] of rows.entries()) {
+      if (!r.party && !num(r.amount)) continue;
+      const p = resolveParty(sup, r.party); if (!p) return toast(`السطر ${i + 1}: اختار مورد من القائمة (غير الرئيسي)`, 'err');
+      if (seen.has(p.id)) return toast(`السطر ${i + 1}: المورد مكرر`, 'err'); seen.add(p.id);
+      if (num(r.amount) <= 0) return toast(`السطر ${i + 1}: المبلغ لازم أكبر من صفر`, 'err');
+      out.push({ invoice_id: inv.id, line_no: out.length + 1, party_id: p.id, amount: num(r.amount), supplier_ref: (r.ref || '').trim() || null });
+    }
+    if (out.reduce((a, x) => a + x.amount, 0) >= total - 0.0005) return toast('مجموع الحصص لازم يكون أقل من مجموع الفاتورة', 'err');
+    const d = await sb.from('invoice_party_splits').delete().eq('invoice_id', inv.id); if (d.error) return toast(arError(d.error), 'err');
+    if (out.length) { const ins = await sb.from('invoice_party_splits').insert(out); if (ins.error) return toast(arError(ins.error), 'err'); }
+    toast('انحفظت حصص الموردين', 'ok'); m.close();
+  });
 }

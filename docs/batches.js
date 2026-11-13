@@ -68,7 +68,7 @@ async function viewBatches(v) {
 async function editBatch(id, done) {
   const { data: b, error } = await sb.from('item_batches').select('*').eq('id', id).single();
   if (error) return toast(arError(error), 'err');
-  const m = modal({ title: `✏️ الدفعة ${esc(b.batch_no)}`, body: `<form id="bf"><div class="grid cols-2">
+  const m = modal({ title: `✏️ الدفعة ${b.batch_no}`, body: `<form id="bf"><div class="grid cols-2">
     <div class="field"><label>تاريخ الانتهاء</label><input type="date" name="expiry_date" value="${esc(b.expiry_date || '')}"></div>
     <div class="field"><label>تاريخ الإنتاج</label><input type="date" name="mfg_date" value="${esc(b.mfg_date || '')}"></div>
     <div class="field" style="grid-column:span 2"><label>ملاحظات</label><input name="notes" value="${esc(b.notes || '')}"></div></div></form>`,
@@ -86,7 +86,7 @@ export async function batchHistory(id, itById, whById) {
   if (error) return toast(arError(error), 'err');
   if (!b) return toast('الدفعة مش موجودة', 'err');
   const it = itById[b.item_id]; let run = {};
-  const m = modal({ title: `🧪 سجل الدفعة ${esc(b.batch_no)} — ${esc(it?.name || '')}`, body: `
+  const m = modal({ title: `🧪 سجل الدفعة ${b.batch_no} — ${it?.name || ''}`, body: `
     <p class="muted" style="margin:0 0 8px">تاريخ الانتهاء: <b>${fmtDate(b.expiry_date) || '—'}</b>${b.mfg_date ? ` · الإنتاج: ${fmtDate(b.mfg_date)}` : ''}${b.notes ? ` · ${esc(b.notes)}` : ''}</p>
     <div class="table-wrap"><table class="t"><thead><tr><th>التاريخ</th><th>المستند</th><th>المستودع</th><th style="text-align:left">داخل</th><th style="text-align:left">طالع</th><th style="text-align:left">الرصيد</th></tr></thead><tbody>
     ${(rows || []).map(r => { run[r.warehouse_id] = (run[r.warehouse_id] || 0) + Number(r.qty); const q = Number(r.qty);
