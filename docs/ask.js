@@ -13,7 +13,7 @@ import { printDoc } from './print.js';
 
 const MONTHS = [['كانون الثاني', 'يناير'], ['شباط', 'فبراير'], ['آذار', 'مارس'], ['نيسان', 'أبريل', 'ابريل'], ['أيار', 'مايو'], ['حزيران', 'يونيو'], ['تموز', 'يوليو'], ['آب', 'أغسطس', 'اغسطس'], ['أيلول', 'سبتمبر'], ['تشرين الأول', 'أكتوبر', 'اكتوبر'], ['تشرين الثاني', 'نوفمبر'], ['كانون الأول', 'ديسمبر']];
 const GL = { customer: 'الزبون', item: 'الصنف', item_category: 'فئة الصنف', customer_category: 'فئة الزبون', rep: 'المندوب', department: 'الدائرة', warehouse: 'المستودع', month: 'الشهر', day: 'اليوم', none: '' };
-const SUGGEST = ['شو مبيعاتي هذا الأسبوع؟', 'أعلى 10 أصناف هذا الشهر', 'قارن مبيعات المندوبين هذا الشهر بالشهر الماضي', 'مبيعات فئات الأصناف هذا الشهر', 'مبيعات هذه السنة شهري'];
+const SUGGEST = ['شو مبيعاتي هذا الأسبوع؟', 'أعلى 10 أصناف هذا الشهر', 'قارن مبيعات المندوبين هذا الشهر بالشهر الماضي', 'مبيعات فئات الأصناف هذا الشهر', 'مبيعات هذه السنة شهري', 'مبيعات هذا الشهر حسب العملاء والفئات'];
 const W = (x) => new RegExp(`(?<![\u0600-\u06FF])(?:${x})(?![\u0600-\u06FF])`);
 const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const norm = (t) => String(t || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[ً-ْ]/g, '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).toLowerCase();
@@ -132,16 +132,38 @@ async function viewAsk(v) {
     const T = data.reduce((s, r) => ({ q: s.q + num(r.qty), n: s.n + num(r.net), t: s.t + num(r.tax), c: s.c + num(r.invoices) }), { q: 0, n: 0, t: 0, c: 0 });
     const two = P.groups.length > 1, pv = prev ? Object.fromEntries(prev.map(r => [r.k1 + '|' + r.k2, num(r.net)])) : null;
     const top3 = [...data].sort((a, b) => num(b.net) - num(a.net)).slice(0, 3).map(r => `${esc(r.label1)}${two ? ' / ' + esc(r.label2) : ''} (${fmtNum(r.net)})`).join('، ');
-    const sum = `إجمالي مبيعات ${esc(P.label)}: الكمية <b>${fmtNum(T.q)}</b> والصافي <b>${fmtNum(T.n)}</b> دينار${P.groups[0] !== 'none' ? ` موزّعة على <b>${data.length}</b> ${GL[P.groups[0]]}` : ''}${data.length > 1 && P.groups[0] !== 'none' ? `. الأعلى: ${top3}` : ''}.`
+    const sum = `إجمالي مبيعات ${esc(P.label)}: الكمية <b>${fmtNum(T.q)}</b> والصافي <b>${fmtNum(T.n)}</b> دينار${P.groups[0] !== 'none' ? ` موزّعة على <b>${new Set(data.map(r => r.k1)).size}</b> ${GL[P.groups[0]]}` : ''}${data.length > 1 && P.groups[0] !== 'none' ? `. الأعلى: ${top3}` : ''}.`
       + (pv ? ` الشهر الماضي: <b>${fmtNum(prev.reduce((s, r) => s + num(r.net), 0))}</b>.` : '');
     const head = [GL[P.groups[0]] || 'البيان', ...(two ? [GL[P.groups[1]]] : []), 'الكمية', 'الصافي', 'الضريبة', 'عدد الفواتير', ...(pv ? ['الشهر الماضي', 'الفرق'] : [])];
     const body = data.map((r, i) => [r.label1, ...(two ? [r.label2] : []), num(r.qty), num(r.net), num(r.tax), r.invoices, ...(pv ? [pv[r.k1 + '|' + r.k2] || 0, num(r.net) - (pv[r.k1 + '|' + r.k2] || 0)] : [])]);
     const table = `<table class="t pt rep" id="ans"><thead><tr><th>#</th>${head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>
       ${body.map((r, i) => `<tr><td>${i + 1}</td>${r.map((c, j) => `<td class="${typeof c === 'number' ? 'n' : ''}">${typeof c === 'number' ? (head[j] === 'عدد الفواتير' ? c : fmtNum(c)) : esc(c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${head.length + 1}" class="empty">ما في مبيعات مرحّلة بهالفترة</td></tr>`}</tbody>
       <tfoot><tr class="tot"><td></td><td colspan="${two ? 2 : 1}">الإجمالي</td><td class="n">${fmtNum(T.q)}</td><td class="n">${fmtNum(T.n)}</td><td class="n">${fmtNum(T.t)}</td><td></td>${pv ? `<td class="n">${fmtNum(prev.reduce((s, r) => s + num(r.net), 0))}</td><td></td>` : ''}</tr></tfoot></table>`;
-    out.innerHTML = und + `<div class="asksum">${sum}</div><div style="display:flex;gap:8px;margin-bottom:6px"><button class="btn sm" id="xls">⬇️ Excel</button><button class="btn sm" id="prn">🖨️ طباعة</button></div><div class="card table-wrap">${table}</div>`;
-    out.querySelector('#xls').onclick = () => downloadCSV('اسأل-السمو.csv', [head, ...body]);
-    out.querySelector('#prn').onclick = () => printDoc(question, `<p>${sum}</p>` + table, { subtitle: `${fmtDate(P.from)} - ${fmtDate(P.to)}` });
+    // تجميع بمستويين: عرض مجمّع (عناوين ومجاميع فرعية) أو جدول محوري (المستوى الأول سطور والثاني أعمدة)
+    let grouped = '', pivot = '', pvHead = null, pvBody = null;
+    if (two && !pv) {
+      const g = new Map(); data.forEach(r => { if (!g.has(r.k1)) g.set(r.k1, { key: r.k1, label: r.label1, rows: [] }); g.get(r.k1).rows.push(r); });
+      const gs = [...g.values()].map(x => ({ ...x, q: x.rows.reduce((a, r) => a + num(r.qty), 0), n: x.rows.reduce((a, r) => a + num(r.net), 0) })).sort((a, b) => b.n - a.n);
+      grouped = `<table class="t pt rep"><thead><tr><th>#</th><th>${esc(GL[P.groups[1]])}</th><th>الكمية</th><th>الصافي</th><th>عدد الفواتير</th></tr></thead><tbody>
+        ${gs.map(x => `<tr class="grp"><td colspan="5" style="background:var(--tint);font-weight:700">${esc(GL[P.groups[0]])}: ${esc(x.label)}</td></tr>
+          ${x.rows.sort((a, b) => num(b.net) - num(a.net)).map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.label2)}</td><td class="n">${fmtNum(r.qty)}</td><td class="n">${fmtNum(r.net)}</td><td class="n">${r.invoices}</td></tr>`).join('')}
+          <tr class="tot"><td></td><td>مجموع ${esc(x.label)}</td><td class="n">${fmtNum(x.q)}</td><td class="n">${fmtNum(x.n)}</td><td></td></tr>`).join('')}</tbody>
+        <tfoot><tr class="tot"><td></td><td>الإجمالي</td><td class="n">${fmtNum(T.q)}</td><td class="n">${fmtNum(T.n)}</td><td class="n">${T.c}</td></tr></tfoot></table>`;
+      const cols = [...new Map(data.map(r => [r.k2, r.label2])).entries()].map(([k, l]) => ({ k, l, n: data.filter(r => r.k2 === k).reduce((a, r) => a + num(r.net), 0) })).sort((a, b) => b.n - a.n).slice(0, 30);
+      const cell = Object.fromEntries(data.map(r => [r.k1 + '|' + r.k2, num(r.net)]));
+      pvHead = [GL[P.groups[0]], ...cols.map(c => c.l), 'الإجمالي'];
+      pvBody = gs.map(x => [x.label, ...cols.map(c => cell[x.key + '|' + c.k] || 0), x.n]);
+      pivot = `<table class="t pt rep"><thead><tr><th>#</th>${pvHead.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>
+        ${pvBody.map((r, i) => `<tr><td>${i + 1}</td>${r.map((c, j) => j === 0 ? `<td>${esc(c)}</td>` : `<td class="n">${c ? fmtNum(c) : ''}</td>`).join('')}</tr>`).join('')}</tbody>
+        <tfoot><tr class="tot"><td></td><td>الإجمالي</td>${cols.map(c => `<td class="n">${fmtNum(c.n)}</td>`).join('')}<td class="n">${fmtNum(T.n)}</td></tr></tfoot></table>`;
+    }
+    let mode = grouped ? 'grouped' : 'flat';
+    const curTable = () => mode === 'grouped' ? grouped : mode === 'pivot' ? pivot : table;
+    out.innerHTML = und + `<div class="asksum">${sum}</div><div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><button class="btn sm" id="xls">⬇️ Excel</button><button class="btn sm" id="prn">🖨️ طباعة</button>
+      ${grouped ? `<span class="spacer"></span><div class="tabs" id="vm" style="margin:0"><div class="tab active" data-m="grouped">مجمّع</div><div class="tab" data-m="pivot">جدول محوري</div><div class="tab" data-m="flat">قائمة</div></div>` : ''}</div><div class="card table-wrap" id="ansbox">${curTable()}</div>`;
+    out.querySelector('#vm')?.addEventListener('click', (e) => { const t = e.target.closest('[data-m]'); if (!t) return; mode = t.dataset.m; out.querySelectorAll('#vm .tab').forEach(x => x.classList.toggle('active', x === t)); out.querySelector('#ansbox').innerHTML = curTable(); });
+    out.querySelector('#xls').onclick = () => mode === 'pivot' ? downloadCSV('اسأل-السمو.csv', [pvHead, ...pvBody]) : downloadCSV('اسأل-السمو.csv', [head, ...body]);
+    out.querySelector('#prn').onclick = () => printDoc(question, `<p>${sum}</p>` + curTable(), { subtitle: `${fmtDate(P.from)} - ${fmtDate(P.to)}` });
     const h = v.querySelector('#hist'); h.querySelector('.muted')?.remove(); if (!h.querySelector(`[data-h="${CSS.escape(question)}"]`)) h.insertAdjacentHTML('afterbegin', `<div data-h="${esc(question)}">${esc(question)}</div>`);
   };
   v.querySelector('#go').onclick = () => run(q.value);
