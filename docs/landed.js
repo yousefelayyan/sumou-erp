@@ -3,7 +3,7 @@
 //  مستند بيوزّع مصاريف الشحن والجمارك والتخليص على أصناف فواتير شراء مرحّلة (بالقيمة أو بالكمية).
 //  الكتابة من الدوال بس: landed_save / landed_post / landed_cancel / landed_delete، والمعاينة landed_preview.
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, can } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, can, fmtQty } from './core.js';
 import { loadParties, partyLabel, partyDatalist, resolveParty } from './parties.js';
 import { loadAccounts, accountDatalist, resolveAccount, accLabel } from './finance.js';
 import { loadItems } from './invoices.js';
@@ -101,7 +101,7 @@ async function editor(doc, ctx) {
     const sum = (k) => rows.reduce((s, r) => s + num(r[k]), 0);
     m.el.querySelector('#l-prev').innerHTML = `<h4 style="margin:12px 0 6px">3) التوزيع على الأصناف ${doc?.status === 'posted' ? '(المرحّل)' : '(معاينة)'}</h4>
       <div class="table-wrap"><table class="t"><thead><tr><th>الصنف</th><th style="text-align:left">الكمية المشتراة</th><th style="text-align:left">القيمة</th><th style="text-align:left">نصيبه</th><th style="text-align:left">الكلفة الإضافية للوحدة</th><th style="text-align:left">على المخزون</th><th style="text-align:left">على كلفة المبيعات</th></tr></thead><tbody>
-      ${rows.map(r => `<tr><td>${esc(iById[r.item_id] ? iById[r.item_id].code + ' — ' + iById[r.item_id].name : '')}</td><td class="n">${fmtNum(r.qty)}</td><td class="n">${fmtNum(r.base_value)}</td><td class="n"><b>${fmtNum(r.amount)}</b></td>
+      ${rows.map(r => `<tr><td>${esc(iById[r.item_id] ? iById[r.item_id].code + ' — ' + iById[r.item_id].name : '')}</td><td class="n">${fmtQty(r.qty)}</td><td class="n">${fmtNum(r.base_value)}</td><td class="n"><b>${fmtNum(r.amount)}</b></td>
         <td class="n">${num(r.qty) ? fmtNum(num(r.amount) / num(r.qty)) : ''}</td><td class="n">${fmtNum(r.to_stock)}</td><td class="n">${fmtNum(r.to_cogs)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">ما في أصناف مخزنية بالفواتير المختارة.</td></tr>'}
       </tbody><tfoot><tr><td colspan="3"><b>المجموع</b></td><td class="n"><b>${fmtNum(sum('amount'))}</b></td><td></td><td class="n"><b>${fmtNum(sum('to_stock'))}</b></td><td class="n"><b>${fmtNum(sum('to_cogs'))}</b></td></tr></tfoot></table></div>`;
     return rows;
@@ -157,7 +157,7 @@ async function editor(doc, ctx) {
         <tfoot><tr><td colspan="3"><b>المجموع</b> — ${amountToWords(doc.total)}</td><td class="n"><b>${fmtNum(doc.total)}</b></td></tr></tfoot></table>
       <h4>التوزيع على الأصناف</h4>
       <table class="pt"><thead><tr><th>الصنف</th><th>الكمية</th><th>القيمة</th><th>نصيبه</th><th>للوحدة</th></tr></thead><tbody>
-        ${rows.map(r => `<tr><td>${esc(iById[r.item_id]?.name || '')}</td><td class="n">${fmtNum(r.qty)}</td><td class="n">${fmtNum(r.base_value)}</td><td class="n">${fmtNum(r.amount)}</td><td class="n">${num(r.qty) ? fmtNum(num(r.amount) / num(r.qty)) : ''}</td></tr>`).join('')}</tbody></table>`);
+        ${rows.map(r => `<tr><td>${esc(iById[r.item_id]?.name || '')}</td><td class="n">${fmtQty(r.qty)}</td><td class="n">${fmtNum(r.base_value)}</td><td class="n">${fmtNum(r.amount)}</td><td class="n">${num(r.qty) ? fmtNum(num(r.amount) / num(r.qty)) : ''}</td></tr>`).join('')}</tbody></table>`);
   });
   if (doc) showPreview(doc.id);
 }

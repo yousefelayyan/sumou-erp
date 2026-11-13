@@ -103,7 +103,11 @@ export const ACTIVITY_TYPES = ['تجارية','صناعية','خدمية','مق�
 // ---------------------------------------------------------------------
 export const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-GB') : '';
-export const fmtNum = (n, dec = 3) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+// عدد الخانات العشرية بالعرض (company_settings.decimals)؛ التخزين دايماً 3
+export const DEC = { amount: 3, qty: 3, price: 3 };
+export const fmtNum = (n, dec = DEC.amount) => (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+export const fmtQty = (n) => fmtNum(n, DEC.qty);
+export const fmtPrice = (n) => fmtNum(n, DEC.price);
 export const num = (v) => { const x = parseFloat(String(v ?? '').replace(/,/g, '')); return isFinite(x) ? Math.round(x * 1000) / 1000 : 0; };
 export const today = () => new Date().toISOString().slice(0, 10);
 export const fmtDateTime = (d) => d ? new Date(d).toLocaleString('en-GB', { hour12: false }) : '';
@@ -274,6 +278,8 @@ export async function loadContext() {
 export async function loadFiscalYears() {
   S.fiscalYears = []; S.fy = null;
   if (!S.company) return;
+  { const { data: cs } = await sb.from('company_settings').select('decimals').eq('company_id', S.company.id).maybeSingle();
+    const d = cs?.decimals || {}; ['amount', 'qty', 'price'].forEach(k => { DEC[k] = Number.isInteger(d[k]) && d[k] >= 0 && d[k] <= 3 ? d[k] : 3; }); }
   // السنة «غير المتاحة» اللي بدأ تاريخها بتصير متاحة لحالها
   try { await sb.rpc('fy_release_started', { p_company: S.company.id }); } catch {}
   const { data } = await sb.from('fiscal_years').select('*').eq('company_id', S.company.id).order('start_date', { ascending: false });

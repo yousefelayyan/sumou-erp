@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — قوائم الأسعار (route price-lists): قائمة لكل فئة زبائن (جملة، موزعين…) وسعر كل صنف فيها
 // =====================================================================
-import { S, sb, esc, fmtNum, num, toast, arError, modal, can } from './core.js';
+import { S, sb, esc, fmtNum, num, toast, arError, modal, can, fmtPrice } from './core.js';
 import { loadItems } from './invoices.js';
 
 async function listEditor(list, ctx) {
@@ -18,7 +18,7 @@ async function listEditor(list, ctx) {
       <input id="pl-q" placeholder="بحث بالصنف…" style="flex:1;min-width:160px">
       ${ed ? `<label>تعبئة الكل: سعر البيع ±<input id="pl-pct" dir="ltr" style="width:70px" placeholder="-5">%</label><button class="btn sm" id="pl-fill" type="button">تطبيق</button>` : ''}</div>
     <div class="table-wrap" style="max-height:52vh"><table class="t"><thead><tr><th>الرمز</th><th>الصنف</th><th>سعر البيع العادي</th><th style="width:140px">سعر القائمة</th></tr></thead>
-    <tbody>${items.map(i => `<tr data-row="${esc((i.code + ' ' + i.name).toLowerCase())}"><td>${esc(i.code)}</td><td>${esc(i.name)}</td><td class="n">${fmtNum(i.sale_price)}</td>
+    <tbody>${items.map(i => `<tr data-row="${esc((i.code + ' ' + i.name).toLowerCase())}"><td>${esc(i.code)}</td><td>${esc(i.name)}</td><td class="n">${fmtPrice(i.sale_price)}</td>
       <td><input class="cell n" dir="ltr" inputmode="decimal" data-it="${i.id}" value="${prices[i.id] ?? ''}" ${ed ? '' : 'disabled'}></td></tr>`).join('')}</tbody></table></div>
     <p class="muted" style="font-size:12px">الصنف اللي سعره فاضي بياخذ سعر البيع العادي. القائمة بتنربط بالزبون من بطاقته، والفاتورة بتاخذ السعر لحالها.</p>`,
     foot: `${ed ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${!isNew && can('items', 'delete') ? '<button class="btn danger" data-del>حذف القائمة</button>' : ''}<button class="btn" data-close>إغلاق</button>` });

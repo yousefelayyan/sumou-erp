@@ -2,7 +2,7 @@
 //  السمو ERP — المرحلة 3: التقارير المالية
 // =====================================================================
 import { docNo } from './numbering.js';
-import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, can, isBranchOnly } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, can, isBranchOnly, fmtQty } from './core.js';
 import { loadAccounts, accLabel, CATEGORIES, ENTRY_TYPES, downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
 
@@ -330,7 +330,7 @@ async function viewWhatIf(v) {
       <div style="display:flex;gap:6px;margin:8px 0"><button class="btn sm" id="clr">↺ رجّع الكل</button></div>
       <div class="card table-wrap"><table class="t rep"><thead><tr><th>${DIMS[dim]}</th><th>الكمية</th><th>المبيعات</th><th>الكلفة</th><th>مجمل الربح</th><th>الهامش</th><th style="min-width:170px">التغيير</th><th>أثره على الربح</th></tr></thead><tbody>
       ${list.map(x => { const p = adj[x.k] || 0, m = x.net ? (x.net - x.cost) / x.net * 100 : 0;
-        return `<tr ${p ? 'style="background:var(--tint)"' : ''}><td>${esc(x.label)}</td><td class="n">${fmtNum(x.qty)}</td><td class="n">${fmtNum(x.net)}</td><td class="n">${fmtNum(x.cost)}</td><td class="n">${fmtNum(x.net - x.cost)}</td><td class="n" style="color:${m < 0 ? 'var(--bad)' : ''}">${fmtNum(m)}٪</td>
+        return `<tr ${p ? 'style="background:var(--tint)"' : ''}><td>${esc(x.label)}</td><td class="n">${fmtQty(x.qty)}</td><td class="n">${fmtNum(x.net)}</td><td class="n">${fmtNum(x.cost)}</td><td class="n">${fmtNum(x.net - x.cost)}</td><td class="n" style="color:${m < 0 ? 'var(--bad)' : ''}">${fmtNum(m)}٪</td>
           <td><div style="display:flex;gap:4px;align-items:center"><button class="btn sm ${p === 100 ? 'danger' : ''}" data-stop="${esc(x.k)}">${p === 100 ? '⛔ موقوف' : 'وقف'}</button><input data-pct="${esc(x.k)}" value="${p && p !== 100 ? p : ''}" placeholder="تنقيص ٪" inputmode="decimal" style="width:80px"></div></td>
           <td class="n" style="color:${p ? 'var(--bad)' : ''}">${p ? '-' + fmtNum(p / 100 * (x.net - x.cost)) : ''}</td></tr>`; }).join('') || '<tr><td colspan="8" class="empty">ما في مبيعات مرحّلة بالفترة</td></tr>'}</tbody></table></div>`;
     out.querySelector('#dm').onclick = (e) => { const t = e.target.closest('[data-d]'); if (!t) return; dim = t.dataset.d; adj = {}; draw(); };

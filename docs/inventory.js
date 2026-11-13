@@ -8,7 +8,7 @@ import { attachDocNav, setNavList } from './docnav.js';
 import { deptField, deptValue } from './departments.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, fmtQty, fmtPrice } from './core.js';
 import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadItems } from './invoices.js';
 import { printDoc } from './print.js';
@@ -59,7 +59,7 @@ async function viewStock(v) {
     const tv = rows.reduce((s, r) => s + num(r.value), 0);
     const table = `<table class="t pt rep"><thead><tr><th>الصنف</th><th>المستودع</th><th>الوحدة</th><th>الكمية</th><th>متوسط الكلفة</th><th>القيمة</th><th class="no-print"></th></tr></thead><tbody>
       ${rows.map(r => `<tr><td>${esc(itemLabel(it[r.item_id]))}</td><td>${esc(wn[r.warehouse_id] || '')}</td><td>${esc(it[r.item_id]?.unit || '')}</td>
-        <td class="n" style="${num(r.qty) < 0 ? 'color:var(--bad);font-weight:700' : ''}">${fmtNum(r.qty)}</td><td class="n">${fmtNum(r.avg_cost)}</td><td class="n">${fmtNum(r.value)}</td>
+        <td class="n" style="${num(r.qty) < 0 ? 'color:var(--bad);font-weight:700' : ''}">${fmtQty(r.qty)}</td><td class="n">${fmtNum(r.avg_cost)}</td><td class="n">${fmtNum(r.value)}</td>
         <td class="no-print"><a class="btn sm" href="#/item-card?item=${r.item_id}">بطاقة الصنف</a></td></tr>`).join('') || '<tr><td colspan="7" class="empty">ما في أرصدة مخزون</td></tr>'}</tbody>
       <tfoot><tr class="tot"><td colspan="5">إجمالي قيمة المخزون</td><td class="n">${fmtNum(tv)}</td><td class="no-print"></td></tr></tfoot></table>`;
     v.querySelector('#out').innerHTML = `<div class="card table-wrap" style="margin-top:12px">${table}</div>`;
@@ -98,7 +98,7 @@ async function viewItemCard(v) {
     const table = `<table class="t pt rep"><thead><tr><th>التاريخ</th><th>البيان</th><th>المستودع</th><th>وارد</th><th>صادر</th><th>الرصيد</th><th>الكلفة</th></tr></thead><tbody>
       <tr class="grp"><td>${fmtDate(from)}</td><td colspan="4">رصيد أول المدة</td><td class="n">${fmtNum(ob)}</td><td></td></tr>
       ${mv.map(m => { const q = num(m.qty); bal += q; if (q > 0) tin += q; else tout -= q;
-        return `<tr><td>${fmtDate(m.move_date)}</td><td>${esc(m.description || '')}</td><td>${esc(wn[m.warehouse_id] || '')}</td><td class="n">${q > 0 ? fmtNum(q) : ''}</td><td class="n">${q < 0 ? fmtNum(-q) : ''}</td><td class="n">${fmtNum(bal)}</td><td class="n">${num(m.unit_cost) ? fmtNum(m.unit_cost) : ''}</td></tr>`; }).join('')}</tbody>
+        return `<tr><td>${fmtDate(m.move_date)}</td><td>${esc(m.description || '')}</td><td>${esc(wn[m.warehouse_id] || '')}</td><td class="n">${q > 0 ? fmtNum(q) : ''}</td><td class="n">${q < 0 ? fmtNum(-q) : ''}</td><td class="n">${fmtNum(bal)}</td><td class="n">${num(m.unit_cost) ? fmtPrice(m.unit_cost) : ''}</td></tr>`; }).join('')}</tbody>
       <tfoot><tr class="tot"><td colspan="3">المجموع</td><td class="n">${fmtNum(tin)}</td><td class="n">${fmtNum(tout)}</td><td class="n">${fmtNum(bal)}</td><td></td></tr></tfoot></table>`;
     v.querySelector('#out').innerHTML = `<div class="card table-wrap" style="margin-top:12px">${table}</div>`;
     last = { it, from, to, table };
@@ -181,7 +181,7 @@ async function docEditor(type, doc, whs, ctx) {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="${isCount ? 'counted' : 'qty'}" value="${isCount ? r.counted : (r.qty || '')}" inputmode="decimal" ${ro}></td>
-      ${isCount && doc?.status === 'posted' ? `<td class="n" style="color:${r.qty < 0 ? 'var(--bad)' : 'var(--ok)'}">${r.qty ? fmtNum(r.qty) : '—'}</td>` : ''}
+      ${isCount && doc?.status === 'posted' ? `<td class="n" style="color:${r.qty < 0 ? 'var(--bad)' : 'var(--ok)'}">${r.qty ? fmtQty(r.qty) : '—'}</td>` : ''}
       <td><input class="cell n" data-i="${i}" data-k="cost" value="${r.cost || ''}" inputmode="decimal" ${ro}></td>
       <td>${!readOnly ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('');
   };
@@ -234,7 +234,7 @@ async function docEditor(type, doc, whs, ctx) {
     printDoc(`${D.label} رقم ${docNo(doc)}`, `<table class="meta"><tr><td><b>التاريخ:</b> ${fmtDate(doc.doc_date)}</td><td><b>المستودع:</b> ${esc(wn[doc.warehouse_id] || '')}</td>${type === 'transfer' ? `<td><b>إلى:</b> ${esc(wn[doc.to_warehouse_id] || '')}</td>` : ''}</tr>
       ${doc.notes ? `<tr><td colspan="3"><b>ملاحظات:</b> ${esc(doc.notes)}</td></tr>` : ''}</table>
       <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الصنف</th><th>${isCount ? 'الفعلي' : 'الكمية'}</th>${isCount ? '<th>التسوية</th>' : ''}<th>الكلفة</th></tr></thead><tbody>
-      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itemLabel(byId[l.item_id]))}</td><td class="n">${fmtNum(isCount ? l.counted_qty : l.qty)}</td>${isCount ? `<td class="n">${fmtNum(l.qty)}</td>` : ''}<td class="n">${fmtNum(l.unit_cost)}</td></tr>`).join('')}</tbody></table>
+      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itemLabel(byId[l.item_id]))}</td><td class="n">${fmtQty(isCount ? l.counted_qty : l.qty)}</td>${isCount ? `<td class="n">${fmtQty(l.qty)}</td>` : ''}<td class="n">${fmtPrice(l.unit_cost)}</td></tr>`).join('')}</tbody></table>
 ${isCount && docCommittee(doc.doc_type_id) ? `<div style="margin-top:18px"><b>لجنة الجرد:</b><div class="signs">${docCommittee(doc.doc_type_id).split(/[،,]/).map(x => x.trim()).filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('')}</div></div>` : ''}
 `, { kind: 'stock', copies: docCopies(doc.doc_type_id) });
   });

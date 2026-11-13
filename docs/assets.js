@@ -2,7 +2,7 @@
 //  السمو ERP — حركات الأصول الثابتة: استبعاد/إتلاف، بيع مباشر، نقل بين الدوائر
 //  الكتابة كلها من دوال قاعدة البيانات (asset_mov_*)، والقيد بينعمل لحاله مع الترحيل.
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, fmtPrice } from './core.js';
 import { loadParties, partyLabel } from './parties.js';
 import { loadDepartments, deptName } from './departments.js';
 import { printDoc, amountToWords } from './print.js';
@@ -33,7 +33,7 @@ async function viewAssetMoves(v, ctx) {
     ${rows.map(r => `<tr class="click" data-open="${r.id}"><td><b>${r.mov_no}</b></td><td>${MOV_KINDS[r.kind].i} ${MOV_KINDS[r.kind].l}</td><td>${fmtDate(r.mov_date)}</td>
       <td>${r.kind === 'sale' ? esc(partyLabel(pby[r.party_id])) : r.kind === 'transfer' ? `${esc(deptName(r.from_department_id) || '—')} ← ${esc(deptName(r.to_department_id))}` : esc(r.notes || '')}</td>
       <td class="n">${r.status === 'posted' || r.status === 'cancelled' ? fmtNum(r.total_cost) : ''}</td><td class="n">${r.total_accum ? fmtNum(r.total_accum) : ''}</td>
-      <td class="n">${r.kind === 'sale' ? fmtNum(r.total_price) : ''}</td><td><span class="badge ${ST[r.status][1]}">${ST[r.status][0]}</span></td></tr>`).join('')
+      <td class="n">${r.kind === 'sale' ? fmtPrice(r.total_price) : ''}</td><td><span class="badge ${ST[r.status][1]}">${ST[r.status][0]}</span></td></tr>`).join('')
       || '<tr><td colspan="8" class="empty">ما في حركات</td></tr>'}</tbody></table></div>`;
   v.querySelectorAll('[data-new]').forEach(b => b.onclick = () => openMove(ctx, { kind: b.dataset.new }, assets.data || [], parties, depts));
   v.querySelector('tbody').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) openMove(ctx, mv.data.find(x => x.id === r.dataset.open), assets.data || [], parties, depts); };
@@ -85,12 +85,12 @@ async function openMove(ctx, m, assets, parties, depts) {
       const x = lineVals(l); Object.keys(T).forEach(kk => T[kk] += x[kk]);
       return `<tr><td><b>${esc(x.a.code || '')}</b> ${esc(x.a.name || '')}</td><td>${esc(deptName(l.prev_department_id ?? x.a.department_id) || '—')}</td>
         <td class="n">${fmtNum(x.cost)}</td><td class="n">${fmtNum(x.acc)}</td><td class="n">${fmtNum(x.book)}</td>
-        ${k === 'sale' ? `<td>${editable ? `<input data-pr="${i}" value="${esc(l.sale_price ?? '')}" inputmode="decimal" dir="ltr" style="width:110px">` : `<span class="n">${fmtNum(x.price)}</span>`}</td><td class="n">${fmtNum(x.tax)}</td>
+        ${k === 'sale' ? `<td>${editable ? `<input data-pr="${i}" value="${esc(l.sale_price ?? '')}" inputmode="decimal" dir="ltr" style="width:110px">` : `<span class="n">${fmtPrice(x.price)}</span>`}</td><td class="n">${fmtNum(x.tax)}</td>
           <td class="n" style="color:${x.gl < 0 ? 'var(--bad,#c0392b)' : 'inherit'}">${fmtNum(x.gl)}</td>` : ''}
         ${editable ? `<td><button class="btn sm danger" data-rm="${i}">✕</button></td>` : ''}</tr>`;
     }).join('') || `<tr><td colspan="9" class="empty">أضف أصل واحد على الأقل</td></tr>`;
     tf.innerHTML = lines.length ? `<tr class="tot"><td colspan="2">المجموع</td><td class="n">${fmtNum(T.cost)}</td><td class="n">${fmtNum(T.acc)}</td><td class="n">${fmtNum(T.book)}</td>
-      ${k === 'sale' ? `<td class="n">${fmtNum(T.price)}</td><td class="n">${fmtNum(T.tax)}</td><td class="n">${fmtNum(T.gl)}</td>` : ''}${editable ? '<td></td>' : ''}</tr>` : '';
+      ${k === 'sale' ? `<td class="n">${fmtPrice(T.price)}</td><td class="n">${fmtNum(T.tax)}</td><td class="n">${fmtNum(T.gl)}</td>` : ''}${editable ? '<td></td>' : ''}</tr>` : '';
     const pick = el.querySelector('#pick');
     if (pick) {
       const from = el.querySelector('[name=from_department_id]')?.value;
@@ -134,7 +134,7 @@ async function openMove(ctx, m, assets, parties, depts) {
   });
   el.querySelector('[data-prn]')?.addEventListener('click', () => {
     let tot = 0;
-    const rowsH = lines.map((l, i) => { const x = lineVals(l); tot += x.price + x.tax; return `<tr><td>${i + 1}</td><td>${esc(x.a.code || '')}</td><td>${esc(x.a.name || '')}</td><td class="n">${fmtNum(x.cost)}</td><td class="n">${fmtNum(x.acc)}</td><td class="n">${fmtNum(x.book)}</td>${k === 'sale' ? `<td class="n">${fmtNum(x.price)}</td><td class="n">${fmtNum(x.tax)}</td>` : ''}</tr>`; }).join('');
+    const rowsH = lines.map((l, i) => { const x = lineVals(l); tot += x.price + x.tax; return `<tr><td>${i + 1}</td><td>${esc(x.a.code || '')}</td><td>${esc(x.a.name || '')}</td><td class="n">${fmtNum(x.cost)}</td><td class="n">${fmtNum(x.acc)}</td><td class="n">${fmtNum(x.book)}</td>${k === 'sale' ? `<td class="n">${fmtPrice(x.price)}</td><td class="n">${fmtNum(x.tax)}</td>` : ''}</tr>`; }).join('');
     const info = [`<b>رقم الحركة:</b> ${m.mov_no}`, `<b>التاريخ:</b> ${fmtDate(m.mov_date)}`,
       k === 'sale' ? `<b>الزبون:</b> ${esc(partyLabel(parties.find(p => p.id === m.party_id)))}` : '',
       k === 'transfer' ? `<b>من:</b> ${esc(deptName(m.from_department_id) || '—')} &nbsp; <b>إلى:</b> ${esc(deptName(m.to_department_id))}` : '',

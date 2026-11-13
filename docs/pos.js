@@ -4,7 +4,7 @@
 //  الحفظ = RPC pos_checkout (فاتورة بيع نقدية مرحّلة للمحاسبة والمخزون)،
 //  وبعدها وصل على طابعة الرول (80 أو 58 ملم). فتح درج الكاش من إعداد الطابعة.
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, formData, fmtNum, fmtDateTime, num, localStorageGet, localStorageSet } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, formData, fmtNum, fmtDateTime, num, localStorageGet, localStorageSet, fmtQty, fmtPrice } from './core.js';
 import { loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadWarehouses } from './inventory.js';
 import { posMethods, loadLookups } from './lookups.js';
@@ -120,8 +120,8 @@ async function viewPos(v, ctx) {
   const drawCart = () => {
     const t = totals(cart, cfg, invDisc);
     $('#pos-lines').innerHTML = cart.map((l, k) => `<div class="pos-line ${k === sel ? 'sel' : ''}" data-l="${k}">
-        <div class="pl-name">${esc(l.item.name)}<small>${fmtNum(l.price)} × ${fmtNum(l.qty, l.qty % 1 ? 3 : 0)}${l.discount ? ` − خصم ${fmtNum(l.discount)}` : ''}</small></div>
-        <div class="pl-qty"><button data-m="${k}">－</button><b>${fmtNum(l.qty, l.qty % 1 ? 3 : 0)}</b><button data-p="${k}">＋</button></div>
+        <div class="pl-name">${esc(l.item.name)}<small>${fmtPrice(l.price)} × ${fmtQty(l.qty, l.qty % 1 ? 3 : 0)}${l.discount ? ` − خصم ${fmtNum(l.discount)}` : ''}</small></div>
+        <div class="pl-qty"><button data-m="${k}">－</button><b>${fmtQty(l.qty, l.qty % 1 ? 3 : 0)}</b><button data-p="${k}">＋</button></div>
         <div class="pl-tot">${fmtNum(r3(l.qty * l.price - (l.discount || 0)))}</div></div>`).join('')
       || '<div class="pos-empty">اضغط على صنف عشان ينضاف للفاتورة</div>';
     $('#pos-count').textContent = cart.length ? `${cart.length} صنف` : '';
@@ -290,7 +290,7 @@ function receiptHTML({ sale, paid, change, method, cfg, name }) {
   <div>فاتورة رقم: <b>${esc(sale.doc_code || sale.no)}</b></div><div>${fmtDateTime(sale.created_at || new Date())}</div>
   <div>الكاشير: ${esc(who)}${name ? ` · الزبون: ${esc(name)}` : ''}</div>
   <div class="hr"></div>
-  <table>${lines.map(l => `<tr><td>${esc(l.name)}<br><small>${fmtNum(l.qty, l.qty % 1 ? 3 : 0)} × ${fmtNum(l.price)}${num(l.discount) ? ` − ${fmtNum(l.discount)}` : ''}</small></td>
+  <table>${lines.map(l => `<tr><td>${esc(l.name)}<br><small>${fmtQty(l.qty, l.qty % 1 ? 3 : 0)} × ${fmtPrice(l.price)}${num(l.discount) ? ` − ${fmtNum(l.discount)}` : ''}</small></td>
     <td class="n">${fmtNum(l.total)}</td></tr>`).join('')}</table>
   <div class="hr"></div>
   <table><tr><td>قبل الضريبة</td><td class="n">${fmtNum(sale.subtotal)}</td></tr><tr><td>ضريبة المبيعات</td><td class="n">${fmtNum(sale.tax)}</td></tr>

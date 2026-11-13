@@ -2,7 +2,7 @@ import { attachFollow } from './follow.js';
 // =====================================================================
 //  السمو ERP — طلبات المبيعات والتزويد، العروض الترويجية، بطاقات الولاء، الحقول الإضافية
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, fmtPrice } from './core.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { loadItems, openInvoicePrefill, bilingualDoc } from './invoices.js';
 import { printDoc, amountToWords } from './print.js';
@@ -61,7 +61,7 @@ function printOrder(type, ord, lines, party, items) {
     : `<table class="meta"><tr><td><b>الرقم:</b> ${ord.order_no}</td><td><b>التاريخ:</b> ${fmtDate(ord.order_date)}</td><td>${ord.valid_until ? `<b>صالح لغاية:</b> ${fmtDate(ord.valid_until)}` : ''}</td></tr>
         <tr><td colspan="2"><b>${O.partyLabel}:</b> ${esc(party?.name || ord.party_name || '')}</td><td>${ord.reference ? `<b>المرجع:</b> ${esc(ord.reference)}` : ''}</td></tr>${ord.project ? `<tr><td colspan="3"><b>المشروع:</b> ${esc(ord.project)}</td></tr>` : ''}</table>
       <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الصنف</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>المجموع</th></tr></thead><tbody>
-      ${ls.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itBy[l.item_id]?.code || '')}</td><td>${esc(l.description || '')}${l.details ? `<div style="font-size:.9em;color:#444">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td><td class="n">${fmtNum(l.sub)}</td></tr>`).join('')}</tbody></table>
+      ${ls.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itBy[l.item_id]?.code || '')}</td><td>${esc(l.description || '')}${l.details ? `<div style="font-size:.9em;color:#444">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td><td class="n">${fmtNum(l.sub)}</td></tr>`).join('')}</tbody></table>
       <table class="pt" style="width:45%;margin:10px 0 0 auto;margin-inline-start:auto"><tr><td>قبل الضريبة</td><td class="n">${fmtNum(sub)}</td></tr><tr><td>الضريبة</td><td class="n">${fmtNum(tax)}</td></tr><tr class="tot"><td>الإجمالي</td><td class="n">${fmtNum(sub + tax)}</td></tr></table>
       <div class="amount-box">${amountToWords(sub + tax)}</div>${ord.notes ? `<p><b>ملاحظات:</b> ${esc(ord.notes)}</p>` : ''}`, { kind: 'invoice' });
 }

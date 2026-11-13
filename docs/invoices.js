@@ -11,7 +11,7 @@ import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin, fmtPrice, DEC } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords, loadPrintSettings } from './print.js';
@@ -159,6 +159,9 @@ async function viewSettings(v, ctx) {
       <label class="check"><input type="checkbox" name="block_below_cost" ${st.block_below_cost ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع بسعر أقل من الكلفة (إلا لمين إله صلاحية «تجاوز ضوابط الأسعار»)</label>
       <label class="check"><input type="checkbox" name="block_negative_stock" ${st.block_negative_stock ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع والإخراج بأكثر من الكمية المتوفرة بالمستودع (البيع بالسالب)</label>
       <p class="muted" style="font-size:12px;margin:2px 0 0">الصنف اللي مأشّر عليه «تجاهل تتبع الكمية» بنوع المستند ما بيتفحص.</p>
+      <h3 style="margin:16px 0 6px">🔢 الخانات العشرية بالعرض والطباعة</h3>
+      <div class="grid cols-3" style="max-width:640px">${[['amount', 'المبالغ'], ['qty', 'الكميات'], ['price', 'الأسعار']].map(([k, l]) => `<div class="field"><label>${l}</label><select data-dec="${k}" ${editable ? '' : 'disabled'}>${[0, 1, 2, 3].map(n => `<option value="${n}" ${((st.decimals || {})[k] ?? 3) === n ? 'selected' : ''}>${n} — ${(1234.5678).toLocaleString('en-US', { minimumFractionDigits: n, maximumFractionDigits: n })}</option>`).join('')}</select></div>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">بتأثر على طريقة عرض الأرقام بالشاشات والطباعة بس؛ الحسابات والتخزين بيضلوا بثلاث خانات.</p>
       <h3 style="margin:16px 0 6px">🧾 بيان قيود الشيكات</h3>
       <p class="muted" style="font-size:12px;margin:0 0 6px">اكتب البيان لكل عملية، واستعمل الكلمات: <b>[رقم الشيك]</b> <b>[الطرف]</b> <b>[البنك]</b> <b>[الاستحقاق]</b> <b>[المبلغ]</b> <b>[ملاحظات]</b>. الفاضي بياخذ البيان الافتراضي.</p>
       <div class="grid cols-2">${[['receive', 'استلام شيك وارد'], ['deposit', 'إيداع بالبنك'], ['collect_in', 'تحصيل وارد'], ['return_in', 'إرجاع وارد'], ['undeposit', 'سحب من الإيداع'], ['issue', 'إصدار شيك صادر'], ['collect_out', 'صرف صادر'], ['return_out', 'إرجاع/إلغاء صادر']]
@@ -166,10 +169,12 @@ async function viewSettings(v, ctx) {
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
     d.block_negative_stock = !!d.block_negative_stock; d.block_below_cost = !!d.block_below_cost; d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
+    d.decimals = Object.fromEntries([...v.querySelectorAll('[data-dec]')].map(i => [i.dataset.dec, +i.value]));
     d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
     const { error } = await sb.from('company_settings').upsert(d);
     if (error) return toast(arError(error), 'err');
+    Object.assign(DEC, d.decimals);
     await log('تعديل', 'settings', S.company.id); toast('تم الحفظ', 'ok');
   });
   v.querySelector('#mk-disp')?.addEventListener('click', async () => {
@@ -201,7 +206,7 @@ async function viewItems(v, ctx) {
     const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value, fb = v.querySelector('#fb')?.value || '';
     v.querySelector('#rows').innerHTML = items.filter(i => (!fc || (fc === '-' ? !i.category_id : i.category_id === fc)) && (!fb || (fb === '-' ? !i.brand_id : i.brand_id === fb)) && (!q || [i.code, i.name, i.barcode, i.model].some(x => (x || '').toLowerCase().includes(q)))).map(i => `<tr>
       <td>${esc(i.code)}</td><td><b>${esc(i.name)}</b></td><td>${esc(catById[i.category_id]?.name || '')}</td><td>${esc(brById[i.brand_id]?.name || '')}</td><td>${i.item_type === 'service' ? 'خدمة' : 'سلعة'}</td><td>${esc(i.unit || '')}</td>
-      <td dir="ltr" style="text-align:left">${fmtNum(i.sale_price)}</td><td dir="ltr" style="text-align:left">${fmtNum(i.purchase_price)}</td><td>${num(i.tax_rate)}%</td>
+      <td dir="ltr" style="text-align:left">${fmtPrice(i.sale_price)}</td><td dir="ltr" style="text-align:left">${fmtPrice(i.purchase_price)}</td><td>${num(i.tax_rate)}%</td>
       <td>${i.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
       <td class="actions">${can('items', 'edit') ? `<button class="btn sm" data-edit="${i.id}">تعديل</button>` : ''} ${can('items', 'delete') ? `<button class="btn sm danger" data-del="${i.id}">حذف</button>` : ''}</td></tr>`).join('')
       || '<tr><td colspan="11" class="empty">ما في أصناف. الأصناف اختيارية، بتقدر تكتب بيان السطر بالفاتورة مباشرة.</td></tr>';
@@ -606,7 +611,7 @@ async function printInvoice(type, inv, lines, party, st) {
       ${party?.address || party?.phone ? `<tr><td colspan="3">${esc([party.address, party.city, party.mobile || party.phone].filter(Boolean).join(' — '))}</td></tr>` : ''}
       ${inv.reference ? `<tr><td colspan="3"><b>المرجع:</b> ${esc(inv.reference)}</td></tr>` : ''}</table>
     <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>قبل الضريبة</th><th>ض%</th><th>الضريبة</th><th>الإجمالي</th></tr></thead><tbody>
-      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:90px;max-height:80px;margin-inline-start:6px;object-fit:contain">` : ''}${esc(l.description || '')}${l.details ? `<div style="font-size:11px;color:#555">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
+      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:90px;max-height:80px;margin-inline-start:6px;object-fit:contain">` : ''}${esc(l.description || '')}${l.details ? `<div style="font-size:11px;color:#555">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
         <td class="n">${fmtNum(l.subtotal)}</td><td class="n">${num(l.tax_rate)}%</td><td class="n">${fmtNum(l.tax_amount)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody></table>
     <table class="pt" style="width:45%;margin:10px 0 0 auto;margin-inline-start:auto"><tr><td>المجموع قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr>
       ${num(inv.discount_total) ? `<tr><td>الخصومات</td><td class="n">${fmtNum(inv.discount_total)}</td></tr>` : ''}
@@ -618,7 +623,7 @@ async function printInvoice(type, inv, lines, party, st) {
     <table class="meta"><tr><td><b>رقم:</b> ${esc(docNo(inv))} — ${fmtDate(inv.inv_date)} — ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
       ${party?.name || inv.party_name ? `<tr><td><b>${T.partyLabel}:</b> ${esc(party?.name || inv.party_name)}</td></tr>` : ''}</table>
     <table class="pt" style="margin-top:6px"><thead><tr><th>الصنف</th><th>كمية</th><th>المبلغ</th></tr></thead><tbody>
-      ${lines.map(l => `<tr><td>${esc(l.description || '')}<br><small>${fmtNum(l.unit_price)} × ${num(l.qty)}</small></td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody>
+      ${lines.map(l => `<tr><td>${esc(l.description || '')}<br><small>${fmtPrice(l.unit_price)} × ${num(l.qty)}</small></td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="2">قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr><tr><td colspan="2">الضريبة</td><td class="n">${fmtNum(inv.tax_total)}</td></tr>
       <tr class="tot"><td colspan="2">الإجمالي</td><td class="n">${fmtNum(inv.total)}</td></tr></tfoot></table>
     ${st.invoice_footer ? `<p style="text-align:center">${esc(st.invoice_footer)}</p>` : ''}${stamp}`;
@@ -642,7 +647,7 @@ export function bilingualDoc({ cfg, titleAr, titleEn, no, date, pay, orderNo, pr
   const rows = lines.map((l, i) => { const it = itBy[l.item_id] || {};
     return `<tr><td class="c">${i + 1}</td><td class="c">${esc(it.code || '')}</td>
       <td class="desc">${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:120px;max-height:110px;margin:2px 0 2px 8px;object-fit:contain">` : ''}<b>${esc(l.description || '')}</b>${l.details ? `<div class="det">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td>
-      <td class="c">${esc(it.unit || '')}</td><td class="c">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${fmtNum(num(l.qty) * num(l.unit_price) - num(l.discount))}</td></tr>`; }).join('');
+      <td class="c">${esc(it.unit || '')}</td><td class="c">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${fmtNum(num(l.qty) * num(l.unit_price) - num(l.discount))}</td></tr>`; }).join('');
   const filler = `<tr class="fill"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   const html = `<div class="bl">
     <div class="bl-head">

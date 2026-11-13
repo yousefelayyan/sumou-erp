@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — التصنيع (الوصفات وأوامر الإنتاج)، الصيانة، تنسيق الحقول، تنسيق التقارير (اختيار الأعمدة)
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, localStorageGet, localStorageSet } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, localStorageGet, localStorageSet, fmtQty } from './core.js';
 import { loadItems, openInvoicePrefill } from './invoices.js';
 import { printBarHTML } from './print.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
@@ -26,7 +26,7 @@ async function viewBoms(v) {
     <p class="muted" style="font-size:13px">الوصفة بتقول: عشان تطلّع كمية من المنتج، بدك هالمواد الخام بهالكميات، وكلفة إضافية (عمالة وتشغيل) لكل دفعة.</p>
     <div class="card table-wrap"><table class="t"><thead><tr><th>الرمز</th><th>الوصفة</th><th>المنتج</th><th>بتطلّع</th><th>المواد</th><th>كلفة إضافية</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${rows.map(b => `<tr><td>${esc(b.code)}</td><td><b>${esc(b.name)}</b></td><td>${esc(itById[b.item_id]?.name || '')}</td><td class="n">${fmtNum(b.output_qty)}</td>
-        <td>${(b.bom_lines || []).sort((x, y) => x.line_no - y.line_no).map(l => `${esc(itById[l.item_id]?.name || '')} × ${fmtNum(l.qty)}`).join('، ')}</td><td class="n">${fmtNum(b.extra_cost)}</td>
+        <td>${(b.bom_lines || []).sort((x, y) => x.line_no - y.line_no).map(l => `${esc(itById[l.item_id]?.name || '')} × ${fmtQty(l.qty)}`).join('، ')}</td><td class="n">${fmtNum(b.extra_cost)}</td>
         <td>${b.is_active ? '<span class="badge ok">فعّالة</span>' : '<span class="badge">موقوفة</span>'}</td>
         <td class="actions">${can('manufacturing', 'edit') ? `<button class="btn sm" data-edit="${b.id}">تعديل</button>` : ''}${can('manufacturing', 'delete') ? `<button class="btn sm danger" data-del="${b.id}">حذف</button>` : ''}</td></tr>`).join('')
         || '<tr><td colspan="8" class="empty">ما في وصفات</td></tr>'}</tbody></table></div>

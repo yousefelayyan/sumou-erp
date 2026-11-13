@@ -4,7 +4,7 @@
 //        «مبيعات شهر 6 حسب الفئة والعميل للمندوب عقاب»، «قارن مبيعات المندوبين هذا الشهر بالشهر الماضي»
 //  التحليل بالواجهة (قواعد بسيطة)، والأرقام من الدالة ask_sales.
 // =====================================================================
-import { S, sb, esc, fmtNum, fmtDate, num, today, toast, arError, can } from './core.js';
+import { S, sb, esc, fmtNum, fmtDate, num, today, toast, arError, can, fmtQty } from './core.js';
 import { loadParties } from './parties.js';
 import { loadItems } from './invoices.js';
 import { loadLookups } from './lookups.js';
@@ -146,7 +146,7 @@ async function viewAsk(v) {
       const gs = [...g.values()].map(x => ({ ...x, q: x.rows.reduce((a, r) => a + num(r.qty), 0), n: x.rows.reduce((a, r) => a + num(r.net), 0) })).sort((a, b) => b.n - a.n);
       grouped = `<table class="t pt rep"><thead><tr><th>#</th><th>${esc(GL[P.groups[1]])}</th><th>الكمية</th><th>الصافي</th><th>عدد الفواتير</th></tr></thead><tbody>
         ${gs.map(x => `<tr class="grp"><td colspan="5" style="background:var(--tint);font-weight:700">${esc(GL[P.groups[0]])}: ${esc(x.label)}</td></tr>
-          ${x.rows.sort((a, b) => num(b.net) - num(a.net)).map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.label2)}</td><td class="n">${fmtNum(r.qty)}</td><td class="n">${fmtNum(r.net)}</td><td class="n">${r.invoices}</td></tr>`).join('')}
+          ${x.rows.sort((a, b) => num(b.net) - num(a.net)).map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.label2)}</td><td class="n">${fmtQty(r.qty)}</td><td class="n">${fmtNum(r.net)}</td><td class="n">${r.invoices}</td></tr>`).join('')}
           <tr class="tot"><td></td><td>مجموع ${esc(x.label)}</td><td class="n">${fmtNum(x.q)}</td><td class="n">${fmtNum(x.n)}</td><td></td></tr>`).join('')}</tbody>
         <tfoot><tr class="tot"><td></td><td>الإجمالي</td><td class="n">${fmtNum(T.q)}</td><td class="n">${fmtNum(T.n)}</td><td class="n">${T.c}</td></tr></tfoot></table>`;
       const cols = [...new Map(data.map(r => [r.k2, r.label2])).entries()].map(([k, l]) => ({ k, l, n: data.filter(r => r.k2 === k).reduce((a, r) => a + num(r.net), 0) })).sort((a, b) => b.n - a.n).slice(0, 30);

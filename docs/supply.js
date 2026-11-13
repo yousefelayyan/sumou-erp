@@ -2,7 +2,7 @@
 //  السمو ERP — طلبات التزويد بين المستودعات + حدود الأصناف بالمستودع
 //  الطلب: في الانتظار ← مثبت ← سند إخراج (المصدر) ← سند إدخال (الوجهة) بنفس الكلفة.
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, fmtQty } from './core.js';
 import { loadWarehouses } from './inventory.js';
 import { loadItems } from './invoices.js';
 import { printDoc } from './print.js';
@@ -86,7 +86,7 @@ async function openReq(ctx, r, whs, docs) {
       return `<tr><td>${n + 1}</td><td><b>${esc(it.code || '')}</b> ${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td>
         <td class="n" style="${num(b.src) < num(l.qty) ? 'color:var(--bad,#c0392b);font-weight:700' : ''}">${fmtNum(b.src || 0)}</td><td class="n">${fmtNum(b.dst || 0)}</td>
         <td class="n">${b.min != null ? `${fmtNum(b.min)}${b.max != null ? ' / ' + fmtNum(b.max) : ''}` : '—'}</td>
-        <td>${editable ? `<input data-q="${n}" value="${esc(l.qty ?? '')}" inputmode="decimal" dir="ltr" style="width:90px">${b.min != null && low ? ` <button type="button" class="btn sm" data-tomin="${n}" title="إلى الحد الأدنى">⬆️</button>` : ''}` : `<span class="n">${fmtNum(l.qty)}</span>`}</td>
+        <td>${editable ? `<input data-q="${n}" value="${esc(l.qty ?? '')}" inputmode="decimal" dir="ltr" style="width:90px">${b.min != null && low ? ` <button type="button" class="btn sm" data-tomin="${n}" title="إلى الحد الأدنى">⬆️</button>` : ''}` : `<span class="n">${fmtQty(l.qty)}</span>`}</td>
         <td>${editable ? `<input data-nt="${n}" value="${esc(l.note || '')}">` : esc(l.note || '')}</td>
         ${editable ? `<td><button type="button" class="btn sm danger" data-rm="${n}">✕</button></td>` : ''}</tr>`; }).join('') || '<tr><td colspan="9" class="empty">أضف الأصناف أو استعمل «تعبئة للحد الأدنى»</td></tr>';
   };
@@ -154,7 +154,7 @@ async function openReq(ctx, r, whs, docs) {
   });
   el.querySelector('[data-prn]')?.addEventListener('click', () => {
     const wn = (id) => whs.find(w => w.id === id)?.name || '';
-    const rows = lines.map((l, n) => { const it = iby[l.item_id] || {}; return `<tr><td>${n + 1}</td><td>${esc(it.code || '')}</td><td>${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td><td class="n">${fmtNum(l.qty)}</td><td>${esc(l.note || '')}</td></tr>`; }).join('');
+    const rows = lines.map((l, n) => { const it = iby[l.item_id] || {}; return `<tr><td>${n + 1}</td><td>${esc(it.code || '')}</td><td>${esc(it.name || '')}</td><td>${esc(it.unit || '')}</td><td class="n">${fmtQty(l.qty)}</td><td>${esc(l.note || '')}</td></tr>`; }).join('');
     printDoc(`طلب تزويد رقم ${r.req_no}`, `<p><b>التاريخ:</b> ${fmtDate(r.req_date)} &nbsp;·&nbsp; <b>من:</b> ${esc(wn(r.from_warehouse_id))} &nbsp;·&nbsp; <b>إلى:</b> ${esc(wn(r.to_warehouse_id))}${r.reference ? ` &nbsp;·&nbsp; <b>المرجع:</b> ${esc(r.reference)}` : ''}</p>${r.notes ? `<p>${esc(r.notes)}</p>` : ''}
       <table class="t"><thead><tr><th>#</th><th>الرمز</th><th>الصنف</th><th>الوحدة</th><th>الكمية</th><th>ملاحظة</th></tr></thead><tbody>${rows}</tbody></table>
       <div style="display:flex;justify-content:space-around;margin-top:50px"><div>طالب التزويد: ............</div><div>أمين المستودع: ............</div><div>المستلِم: ............</div></div>`, { subtitle: sg[0] });
