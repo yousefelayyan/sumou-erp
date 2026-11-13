@@ -2,7 +2,7 @@
 //  السمو ERP — تطبيق المندوب (للجوال): العملاء، الزيارات، دفعات العملاء
 //  route: rep  (?t=customers|visits|payments|team)
 // =====================================================================
-import { S, sb, esc, fmtNum, fmtDate, fmtDateTime, num, today, toast, arError, modal, can } from './core.js';
+import { S, sb, esc, fmtNum, fmtDate, fmtDateTime, num, today, toast, arError, modal, can, qm } from './core.js';
 import { loadParties } from './parties.js';
 import { loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadLookups } from './lookups.js';
@@ -19,11 +19,38 @@ const mapLink = (lat, lng) => lat != null ? `https://maps.google.com/?q=${lat},$
 const dur = (a, b) => { const s = Math.max(0, Math.round(((b ? new Date(b) : new Date()) - new Date(a)) / 1000)); return `${String(Math.floor(s / 3600)).padStart(2, '0')}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
 let timer = null;
 
+// ---- طابور بدون إنترنت: العمليات بتنحفظ على الجهاز وبتنبعت لما يرجع النت (offline_sync، كل عملية إلها رقم ما بيتكرر)
+const QK = () => `sumou.repq.${S.company?.id}.${S.session?.user?.id}`;
+const qGet = () => { try { return JSON.parse(localStorage.getItem(QK()) || '[]'); } catch (e) { return []; } };
+const qSet = (a) => { try { localStorage.setItem(QK(), JSON.stringify(a)); } catch (e) { } };
+const newRef = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).replace(/-/g, '').slice(0, 32);
+const netErr = (e) => !navigator.onLine || /fetch|network|load failed|timeout/i.test(String(e?.message || e || ''));
+function qPush(op, p, label) { const a = qGet(); a.push({ ref: newRef(), op, p, label, at: new Date().toISOString() }); qSet(a); }
+let flushing = false;
+export async function flushRepQueue(silent) {
+  if (flushing || !S.company || !navigator.onLine) return 0;
+  const a = qGet(); if (!a.length) return 0;
+  flushing = true; let done = 0; const keep = [];
+  for (const it of a) {
+    const { data, error } = await sb.rpc('offline_sync', { p_company: S.company.id, p_ref: it.ref, p_op: it.op, p: it.p });
+    if (!error) { done++; continue; }
+    if (netErr(error)) { keep.push(it); continue; }
+    keep.push({ ...it, err: arError(error) });
+  }
+  qSet(keep); flushing = false;
+  if (!silent && done) toast(`تمت مزامنة ${done} عملية`, 'ok');
+  return done;
+}
+if (typeof window !== 'undefined' && !window.__repQ) { window.__repQ = 1; window.addEventListener('online', () => flushRepQueue().then(n => { if (n && location.hash.startsWith('#/rep')) window.dispatchEvent(new HashChangeEvent('hashchange')); })); }
+const km = (m) => m == null ? '' : m >= 1000 ? (m / 1000).toFixed(1) + ' كم' : m + ' م';
+const geoBadge = (x) => x.geo_ok === false ? `<span class="badge bad" title="بعيد عن موقع العميل">⚠️ بعيد ${km(x.distance_m)}</span>` : x.geo_ok ? `<span class="badge ok" title="عند العميل">📍 ${km(x.distance_m)}</span>` : '';
+
 async function viewRep(v, ctx) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
   if (!can('rep_visits', 'view')) return void (v.innerHTML = '<div class="notice">ما عندك صلاحية تطبيق المندوب</div>');
   clearInterval(timer);
   const tab = q('t') || 'home';
+  if (navigator.onLine && qGet().length) await flushRepQueue();
   const [parties, openV] = await Promise.all([loadParties(), sb.from('sales_visits').select('*').eq('company_id', S.company.id).eq('user_id', S.session?.user?.id).eq('status', 'open').maybeSingle()]);
   const cust = parties.filter(p => p.party_type === 'customer' && p.is_active), pBy = Object.fromEntries(parties.map(p => [p.id, p]));
   const ov = openV.data;
@@ -36,6 +63,9 @@ async function viewRep(v, ctx) {
     .rep .cc .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.rep .cc .acts .btn{flex:1;min-width:70px}.rep .ctop{display:flex;gap:8px;align-items:center}
     .rep .search{width:100%;font-size:16px;padding:10px 14px;border-radius:12px;margin-bottom:10px}.rep .back{margin-bottom:10px}
     @media(max-width:520px){.rep .tiles{grid-template-columns:repeat(2,1fr)}}</style>`;
+  const pend = qGet();
+  const qBar = pend.length ? `<div class="notice ${pend.some(x => x.err) ? '' : 'info'}" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">📴 ${pend.length} عملية محفوظة على الجهاز بانتظار الإنترنت
+      <button class="btn sm" id="q-sync">🔄 مزامنة الآن</button><button class="btn sm" id="q-show">عرض</button></div>` : (navigator.onLine ? '' : '<div class="notice info">📴 ما في إنترنت — الدفعات وإنهاء الزيارة رح ينحفظوا على الجهاز وينبعتوا لحالهم.</div>');
   const visCard = ov ? `<div class="vis"><div>🟢 زيارة جارية</div><b>${esc(pBy[ov.party_id]?.name || '')}</b><div class="tm" id="tm">${dur(ov.started_at)}</div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn" id="v-pay">💵 دفعة</button><button class="btn" id="v-photo">📷 صور</button><button class="btn danger" id="v-end">⏹ إنهاء الزيارة</button></div></div>` : '';
   let body = '';
@@ -45,6 +75,8 @@ async function viewRep(v, ctx) {
       <a class="tile" href="#/rep?t=customers"><i>👥</i>العملاء</a>
       <a class="tile" href="#/rep?t=visits"><i>📍</i>زياراتي</a>
       <a class="tile" href="#/rep?t=payments"><i>💵</i>دفعات العملاء</a>
+      <a class="tile" href="#/rep?t=map"><i>🗺️</i>خريطة العملاء</a>
+      <a class="tile" href="#/rep?t=km"><i>🚗</i>المسافات والمواصلات</a>
       ${can('sales_orders', 'view') ? '<a class="tile" href="#/orders?t=sales_order"><i>📝</i>طلبات المبيعات</a>' : ''}
       ${can('reports', 'view') || can('customers', 'view') ? '<a class="tile" href="#/party-ledger?type=customer"><i>📄</i>كشف حساب</a>' : ''}
       ${sup ? '<a class="tile" href="#/rep?t=team"><i>🧭</i>فريقي (المشرف)</a>' : ''}</div>`;
@@ -77,6 +109,26 @@ async function viewRep(v, ctx) {
         <tr><td>🔴 متوقف</td><td class="n">${D.stopped || 0}</td><td class="n">${st(D.stopped)}٪</td></tr><tr><td>⚪ لم يشترِ</td><td class="n">${D.never || 0}</td><td class="n">${st(D.never)}٪</td></tr></tbody></table>`)}
       ${sec('t', '🏆 أكثر الزبائن شراء', list(D.top, 'var(--ok)'))}
       ${sec('b', '📉 أقل الزبائن شراء', list(D.bottom, 'var(--bad)'))}`;
+  } else if (tab === 'map') {
+    body = `<a class="btn sm back" href="#/rep">→ رجوع</a> <button class="btn sm" id="mp-me">📍 موقعي</button> <span class="muted" style="font-size:13px">${cust.filter(p => p.geo_lat != null).length} من ${cust.length} عميل إلهم موقع</span>
+      <div id="map" style="height:62vh;border-radius:14px;margin-top:8px;border:1px solid var(--line,#e5e7eb)"></div>
+      ${cust.some(p => p.geo_lat == null) ? `<details class="cc" style="margin-top:8px"><summary style="cursor:pointer;font-weight:700">عملاء بدون موقع (${cust.filter(p => p.geo_lat == null).length})</summary><div class="muted" style="font-size:12px;margin:6px 0">بتقدر تحفظ الموقع من بطاقة العميل، أو أول زيارة بتحفظه إذا الإعداد مفعّل.</div>${cust.filter(p => p.geo_lat == null).slice(0, 200).map(p => `<div>${esc(p.code)} — ${esc(p.name)}</div>`).join('')}</details>` : ''}`;
+  } else if (tab === 'km') {
+    const isD = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x || '');
+    const from = isD(q('from')) ? q('from') : today().slice(0, 8) + '01', to = isD(q('to')) ? q('to') : today();
+    const r = await sb.rpc('rep_km_report', { p_company: S.company.id, p_from: from, p_to: to });
+    const rows = r.data || [];
+    const uids = [...new Set(rows.map(x => x.user_id))];
+    const names = uids.length ? Object.fromEntries(((await sb.rpc('user_names', { p_ids: uids })).data || []).map(u => [u.id, u.name || u.full_name || u.username])) : {};
+    const per = {}; rows.forEach(x => { const o = per[x.user_id] ||= { visits: 0, km: 0, allowance: 0, taxi: 0, parking: 0, far: 0, days: 0 }; o.days++; o.visits += +x.visits; o.km += num(x.km); o.allowance += num(x.allowance); o.taxi += num(x.taxi); o.parking += num(x.parking); o.far += +x.far_visits; });
+    body = `<a class="btn sm back" href="#/rep">→ رجوع</a> ${sup ? '<button class="btn sm" id="geo-set">⚙️ التحقق من الموقع وبدل الكيلو</button>' : ''}
+      <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:10px"><div class="field"><label>من</label><input type="date" id="fr" value="${from}"></div><div class="field"><label>إلى</label><input type="date" id="tt" value="${to}"></div><button class="btn primary" id="go">عرض</button></div>
+      ${r.error ? `<div class="notice">${esc(arError(r.error))}</div>` : ''}
+      <p class="muted" style="font-size:13px">المسافة = مجموع المسافة بخط مستقيم بين مواقع بداية الزيارات بنفس اليوم بالترتيب. البدل = الكيلومترات × سعر الكيلو بالإعداد.</p>
+      <h3>الملخص</h3><div class="card table-wrap"><table class="t"><thead><tr><th>المستخدم</th><th>أيام</th><th>زيارات</th><th>كم</th><th>بدل الكيلو</th><th>تكسي</th><th>مواقف</th><th>المجموع</th><th>زيارات بعيدة</th></tr></thead><tbody>
+      ${Object.entries(per).map(([u, o]) => `<tr><td>${esc(names[u] || '')}</td><td class="n">${o.days}</td><td class="n">${o.visits}</td><td class="n">${o.km.toFixed(2)}</td><td class="n">${fmtNum(o.allowance)}</td><td class="n">${fmtNum(o.taxi)}</td><td class="n">${fmtNum(o.parking)}</td><td class="n"><b>${fmtNum(o.allowance + o.taxi + o.parking)}</b></td><td class="n">${o.far ? `<span class="badge bad">${o.far}</span>` : 0}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">ما في</td></tr>'}</tbody></table></div>
+      <h3>حسب اليوم</h3><div class="card table-wrap"><table class="t"><thead><tr><th>اليوم</th><th>المستخدم</th><th>زيارات</th><th>بموقع</th><th>كم</th><th>البدل</th><th>تكسي + مواقف</th></tr></thead><tbody>
+      ${rows.map(x => `<tr><td>${fmtDate(x.day)}</td><td>${esc(names[x.user_id] || '')}</td><td class="n">${x.visits}</td><td class="n">${x.located}</td><td class="n">${num(x.km).toFixed(2)}</td><td class="n">${fmtNum(x.allowance)}</td><td class="n">${fmtNum(num(x.taxi) + num(x.parking))}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">ما في</td></tr>'}</tbody></table></div>`;
   } else if (tab === 'customers') {
     body = `<a class="btn sm back" href="#/rep">→ رجوع</a><input class="search" id="s" placeholder="🔎 ابحث بالاسم أو الرمز أو الهاتف…"><div id="cl"></div>`;
   } else if (tab === 'visits' || tab === 'team') {
@@ -92,7 +144,7 @@ async function viewRep(v, ctx) {
       <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:10px"><div class="field"><label>من</label><input type="date" id="fr" value="${from}"></div><div class="field"><label>إلى</label><input type="date" id="tt" value="${to}"></div><button class="btn primary" id="go">عرض</button></div>
       ${tab === 'team' ? `<h3>ملخص المندوبين</h3><div class="card table-wrap"><table class="t"><thead><tr><th>المستخدم</th><th>زيارات</th><th>مفتوحة</th><th>الدقائق</th><th>عملاء</th><th>تكسي</th><th>مواقف</th><th>المحصّل</th></tr></thead><tbody>
         ${(rep.data || []).map(r => `<tr><td>${esc(names[r.user_id] || '')}</td><td class="n">${r.visits}</td><td class="n">${r.open_visits ? `<span class="badge ok">${r.open_visits}</span>` : 0}</td><td class="n">${num(r.minutes)}</td><td class="n">${r.customers}</td><td class="n">${fmtNum(r.taxi)}</td><td class="n">${fmtNum(r.parking)}</td><td class="n"><b>${fmtNum(r.payments)}</b></td></tr>`).join('') || '<tr><td colspan="8" class="empty">ما في</td></tr>'}</tbody></table></div><h3>الزيارات</h3>` : ''}
-      ${(vs.data || []).map(x => `<div class="cc"><div class="ctop"><b style="flex:1">${esc(pBy[x.party_id]?.name || '')}</b>${x.status === 'open' ? '<span class="badge ok">جارية</span>' : x.status === 'cancelled' ? '<span class="badge bad">ملغاة</span>' : '<span class="badge">منتهية</span>'}</div>
+      ${(vs.data || []).map(x => `<div class="cc"><div class="ctop"><b style="flex:1">${esc(pBy[x.party_id]?.name || '')}</b>${geoBadge(x)} ${x.status === 'open' ? '<span class="badge ok">جارية</span>' : x.status === 'cancelled' ? '<span class="badge bad">ملغاة</span>' : '<span class="badge">منتهية</span>'}</div>
         <div class="muted" style="font-size:13px">${tab === 'team' ? esc(names[x.user_id] || '') + ' · ' : ''}${fmtDateTime(x.started_at)} · المدة ${dur(x.started_at, x.ended_at)}${num(x.taxi_fee) || num(x.parking_fee) ? ` · مواصلات ${fmtNum(num(x.taxi_fee) + num(x.parking_fee))}` : ''}</div>
         ${x.purpose || x.notes || x.outcome ? `<div style="font-size:13px">${esc([x.purpose, x.outcome, x.notes].filter(Boolean).join(' — '))}</div>` : ''}
         <div class="acts">${x.start_lat != null ? `<a class="btn sm" target="_blank" rel="noopener" href="${mapLink(x.start_lat, x.start_lng)}">📍 موقع البداية</a>` : ''}${x.end_lat != null ? `<a class="btn sm" target="_blank" rel="noopener" href="${mapLink(x.end_lat, x.end_lng)}">📍 موقع النهاية</a>` : ''}
@@ -106,14 +158,23 @@ async function viewRep(v, ctx) {
     body = `<a class="btn sm back" href="#/rep">→ رجوع</a> <button class="btn primary" id="newpay" style="margin-bottom:10px">➕ دفعة جديدة</button>
       ${chqHTML}${(ents.data || []).map(e => `<div class="cc"><div class="ctop"><b style="flex:1">${esc(e.party_name || '')}</b><b>${fmtNum(entAmt(e))}</b></div><div class="muted" style="font-size:13px">${fmtDate(e.entry_date)} · ${esc(e.doc_code || e.entry_no || '')} · ${e.status === 'posted' ? 'مثبت' : 'قيد الانتظار'}</div></div>`).join('') || '<div class="empty">ما في دفعات مسجّلة منك</div>'}`;
   }
-  v.innerHTML = head + `<div class="rep"><div class="page-head"><h2>📱 تطبيق المندوب</h2></div>${visCard}${body}</div>`;
+  v.innerHTML = head + `<div class="rep"><div class="page-head"><h2>📱 تطبيق المندوب</h2></div>${qBar}${visCard}${body}</div>`;
+  v.querySelector('#q-sync')?.addEventListener('click', async () => { if (!navigator.onLine) return toast('لسا ما في إنترنت', 'err'); await flushRepQueue(); ctx.rerender(); });
+  v.querySelector('#q-show')?.addEventListener('click', () => {
+    const m = modal({ title: '📴 عمليات بانتظار الإرسال', body: `<table class="t"><thead><tr><th>الوقت</th><th>العملية</th><th>الحالة</th><th></th></tr></thead><tbody>${qGet().map((x, i) => `<tr><td>${fmtDateTime(x.at)}</td><td>${esc(x.label || x.op)}</td><td>${x.err ? `<span style="color:var(--bad)">${esc(x.err)}</span>` : 'بالانتظار'}</td><td>${x.err ? `<button class="btn sm danger" data-qd="${i}">حذف</button>` : ''}</td></tr>`).join('')}</tbody></table>`, foot: '<button class="btn" data-close>إغلاق</button>' });
+    m.el.querySelectorAll('[data-qd]').forEach(b => b.onclick = () => { if (!confirm('تحذف العملية من الجهاز؟ ما رح تنبعت.')) return; const a = qGet(); a.splice(+b.dataset.qd, 1); qSet(a); m.close(); ctx.rerender(); });
+  });
+  if (tab === 'map') drawMap(v, cust);
+  v.querySelector('#geo-set')?.addEventListener('click', () => geoSettings(ctx));
   if (ov) { timer = setInterval(() => { const t = document.getElementById('tm'); if (!t) return clearInterval(timer); t.textContent = dur(ov.started_at); }, 1000); }
   const startVisit = async (p) => {
     if (ov) return toast('عندك زيارة مفتوحة، أنهيها أول', 'err');
+    if (!navigator.onLine) return toast('بداية الزيارة بدها إنترنت (عشان التحقق من الموقع). الدفعة بتنحفظ على الجهاز.', 'err');
     const g = await geo();
     const { error } = await sb.rpc('visit_start', { p_company: S.company.id, p_party: p.id, p_lat: g?.lat ?? null, p_lng: g?.lng ?? null, p_purpose: null });
     if (error) return toast(arError(error), 'err');
-    toast(g ? 'بلّشت الزيارة' : 'بلّشت الزيارة (بدون موقع)', 'ok'); ctx.rerender();
+    const d = g && p.geo_lat != null ? geoDist(g.lat, g.lng, p.geo_lat, p.geo_lng) : null;
+    toast(!g ? 'بلّشت الزيارة (بدون موقع)' : d != null && d > (p.geo_radius || 300) ? `بلّشت الزيارة — ⚠️ إنت بعيد ${km(d)} عن موقع العميل` : 'بلّشت الزيارة', d != null && d > (p.geo_radius || 300) ? 'err' : 'ok'); ctx.rerender();
   };
   v.querySelector('#v-end')?.addEventListener('click', () => {
     const m = modal({ title: `⏹ إنهاء زيارة: ${pBy[ov.party_id]?.name || ''}`, size: 'sm', body: `<form id="f">
@@ -123,8 +184,11 @@ async function viewRep(v, ctx) {
       foot: '<button class="btn primary" data-ok>⏹ إنهاء</button><button class="btn" data-close>رجوع</button>' });
     m.el.querySelector('[data-ok]').onclick = async () => {
       const f = Object.fromEntries(new FormData(m.el.querySelector('#f'))); const g = await geo();
-      const { error } = await sb.rpc('visit_end', { p_id: ov.id, p_lat: g?.lat ?? null, p_lng: g?.lng ?? null, p_notes: f.notes, p_outcome: f.outcome, p_taxi: num(f.taxi), p_parking: num(f.parking) });
-      if (error) return toast(arError(error), 'err'); toast('انتهت الزيارة', 'ok'); m.close(); ctx.rerender();
+      const P = { visit_id: ov.id, lat: g?.lat ?? null, lng: g?.lng ?? null, notes: f.notes, outcome: f.outcome, taxi: num(f.taxi), parking: num(f.parking), ended_at: new Date().toISOString() };
+      const { error } = navigator.onLine ? await sb.rpc('offline_sync', { p_company: S.company.id, p_ref: newRef(), p_op: 'visit_end', p: P }) : { error: { message: 'offline' } };
+      if (error && !netErr(error)) return toast(arError(error), 'err');
+      if (error) { qPush('visit_end', P, 'إنهاء زيارة: ' + (pBy[ov.party_id]?.name || '')); toast('📴 انحفظ إنهاء الزيارة على الجهاز، وبينبعت لما يرجع النت', 'ok'); m.close(); return ctx.rerender(); }
+      toast('انتهت الزيارة', 'ok'); m.close(); ctx.rerender();
     };
   });
   v.querySelector('#v-photo')?.addEventListener('click', () => openAttachments('visit', ov.id, 'صور الزيارة'));
@@ -144,7 +208,7 @@ async function viewRep(v, ctx) {
   if (cl) {
     const draw = (t = '') => {
       t = t.trim().toLowerCase();
-      cl.innerHTML = cust.filter(p => !t || [p.name, p.code, p.mobile, p.phone].some(x => String(x || '').toLowerCase().includes(t))).slice(0, 80).map(p => `<div class="cc">
+      cl.innerHTML = cust.filter(p => !t || qm([p.name, p.code, p.mobile, p.phone], t)).slice(0, 80).map(p => `<div class="cc">
         <div class="ctop"><b style="flex:1">${esc(p.name)}</b><span class="muted">${esc(p.code)}</span></div><div class="muted" style="font-size:13px">${esc([p.city, p.address].filter(Boolean).join(' - '))}</div>
         <div class="acts"><button class="btn sm primary" data-st="${p.id}">▶ زيارة</button><button class="btn sm" data-pay="${p.id}">💵 دفعة</button>
           ${p.mobile || p.phone ? `<a class="btn sm" href="tel:${esc(p.mobile || p.phone)}">📞</a><a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/${phone962(p.mobile || p.phone)}">💬</a>` : ''}
@@ -215,8 +279,13 @@ async function payForm(ctx, party, visit, cust) {
       p.cheques = chqs.map(c => ({ ...c, amount: num(c.amount) }));
     } else { p.amount = num(f.amount); p.account_id = f.account_id; if (p.amount <= 0) return toast('اكتب المبلغ', 'err'); }
     ev.target.disabled = true;
-    const { data, error } = await sb.rpc('mobile_payment', { p });
+    const { data, error } = navigator.onLine ? await sb.rpc('offline_sync', { p_company: S.company.id, p_ref: newRef(), p_op: 'payment', p }) : { error: { message: 'offline' } };
     ev.target.disabled = false;
+    if (error && netErr(error)) {
+      const pt0 = cust.find(x => x.id === pid);
+      qPush('payment', p, `دفعة ${kind === 'cheques' ? 'شيكات' : kind === 'cash' ? 'نقد' : 'تحويل'} — ${pt0?.name || ''} — ${fmtNum(kind === 'cheques' ? p.cheques.reduce((a, c) => a + c.amount, 0) : p.amount)}`);
+      toast('📴 ما في إنترنت: الدفعة انحفظت على الجهاز وبتنبعت لحالها لما يرجع النت', 'ok'); m.close(); return ctx.rerender();
+    }
     if (error) return toast(arError(error), 'err');
     if (f.invoice_id && data.posted && data.entry_id && kind !== 'cheques') {
       const rem = num(m.el.querySelector(`[name=invoice_id] option[value="${f.invoice_id}"]`)?.dataset.rem);
@@ -239,3 +308,48 @@ async function payForm(ctx, party, visit, cust) {
 }
 
 export const REP_ROUTES = { 'rep': viewRep };
+
+// المسافة بالمتر (نفس حساب قاعدة البيانات)
+function geoDist(a, b, c, d) { const R = 6371000, r = (x) => x * Math.PI / 180; const h = Math.sin(r(c - a) / 2) ** 2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(r(d - b) / 2) ** 2; return Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(h)))); }
+
+// خريطة العملاء (Leaflet + خرائط OpenStreetMap)
+let leafletP = null;
+function loadLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  return leafletP ||= new Promise((res, rej) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; js.onload = () => res(window.L); js.onerror = () => { leafletP = null; rej(new Error('map')); }; document.head.appendChild(js);
+  });
+}
+async function drawMap(v, cust) {
+  const el = v.querySelector('#map'); if (!el) return;
+  let L; try { L = await loadLeaflet(); } catch (e) { el.innerHTML = '<div class="notice" style="margin:10px">ما قدرت أحمّل الخريطة (بدها إنترنت).</div>'; return; }
+  const pts = cust.filter(p => p.geo_lat != null);
+  const map = L.map(el).setView(pts.length ? [+pts[0].geo_lat, +pts[0].geo_lng] : [31.95, 35.91], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+  const b = [];
+  pts.forEach(p => { const ll = [+p.geo_lat, +p.geo_lng]; b.push(ll);
+    L.marker(ll).addTo(map).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.code)}${p.mobile ? '<br>' + esc(p.mobile) : ''}<br><a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${ll[0]},${ll[1]}">🧭 الاتجاهات</a>`); });
+  if (b.length > 1) map.fitBounds(b, { padding: [30, 30] });
+  v.querySelector('#mp-me')?.addEventListener('click', async () => { const g = await geo(); if (!g) return toast('ما قدرت آخذ موقعك', 'err');
+    L.circleMarker([g.lat, g.lng], { radius: 9, color: '#2563eb', fillOpacity: .8 }).addTo(map).bindPopup('موقعي').openPopup(); map.setView([g.lat, g.lng], 14); });
+}
+
+// إعداد التحقق من الموقع وبدل الكيلو (للمشرف)
+async function geoSettings(ctx) {
+  const { data } = await sb.from('company_settings').select('rep_geo').eq('company_id', S.company.id).maybeSingle();
+  const g = data?.rep_geo || {};
+  const m = modal({ title: '⚙️ التحقق من موقع الزيارة وبدل الكيلو', size: 'sm', body: `<form id="f">
+    <div class="field"><label>التحقق لما يبلّش المندوب الزيارة</label><select name="mode">
+      <option value="none" ${!g.mode || g.mode === 'none' ? 'selected' : ''}>بدون تحقق</option><option value="warn" ${g.mode === 'warn' ? 'selected' : ''}>تنبيه وعلامة «بعيد» بس</option><option value="block" ${g.mode === 'block' ? 'selected' : ''}>منع الزيارة إذا بعيد أو بدون موقع</option></select>
+      <span class="hint">المشرف دايماً بيقدر يبلّش، وزيارته بتنعلّم إذا بعيدة.</span></div>
+    <div class="field"><label>نصف القطر المسموح (متر)</label><input name="radius" value="${g.radius || 300}" inputmode="numeric" dir="ltr"><span class="hint">العميل اللي إله نصف قطر ببطاقته بياخذ تبعه.</span></div>
+    <label class="check"><input type="checkbox" name="learn" ${g.learn ? 'checked' : ''}> أول زيارة لعميل بدون موقع بتحفظ موقعه</label>
+    <div class="field"><label>بدل المواصلات لكل كيلو (دينار)</label><input name="km_rate" value="${g.km_rate || 0}" inputmode="decimal" dir="ltr"></div></form>`,
+    foot: '<button class="btn primary" data-ok>💾 حفظ</button><button class="btn" data-close>إلغاء</button>' });
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const f = Object.fromEntries(new FormData(m.el.querySelector('#f')));
+    const { error } = await sb.rpc('rep_geo_save', { p_company: S.company.id, p: { mode: f.mode, radius: parseInt(f.radius) || 300, learn: !!f.learn, km_rate: num(f.km_rate) } });
+    if (error) return toast(arError(error), 'err'); toast('تم الحفظ', 'ok'); m.close(); ctx.rerender();
+  };
+}

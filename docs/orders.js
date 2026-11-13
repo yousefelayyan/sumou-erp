@@ -2,7 +2,7 @@ import { attachFollow } from './follow.js';
 // =====================================================================
 //  السمو ERP — طلبات المبيعات والتزويد، العروض الترويجية، بطاقات الولاء، الحقول الإضافية
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, fmtPrice, fmtQty } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, fmtPrice, fmtQty, qm } from './core.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { loadItems, openInvoicePrefill, bilingualDoc } from './invoices.js';
 import { printDoc, amountToWords } from './print.js';
@@ -40,7 +40,7 @@ async function viewOrders(v, ctx) {
     <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>التاريخ</th><th>${O.partyLabel}</th><th>المرجع</th><th>صالح لغاية</th><th>الإجمالي</th><th>الحالة</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>`;
   const draw = () => {
     const st = v.querySelector('#fs').value, q = v.querySelector('#q').value.trim().toLowerCase();
-    const list = rows.filter(o => (!st || o.status === st) && (!q || [String(o.order_no), o.party_name, pById[o.party_id]?.name, o.reference].some(x => (x || '').toLowerCase().includes(q))));
+    const list = rows.filter(o => (!st || o.status === st) && (!q || qm([String(o.order_no), o.party_name, pById[o.party_id]?.name, o.reference], q)));
     v.querySelector('#tb').innerHTML = list.map(o => `<tr class="clickable" data-open="${o.id}"><td><b>${o.order_no}</b></td><td>${fmtDate(o.order_date)}</td><td>${esc(pById[o.party_id]?.name || o.party_name || '')}</td>
       <td>${esc(o.reference || '')}</td><td>${o.valid_until ? fmtDate(o.valid_until) + (o.status === 'open' && o.valid_until < today() ? ' <span class="badge bad">منتهي</span>' : '') : ''}</td>
       <td class="n">${fmtNum(o.total)}</td><td>${obadge(o.status)}</td><td><button class="btn sm">فتح</button></td></tr>`).join('') || `<tr><td colspan="8" class="empty">ما في ${O.plural}</td></tr>`;
@@ -87,7 +87,8 @@ async function orderEditor(type, ord, ctx) {
     ${ord ? `<div class="ord-strip">${obadge(ord.status)}
       ${inv0 ? `<span class="badge ok">مفوتر</span> <span>فاتورة <b>${esc(inv0.doc_code || String(inv0.inv_no))}</b> بتاريخ ${fmtDate(inv0.inv_date)}</span>` : ''}
       <label class="check" style="margin:0"><input type="checkbox" data-flag="delivered" ${ord.delivered ? 'checked' : ''} ${canFlags ? '' : 'disabled'}> تم التسليم${ord.delivered_date ? ' ' + fmtDate(ord.delivered_date) : ''}</label>
-      <label class="check" style="margin:0"><input type="checkbox" data-flag="closed" ${ord.closed ? 'checked' : ''} ${canFlags ? '' : 'disabled'}> مغلق</label></div>` : ''}
+      <label class="check" style="margin:0"><input type="checkbox" data-flag="closed" ${ord.closed ? 'checked' : ''} ${canFlags ? '' : 'disabled'}> مغلق</label>
+      ${type === 'sales_order' ? '<span id="ord-adv"></span>' : ''}</div>` : ''}
     <form id="o-form"><div class="grid cols-3">
       <div class="field"><label>التاريخ *</label><input type="date" name="order_date" value="${esc(o0.order_date)}" ${ro}></div>
       <div class="field"><label>صالح لغاية</label><input type="date" name="valid_until" value="${esc(o0.valid_until || '')}" ${ro}></div>
@@ -113,6 +114,7 @@ async function orderEditor(type, ord, ctx) {
       ${ord && ord.status === 'open' && !ord.closed && can(INVSCR[O.inv], 'add') ? `<button class="btn" data-conv>🧾 تحويل لفاتورة ${O.inv === 'sale' ? 'بيع' : 'شراء'}</button>` : ''}
       ${ord && ord.status === 'converted' ? '<span class="muted">تحوّل لفاتورة — شوفها من شاشة الفواتير</span>' : ''}
       ${ord && ord.status === 'open' && can(O.screen, 'edit') ? '<button class="btn" data-cancelord>🚫 إلغاء الطلب</button>' : ''}
+      ${ord && type === 'sales_order' && ord.party_id && ord.status !== 'cancelled' && can('receipt_vouchers', 'add') ? '<button class="btn" data-adv>💵 دفعة مقدمة</button>' : ''}
       ${ord && can(O.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
       ${ord && ord.status === 'open' && can(O.screen, 'delete') ? '<button class="btn danger" data-del>حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
@@ -193,6 +195,13 @@ async function orderEditor(type, ord, ctx) {
       const { data } = await sb.from('orders').select('*').eq('id', id).single(); if (data) orderEditor(type, data, ctx);
     } catch (err) { e.target.disabled = false; toast(arError(err), 'err'); }
   });
+  if (ord && type === 'sales_order') sb.rpc('order_advances', { p_company: S.company.id, p_orders: [ord.id] }).then(({ data }) => {
+    const a = (data || [])[0], el = m.el.querySelector('#ord-adv'); if (!a || !el) return;
+    el.innerHTML = `<span class="badge ok">💵 دفعة مقدمة ${fmtNum(a.posted)}</span>${num(a.draft) ? ` <span class="badge warn">مسودة ${fmtNum(a.draft)}</span>` : ''}`; });
+  m.el.querySelector('[data-adv]')?.addEventListener('click', async () => {
+    const { openVoucher } = await import('./finance.js');
+    m.close(); openVoucher('receipt', { party_id: ord.party_id, order_id: ord.id, amount: 0, description: `دفعة مقدمة على طلب مبيعات رقم ${ord.order_no}`, reference: 'طلب ' + ord.order_no }, ctx);
+  });
   m.el.querySelector('[data-conv]')?.addEventListener('click', async () => {
     const { data: cur } = await sb.from('orders').select('status').eq('id', ord.id).single();
     if (cur?.status !== 'open') { toast('الطلب مش مفتوح، يمكن حدا حوّله من قبل', 'err'); m.close(); return ctx.rerender(); }
@@ -226,12 +235,13 @@ async function viewPromotions(v) {
   const scope = (p) => p.item_id ? '🏷️ ' + esc(itById[p.item_id]?.name || '') : p.category_id ? '🗂️ فئة ' + esc(catById[p.category_id]?.name || '') : '🌐 كل الأصناف';
   const live = (p) => p.is_active && p.date_from <= today() && p.date_to >= today();
   const ed = can('marketing', 'edit');
-  v.innerHTML = `<div class="page-head"><h2>📢 العروض الترويجية</h2><div class="spacer"></div>${ed ? '<button class="btn primary" id="add">➕ عرض جديد</button>' : ''}</div>
+  v.innerHTML = `<div class="page-head"><h2>📢 العروض الترويجية</h2><div class="spacer"></div><button class="btn" id="draw">🎟️ سحب كوبونات</button> ${ed ? '<button class="btn primary" id="add">➕ عرض جديد</button>' : ''}</div>
     <p class="muted" style="font-size:13px">العرض بيعطي خصم % أو بونص (اشترِ N خذ M مجاناً) لحاله بفاتورة البيع لما تختار الصنف وتكتب الكمية، إذا تاريخ الفاتورة جوّا فترة العرض والكمية فوق الحد الأدنى. إذا في أكثر من عرض بياخذ الأكبر. للشرائح اعمل أكثر من عرض بأقل كمية مختلفة (مثلاً 10 حبات خصم 5%، و50 حبة خصم 10%).</p>
     <div class="card table-wrap"><table class="t"><thead><tr><th>العرض</th><th>على</th><th>الخصم %</th><th>🎁 بونص</th><th>من</th><th>إلى</th><th>أقل كمية</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${rows.map(p => `<tr><td><b>${esc(p.name)}</b></td><td>${scope(p)}</td><td class="n">${num(p.discount_pct) || ''}</td><td>${num(p.free_qty) ? `اشترِ ${num(p.buy_qty)} خذ ${num(p.free_qty)}${p.free_repeat !== false ? ' (ومضاعفاتها)' : ''}` : ''}</td><td>${fmtDate(p.date_from)}</td><td>${fmtDate(p.date_to)}</td><td class="n">${num(p.min_qty) || ''}</td>
         <td>${live(p) ? '<span class="badge ok">شغّال</span>' : p.date_to < today() ? '<span class="badge">منتهي</span>' : p.is_active ? '<span class="badge warn">لسا ما بلّش</span>' : '<span class="badge">موقوف</span>'}</td>
         <td class="actions">${ed ? `<button class="btn sm" data-edit="${p.id}">تعديل</button><button class="btn sm danger" data-del="${p.id}">حذف</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="9" class="empty">ما في عروض</td></tr>'}</tbody></table></div>`;
+  v.querySelector('#draw').onclick = () => couponDraw();
   const open = (p) => {
     p = p || { name: '', date_from: today(), date_to: today(), discount_pct: 10, min_qty: 0, is_active: true };
     const kind = p.item_id ? 'item' : p.category_id ? 'cat' : 'all';
@@ -295,7 +305,7 @@ async function viewLoyalty(v) {
     if (error) return toast(arError(error), 'err');
     const net = {}, per = {}; (data || []).forEach(i => { const x = (i.inv_type === 'sale' ? 1 : -1) * num(i.subtotal);   // subtotal بعد الخصم أصلاً
       net[i.party_id] = (net[i.party_id] || 0) + x; if (i.inv_date >= from && i.inv_date <= to) per[i.party_id] = (per[i.party_id] || 0) + x; });
-    const list = holders.filter(p => !q || [p.name, p.code, p.loyalty_card_no].some(x => (x || '').toLowerCase().includes(q))).map(p => {
+    const list = holders.filter(p => !q || qm([p.name, p.code, p.loyalty_card_no], q)).map(p => {
       const t = tById[p.loyalty_type_id], pts = Math.floor(Math.max(0, net[p.id] || 0) * num(t?.rate || 0));
       return { p, t, sales: per[p.id] || 0, pts, red: num(p.loyalty_redeemed), bal: pts - num(p.loyalty_redeemed) };
     }).sort((a, b) => b.bal - a.bal);
@@ -487,6 +497,37 @@ async function viewReservations(v, ctx) {
     v.querySelector('#ro').innerHTML = `<div class="card" style="margin-top:10px"><h4 style="margin-top:0">الطلبات اللي حاجزة ${esc(iBy[tr.dataset.it]?.name || '')}</h4><table class="t"><thead><tr><th>رقم الطلب</th><th>التاريخ</th><th>العميل</th><th>صالح لغاية</th><th>الكمية</th></tr></thead><tbody>
       ${list.map(l => `<tr><td><a href="#/orders?t=sales_order">${l.orders.order_no}</a></td><td>${fmtDate(l.orders.order_date)}</td><td>${esc(l.orders.party_name || '')}</td><td>${l.orders.valid_until ? fmtDate(l.orders.valid_until) : ''}</td><td class="n">${fmtQty(l.qty)}</td></tr>`).join('')}</tbody></table></div>`;
   };
+}
+
+// 🎟️ سحب الكوبونات: كوبون لكل X دينار من صافي مشتريات العميل بالفترة، والسحب عشوائي موزون بعدد الكوبونات
+async function couponDraw() {
+  const cats = (await sb.from('party_categories').select('id,name').eq('company_id', S.company.id).eq('party_type', 'customer').order('code')).data || [];
+  const m = modal({ title: '🎟️ سحب كوبونات على العملاء', body: `<div class="grid cols-3">
+    <div class="field"><label>من</label><input type="date" id="cf" value="${today().slice(0, 8)}01"></div><div class="field"><label>إلى</label><input type="date" id="ct" value="${today()}"></div>
+    <div class="field"><label>كوبون لكل (دينار)</label><input id="cp" value="50" inputmode="decimal" dir="ltr"></div>
+    <div class="field"><label>فئة العملاء</label><select id="cc"><option value="">الكل</option>${cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
+    <div class="field"><label>عدد الفائزين</label><input id="cn" value="3" inputmode="numeric" dir="ltr"></div>
+    <div class="field" style="align-self:end"><button class="btn primary" id="cg">🔎 احسب الكوبونات</button></div></div><div id="cr"></div>`,
+    foot: '<button class="btn" id="cs" disabled>🎲 اسحب</button><button class="btn" id="cpr" disabled>🖨️ طباعة</button><button class="btn" data-close>إغلاق</button>' });
+  m.el.querySelector('.modal').style.maxWidth = '860px';
+  let rows = [], winners = [];
+  const draw = () => { const tot = rows.reduce((a, r) => a + r.coupons, 0);
+    m.el.querySelector('#cr').innerHTML = `${winners.length ? `<div class="notice info" style="font-size:16px">🏆 الفائزين: ${winners.map((w, i) => `<b>${i + 1}. ${esc(w.name)}</b>`).join(' — ')}</div>` : ''}
+      <p class="muted">${rows.length} عميل · ${tot} كوبون</p><div class="table-wrap" style="max-height:45vh"><table class="t"><thead><tr><th>#</th><th>العميل</th><th>الموبايل</th><th>صافي المشتريات</th><th>الكوبونات</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr ${winners.includes(r) ? 'style="background:var(--tint)"' : ''}><td>${i + 1}</td><td>${esc(r.code)} — ${esc(r.name)}</td><td dir="ltr">${esc(r.mobile || '')}</td><td class="n">${fmtNum(r.net)}</td><td class="n">${r.coupons}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">ما في عملاء وصلوا الحد</td></tr>'}</tbody></table></div>`;
+    m.el.querySelector('#cs').disabled = !rows.length; m.el.querySelector('#cpr').disabled = !rows.length; };
+  m.el.querySelector('#cg').onclick = async () => {
+    const { data, error } = await sb.rpc('coupon_counts', { p_company: S.company.id, p_from: m.el.querySelector('#cf').value, p_to: m.el.querySelector('#ct').value, p_per: num(m.el.querySelector('#cp').value), p_category: m.el.querySelector('#cc').value || null });
+    if (error) return toast(arError(error), 'err'); rows = (data || []).map(r => ({ ...r, net: num(r.net), coupons: +r.coupons })); winners = []; draw(); };
+  m.el.querySelector('#cs').onclick = () => {
+    const n = Math.max(1, parseInt(m.el.querySelector('#cn').value) || 1); const pool = rows.filter(r => r.coupons > 0); winners = [];
+    const rnd = (max) => { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0] / 4294967296 * max; };
+    while (winners.length < n && pool.length) { const tot = pool.reduce((a, r) => a + r.coupons, 0); let x = rnd(tot), k = 0; while (x >= pool[k].coupons) { x -= pool[k].coupons; k++; } winners.push(pool.splice(k, 1)[0]); }
+    draw(); };
+  m.el.querySelector('#cpr').onclick = () => printDoc('سحب الكوبونات', `<p><b>الفترة:</b> ${fmtDate(m.el.querySelector('#cf').value)} — ${fmtDate(m.el.querySelector('#ct').value)} · <b>كوبون لكل</b> ${fmtNum(num(m.el.querySelector('#cp').value))} دينار · <b>وقت السحب:</b> ${new Date().toLocaleString('en-GB')}</p>
+    ${winners.length ? `<h3>🏆 الفائزين</h3><ol>${winners.map(w => `<li><b>${esc(w.name)}</b> (${esc(w.code)}) — ${w.coupons} كوبون</li>`).join('')}</ol>` : ''}
+    <table class="pt"><thead><tr><th>#</th><th>العميل</th><th>صافي المشتريات</th><th>الكوبونات</th></tr></thead><tbody>${rows.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.code)} — ${esc(r.name)}</td><td class="n">${fmtNum(r.net)}</td><td class="n">${r.coupons}</td></tr>`).join('')}</tbody></table>
+    <div class="signs" style="margin-top:24px"><div>منظّم السحب</div><div>الشاهد</div></div>`, { kind: 'report' });
 }
 
 export const ORDER_ROUTES = { 'reservations': viewReservations, 'orders': viewOrders, 'promotions': viewPromotions, 'loyalty': viewLoyalty, 'loyalty-cashback': viewCashback, 'custom-fields': viewCustomFields };

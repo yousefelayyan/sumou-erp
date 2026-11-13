@@ -2,7 +2,7 @@
 //  السمو ERP — الإشعارات المدينة والدائنة (route notes?type=customer|supplier)
 //  مستند على طرف بحساب مقابل وضريبة؛ الحفظ/الترحيل/الإلغاء/الحذف من الدوال note_save/note_post/note_cancel/note_delete.
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, modal, confirmBox, can, today } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, modal, confirmBox, can, today, qm } from './core.js';
 import { loadParties, partyLabel, partyDatalist, resolveParty } from './parties.js';
 import { loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { deptField, deptValue } from './departments.js';
@@ -35,7 +35,7 @@ async function viewNotes(v, ctx) {
   const draw = () => {
     const k = v.querySelector('#f-k').value, s = v.querySelector('#f-s').value, q = v.querySelector('#f-q').value.trim().toLowerCase();
     const list = (rows || []).filter(n => (!k || n.note_kind === k) && (!s || n.status === s)
-      && (!q || `${pById[n.party_id]?.name || ''} ${n.description || ''} ${n.reference || ''}`.toLowerCase().includes(q)));
+      && (!q || qm(`${pById[n.party_id]?.name || ''} ${n.description || ''} ${n.reference || ''}`, q)));
     const sum = list.filter(n => n.status === 'posted').reduce((a, n) => a + (n.note_kind === 'debit' ? 1 : -1) * num(n.total), 0);
     v.querySelector('#tbl').innerHTML = `<table class="t"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th><th>${D.who}</th><th>البيان</th><th style="text-align:left">المبلغ</th><th style="text-align:left">الضريبة</th><th style="text-align:left">المجموع</th><th>الحالة</th></tr></thead><tbody>
       ${list.map(n => `<tr class="click" data-open="${n.id}"><td><span class="badge ${n.note_kind === 'debit' ? 'warn' : 'ok'}">${D.kinds[n.note_kind][0]}</span></td><td><b>${n.note_no}</b></td><td>${fmtDate(n.note_date)}</td>

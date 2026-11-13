@@ -7,7 +7,7 @@ import { docTypeField, docTypeValue, docCopies, docTypeName, loadDocTypes, docCo
 import { attachDocNav, setNavList } from './docnav.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, qm } from './core.js';
 import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
 import { recurringDialog } from './extras.js';
@@ -126,7 +126,7 @@ async function viewAccounts(v, ctx) {
     const q = v.querySelector('#q').value.trim().toLowerCase();
     let visible;
     if (q) {
-      const match = new Set(accs.filter(a => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)).map(a => a.id));
+      const match = new Set(accs.filter(a => qm([a.code, a.name], q)).map(a => a.id));
       const byId = Object.fromEntries(accs.map(a => [a.id, a]));
       const keep = new Set();
       match.forEach(id => { let a = byId[id]; while (a) { keep.add(a.id); a = byId[a.parent_id]; } });
@@ -273,7 +273,7 @@ function voucherList(type) {
         <tbody id="rows"></tbody></table></div>`;
     const draw = () => {
       const q = v.querySelector('#q').value.trim().toLowerCase(), st = v.querySelector('#st').value;
-      const rows = data.filter(e => (!st || e.status === st) && (!q || [docNo(e), String(e.entry_no), e.description, e.reference, e.party_name].some(x => (x || '').toLowerCase().includes(q))));
+      const rows = data.filter(e => (!st || e.status === st) && (!q || qm([docNo(e), String(e.entry_no), e.description, e.reference, e.party_name], q)));
       v.querySelector('#rows').innerHTML = rows.map(e => `<tr class="click" data-open="${e.id}">
         <td><b dir="ltr">${esc(docNo(e))}</b></td><td>${fmtDate(e.entry_date)}</td>
         ${type !== 'journal' ? `<td>${esc(e.party_name || '')}</td><td>${esc(accName[e.cash_account_id] || '')}</td>` : ''}
@@ -291,7 +291,9 @@ function voucherList(type) {
 // ---------------------------------------------------------------------
 //  محرّر السند
 // ---------------------------------------------------------------------
-async function voucherEditor(type, entry, ctx) {
+// فتح سند جديد معبّى (مثلاً دفعة مقدمة على طلب مبيعات)
+export function openVoucher(type, prefill, ctx) { return voucherEditor(type, null, ctx || { rerender() { } }, prefill); }
+async function voucherEditor(type, entry, ctx, prefill = null) {
   const T = ENTRY_TYPES[type];
   const [accs, parties, ccR, curR, empR] = await Promise.all([loadAccounts(), loadParties(),
     sb.from('cost_centers').select('*').eq('company_id', S.company.id).order('code'), sb.from('currencies').select('*').eq('company_id', S.company.id).order('code'),
@@ -318,7 +320,7 @@ async function voucherEditor(type, entry, ctx) {
   const manual = await isManual(type);
   await loadPosting();
   const byId = Object.fromEntries(accs.map(a => [a.id, a]));
-  const e = entry || { entry_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, description: '', reference: '', party_name: '', cash_account_id: null };
+  const e = entry || { entry_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, description: prefill?.description || '', reference: prefill?.reference || '', party_name: '', cash_account_id: null };
 
   // للقبض والصرف: السطر رقم 1 هو حساب الصندوق/البنك، والباقي سطور مبالغ
   let rows;
@@ -328,6 +330,8 @@ async function voucherEditor(type, entry, ctx) {
   } else {
     rows = lines.map(l => ({ acc: accLabel(byId[l.account_id]), party: sideLabel(l), desc: l.description || '', debit: num(l.debit), credit: num(l.credit), cc: l.cost_center_id || '', cur: l.currency || '', fxa: l.fx_amount ?? '', fxr: l.fx_rate ?? '' }));
   }
+  if (!entry && prefill?.party_id && pById[prefill.party_id]) { const pp = pById[prefill.party_id];
+    rows = [isCash ? { acc: accLabel(byId[pp.account_id]), party: partyLabel(pp), desc: prefill.description || '', amount: num(prefill.amount) } : { acc: accLabel(byId[pp.account_id]), party: partyLabel(pp), desc: prefill.description || '', debit: 0, credit: num(prefill.amount) }]; }
   while (rows.length < (isCash ? 1 : 2)) rows.push(isCash ? { acc: '', desc: '', amount: 0 } : { acc: '', desc: '', debit: 0, credit: 0 });
 
   if (isCash && !entry) e.cash_account_id = (leafAccounts(accs).find(a => a.account_type === 'cash') || leafAccounts(accs).find(a => a.account_type === 'bank'))?.id || null;
@@ -634,7 +638,7 @@ async function voucherEditor(type, entry, ctx) {
         const u = await sb.from('journal_entries').update(header).eq('id', id); if (u.error) throw u.error;
         const d = await sb.from('journal_lines').delete().eq('entry_id', id); if (d.error) throw d.error;
       } else {
-        const ins = await sb.from('journal_entries').insert({ ...header, company_id: S.company.id, fiscal_year_id: S.fy.id, entry_type: type }).select().single();
+        const ins = await sb.from('journal_entries').insert({ ...header, company_id: S.company.id, fiscal_year_id: S.fy.id, entry_type: type, ...(prefill?.order_id ? { order_id: prefill.order_id } : {}) }).select().single();
         if (ins.error) throw ins.error; id = ins.data.id; entry = ins.data;
       }
       const li = await sb.from('journal_lines').insert(out.map((l, k) => ({ ...l, entry_id: id, line_no: k + 1 })));
@@ -862,7 +866,7 @@ async function viewOpening(v, ctx) {
     const q = v.querySelector('#q').value.trim().toLowerCase(), only = v.querySelector('#only').checked;
     v.querySelectorAll('[data-row]').forEach(r => {
       const has = [...r.querySelectorAll('input')].some(i => num(i.value));
-      r.style.display = (!q || (r.dataset.s || '').includes(q)) && (!only || has) ? '' : 'none'; });
+      r.style.display = (!q || qm(r.dataset.s, q)) && (!only || has) ? '' : 'none'; });
   };
   const redrawEmp = () => { const b = v.querySelector('#ob-emp'); if (b) b.innerHTML = empBody(); };
   const refresh = () => { drawAcc(); tot(); };

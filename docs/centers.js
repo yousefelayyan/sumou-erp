@@ -3,7 +3,7 @@
 //  بتحدد فترة، وبيطلعلك لكل حساب/عميل/مورد: رصيد أول المدة، مدين ودائن الفترة، والرصيد آخر المدة.
 //  كبسة على أي سطر بتفتح كشف حسابه تحته (نفس مبدأ كشف الحساب).
 // =====================================================================
-import { S, sb, esc, toast, arError, can, fmtNum, fmtDate, num } from './core.js';
+import { S, sb, esc, toast, arError, can, fmtNum, fmtDate, num, qm, modal } from './core.js';
 import { loadAccounts } from './finance.js';
 import { ENTRY_TYPES } from './finance.js';
 import { loadParties, PARTY } from './parties.js';
@@ -75,11 +75,11 @@ async function draftRows(col, id, to) {
 }
 function tabbed(open, rows, from, to, drafts = null) {
   const kinds = [...new Set(rows.map(m => m.entry_type || 'journal'))];
-  const html = `<div class="stmt-tabs"><button type="button" class="btn sm primary" data-v="sum">📋 ملخص</button><button type="button" class="btn sm" data-v="mov">📄 الحركات</button>
+  const html = `<div class="stmt-tabs"><button type="button" class="btn sm primary" data-v="sum">📋 ملخص</button><button type="button" class="btn sm" data-v="mov">📄 الحركات</button><button type="button" class="btn sm" data-v="chart">📈 رسم</button>
       ${drafts ? '<select data-stat style="width:auto;padding:4px 8px"><option value="posted">مرحّل</option><option value="draft">غير مرحّل</option><option value="all">الجميع</option></select>' : ''}
       <span class="stmt-calc"><b>احتساب:</b> <label><input type="checkbox" data-open checked> الرصيد المدور</label>
       ${kinds.map(k => `<label><input type="checkbox" data-k="${esc(k)}" checked> ${esc(ENTRY_TYPES[k]?.label || k)}</label>`).join('')}</span></div>
-    <div data-p="sum">${summaryHTML(open, rows)}</div><div data-p="mov" hidden>${statementHTML(open, rows, from, to)}</div>`;
+    <div data-p="sum">${summaryHTML(open, rows)}</div><div data-p="mov" hidden>${statementHTML(open, rows, from, to)}</div><div data-p="chart" hidden>${monthChart(open, rows, from, to)}</div>`;
   tabbed.last = { open, rows, from, to, drafts, base: { open, rows } };
   return html;
 }
@@ -105,7 +105,25 @@ function wireTabs(box) {
     const rows = st.rows.filter(m => on.has(m.entry_type || 'journal'));
     box.querySelector('[data-p=sum]').innerHTML = summaryHTML(open, rows);
     box.querySelector('[data-p=mov]').innerHTML = statementHTML(open, rows, st.from, st.to);
+    box.querySelector('[data-p=chart]').innerHTML = monthChart(open, rows, st.from, st.to);
   };
+}
+// رسم شهري: أعمدة مدين/دائن لكل شهر وخط الرصيد آخر كل شهر (SVG بدون مكتبات)
+function monthChart(open, rows, from, to) {
+  const ms = []; for (let d = new Date(from.slice(0, 7) + '-01T00:00:00'); d.toISOString().slice(0, 7) <= to.slice(0, 7) && ms.length < 24; d.setMonth(d.getMonth() + 1)) ms.push(d.toISOString().slice(0, 7));
+  if (!ms.length) return '';
+  const g = Object.fromEntries(ms.map(m => [m, { d: 0, c: 0 }])); rows.forEach(r => { const k = String(r.entry_date).slice(0, 7); if (g[k]) { g[k].d += num(r.debit); g[k].c += num(r.credit); } });
+  let b = open; const bals = ms.map(m => (b += g[m].d - g[m].c));
+  const mx = Math.max(1, ...ms.map(m => Math.max(g[m].d, g[m].c))), bmx = Math.max(1, ...bals.map(Math.abs));
+  const W = 720, H = 240, P = 34, cw = (W - P * 2) / ms.length, y = (x) => H - P - x / mx * (H - P * 2), yb = (x) => H / 2 - x / bmx * (H / 2 - P);
+  const bars = ms.map((m, i) => { const x = P + i * cw; return `<rect x="${x + cw * .12}" y="${y(g[m].d)}" width="${cw * .36}" height="${H - P - y(g[m].d)}" fill="var(--ok,#16a34a)" opacity=".75"><title>${m} مدين ${fmtNum(g[m].d)}</title></rect>
+    <rect x="${x + cw * .52}" y="${y(g[m].c)}" width="${cw * .36}" height="${H - P - y(g[m].c)}" fill="var(--bad,#dc2626)" opacity=".7"><title>${m} دائن ${fmtNum(g[m].c)}</title></rect>
+    <text x="${x + cw / 2}" y="${H - P + 14}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7">${m.slice(5)}/${m.slice(2, 4)}</text>`; }).join('');
+  const line = bals.map((v, i) => `${P + i * cw + cw / 2},${yb(v)}`).join(' ');
+  return `<div style="max-width:760px"><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;direction:ltr">
+    <line x1="${P}" x2="${W - P}" y1="${H - P}" y2="${H - P}" stroke="currentColor" opacity=".2"/>${bars}
+    <polyline points="${line}" fill="none" stroke="var(--brand,#6d28d9)" stroke-width="2.5"/>${bals.map((v, i) => `<circle cx="${P + i * cw + cw / 2}" cy="${yb(v)}" r="3.5" fill="var(--brand,#6d28d9)"><title>${ms[i]} الرصيد ${balTxt(v) || 0}</title></circle>`).join('')}</svg>
+    <div class="muted" style="font-size:12px;display:flex;gap:14px"><span><b style="color:var(--ok,#16a34a)">■</b> مدين الشهر</span><span><b style="color:var(--bad,#dc2626)">■</b> دائن الشهر</span><span><b style="color:var(--brand,#6d28d9)">●</b> الرصيد آخر الشهر</span></div></div>`;
 }
 async function toggleStatement(tr, cols, loader) {
   const nx = tr.nextElementSibling;
@@ -131,12 +149,25 @@ async function viewAccountCenter(v) {
   v.innerHTML = `<div class="page-head"><h2>${CATN[cat] ? '💸 ' + CATN[cat] : '📗 الأستاذ العام للحسابات'}</h2><div class="spacer"></div><span class="muted">${esc(S.company.name)} — ${esc(S.fy.name || S.fy.code)}</span></div>
     ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>`;
   v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>تحت حساب</label><select data-f="par"><option value="">كل الحسابات</option>${groups.map(g => `<option value="${g.id}">${esc(g.code)} — ${esc(g.name)}</option>`).join('')}</select></div>
+    <button class="btn sm" type="button" data-f="exp" title="توسيع الكل">⊞</button><button class="btn sm" type="button" data-f="col" title="طي الكل">⊟</button><button class="btn sm" type="button" data-f="top" title="أكبر الأرصدة">📊</button>
     <div class="field"><label>المستوى</label><select data-f="lvl"><option value="0">كل المستويات</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>`;
   const box = v.querySelector('#pc');
   let out = [];
   const f = wirePeriod(box, () => run());
   f('par').onchange = () => run(); f('lvl').onchange = () => run(); f('moving').onchange = () => run();
   const under = (a, pid) => { for (let x = a; x; x = byId[x.parent_id]) if (x.id === pid) return true; return false; };
+  const shut = new Set(); let last = null;
+  const hidden = (a) => { for (let x = byId[a.parent_id]; x; x = byId[x.parent_id]) if (shut.has(x.id)) return true; return false; };
+  const applyTree = () => v.querySelectorAll('#tb tbody tr[data-acc]').forEach(tr => { const a = byId[tr.dataset.acc]; const h = hidden(a); tr.hidden = h;
+    if (h && tr.nextElementSibling?.classList.contains('stmt-row')) { tr.nextElementSibling.remove(); tr.classList.remove('open'); }
+    const tg = tr.querySelector('[data-tg]'); if (tg) tg.textContent = shut.has(a.id) ? '▸' : '▾'; });
+  f('exp').onclick = () => { shut.clear(); applyTree(); };
+  f('col').onclick = () => { groups.forEach(g => shut.add(g.id)); applyTree(); };
+  f('top').onclick = () => { if (!last) return; const { leaves, t, close } = last;
+    const top = leaves.map(a => ({ a, b: close(a) })).filter(x => Math.abs(x.b) > 0.0005).sort((x, y) => Math.abs(y.b) - Math.abs(x.b)).slice(0, 15);
+    const mx = Math.max(1, ...top.map(x => Math.abs(x.b)));
+    modal({ title: '📊 أكبر الأرصدة آخر المدة', body: top.map(x => `<div style="display:grid;grid-template-columns:220px 1fr 130px;gap:8px;align-items:center;margin:4px 0;font-size:13px"><span>${esc(x.a.code)} — ${esc(x.a.name)}</span>
+      <span style="background:var(--tint,#eee);border-radius:6px;overflow:hidden;height:16px"><span style="display:block;height:100%;width:${Math.abs(x.b) / mx * 100}%;background:${x.b > 0 ? 'var(--ok,#16a34a)' : 'var(--bad,#dc2626)'}"></span></span><span class="n">${bal(x.b)}</span></div>`).join('') || '<div class="empty">ما في أرصدة</div>', foot: '<button class="btn" data-close>إغلاق</button>' }); };
   async function run() {
     const from = f('from').value, to = f('to').value;
     const { data, error } = await sb.rpc('rep_trial_balance', { p_company: S.company.id, p_fy: S.fy.id, p_from: from, p_to: to });
@@ -146,7 +177,7 @@ async function viewAccountCenter(v) {
       const s = t[x.id]; s.o += num(r.open_debit) - num(r.open_credit); s.d += num(r.period_debit); s.c += num(r.period_credit); } });
     const par = f('par').value, lvl = +f('lvl').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
     const list = accs.filter(a => (!par || (a.id !== par && under(a, par))) && (!lvl || (a.level || 1) <= lvl)
-      && (!q || [a.code, a.name].some(x => (x || '').toLowerCase().includes(q)))
+      && (!q || qm([a.code, a.name], q))
       && (!moving || Math.abs(t[a.id].o) > 0.0005 || t[a.id].d || t[a.id].c));
     const leaves = list.filter(a => !a.is_group);
     const sum = (k) => leaves.reduce((s, a) => s + t[a.id][k], 0);
@@ -154,14 +185,17 @@ async function viewAccountCenter(v) {
     const kp = (l, x) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`;
     v.querySelector('#kp').innerHTML = kp('عدد الحسابات', leaves.length) + kp('مجموع مدين الفترة', fmtNum(sum('d'))) + kp('مجموع دائن الفترة', fmtNum(sum('c')))
       + kp('الفرق', fmtNum(Math.abs(sum('d') - sum('c'))));
+    last = { leaves, t, close };
     out = list.map(a => [a.code, a.name, balTxt(t[a.id].o), amt(t[a.id].d), amt(t[a.id].c), balTxt(close(a))]);
     v.querySelector('#tb').innerHTML = `<thead><tr><th>الرمز</th><th>الحساب</th><th>رصيد أول المدة</th><th>مدين الفترة</th><th>دائن الفترة</th><th>الرصيد آخر المدة</th></tr></thead>
       <tbody>${list.map(a => `<tr class="${a.is_group ? 'grp' : 'clickable'}" data-acc="${a.id}"><td dir="ltr" style="text-align:right">${esc(a.code)}</td>
-        <td style="padding-inline-start:${8 + ((a.level || 1) - 1) * 14}px">${a.is_group ? `<b>${esc(a.name)}</b>` : `${esc(a.name)} <span class="muted" style="font-size:11px">▾ كشف</span>`}</td>
+        <td style="padding-inline-start:${8 + ((a.level || 1) - 1) * 14}px">${a.is_group ? `<span data-tg="${a.id}" style="cursor:pointer;display:inline-block;width:16px">▾</span><b>${esc(a.name)}</b>` : `${esc(a.name)} <span class="muted" style="font-size:11px">▾ كشف</span>`}</td>
         <td class="n">${bal(t[a.id].o)}</td><td class="n">${amt(t[a.id].d)}</td><td class="n">${amt(t[a.id].c)}</td><td class="n"><b>${bal(close(a))}</b></td></tr>`).join('')
         || '<tr><td colspan="6" class="empty">ما في حسابات بهالفلتر</td></tr>'}</tbody>`;
+    applyTree();
   }
   v.querySelector('#tb').addEventListener('click', (e) => {
+    const tg = e.target.closest('tr.grp[data-acc]'); if (tg && !e.target.closest('.stmt-row')) { const id = tg.dataset.acc; shut.has(id) ? shut.delete(id) : shut.add(id); return applyTree(); }
     const tr = e.target.closest('tr.clickable[data-acc]'); if (!tr) return;
     const from = f('from').value, to = f('to').value, id = tr.dataset.acc;
     toggleStatement(tr, 6, async () => {
@@ -205,7 +239,7 @@ async function viewPartyCenter(v) {
     const close = (p) => t[p.id].o + t[p.id].d - t[p.id].c;
     const cat = f('cat').value, side = f('side').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
     const list = list0.filter(p => (!cat || (cat === '-' ? !p.category_id : p.category_id === cat))
-      && (!q || [p.code, p.name, p.phone, p.trade_name].some(x => (x || '').toLowerCase().includes(q)))
+      && (!q || qm([p.code, p.name, p.phone, p.trade_name], q))
       && (!moving || Math.abs(t[p.id].o) > 0.0005 || t[p.id].d || t[p.id].c)
       && (!side || (side === 'dr' ? close(p) > 0.0005 : side === 'cr' ? close(p) < -0.0005 : (num(p.credit_limit) > 0 && Math.abs(close(p)) > num(p.credit_limit)))))
       .sort((a, b) => Math.abs(close(b)) - Math.abs(close(a)));
@@ -267,7 +301,7 @@ async function viewEmployeeCenter(v) {
       if (r.period >= fyFrom && r.period < from) s.o += num(l.net);
       else if (r.period >= from && r.period <= to) { K.forEach(k => s[k] += num(l[k])); s.m.push({ ...l, period: r.period }); } });
     const dep = f('dep').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
-    const list = emps.filter(e => (!dep || e.department === dep) && (!q || [e.code, e.name, e.job_title].some(x => (x || '').toLowerCase().includes(q)))
+    const list = emps.filter(e => (!dep || e.department === dep) && (!q || qm([e.code, e.name, e.job_title], q))
       && (!moving || t[e.id].m.length || t[e.id].o));
     const tot = (k) => list.reduce((s, e) => s + t[e.id][k], 0);
     const kp = (l, x) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`;
@@ -320,7 +354,7 @@ async function viewAssetCenter(v) {
       if (l.to_date < from) s.o += num(l.amount); else if (l.to_date <= to) { s.p += num(l.amount); s.m.push(l); } });
     const cat = f('cat').value, q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
     const list = assets.filter(a => a.purchase_date <= to && (!cat || a.category === cat)
-      && (!q || [a.code, a.name, a.serial_no, a.location].some(x => (x || '').toLowerCase().includes(q)))
+      && (!q || qm([a.code, a.name, a.serial_no, a.location], q))
       && (!moving || a.status === 'active' || T[a.id].p));
     const cl = (a) => T[a.id].o + T[a.id].p, sum = (fn) => list.reduce((s, a) => s + fn(a), 0);
     const kp = (l, x) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`;
@@ -371,7 +405,7 @@ async function viewEmployeeTB(v) {
     if (error) return toast(arError(error), 'err');
     const q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
     const rows = (data || []).map(r => ({ ...r, e: eById[r.employee_id], a: byId[r.account_id], o: num(r.open_debit) - num(r.open_credit), d: num(r.period_debit), c: num(r.period_credit) }))
-      .filter(r => r.e && (!q || [r.e.code, r.e.name].some(x => (x || '').toLowerCase().includes(q))) && (!moving || Math.abs(r.o) > 0.0005 || r.d || r.c))
+      .filter(r => r.e && (!q || qm([r.e.code, r.e.name], q)) && (!moving || Math.abs(r.o) > 0.0005 || r.d || r.c))
       .sort((x, y) => String(x.a?.code).localeCompare(String(y.a?.code)) || String(x.e.code).localeCompare(String(y.e.code), 'en', { numeric: true }));
     rowsCache = rows;
     const sum = (k) => rows.reduce((s, r) => s + r[k], 0), close = (r) => r.o + r.d - r.c;

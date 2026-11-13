@@ -40,7 +40,11 @@ export function docTypeValue(form) {
   return { doc_type_id: el.value || null };
 }
 
-function typeForm(kind, row, ctx) {
+const GL_KINDS = ['journal', 'opening', 'receipt', 'payment'];
+async function typeForm(kind, row, ctx) {
+  const gl = GL_KINDS.includes(kind);
+  const accs = gl ? ((await sb.from('accounts').select('id,code,name,is_group').eq('company_id', S.company.id).order('code')).data || []) : [];
+  const allowed = new Set(row?.allowed_accounts || []);
   const r = row || { kind, code: '', name: '', is_active: true, print_copies: 1 };
   const m = modal({ title: row ? `نوع سند: ${esc(r.name)}` : `➕ نوع جديد — ${KL[kind]}`, body: `<form class="grid cols-2">
     <div class="field"><label>الرمز</label><input name="code" value="${esc(r.code)}" required maxlength="10"></div>
@@ -54,10 +58,16 @@ function typeForm(kind, row, ctx) {
     <div class="field"><label><input type="checkbox" name="date_today" ${r.date_today ? 'checked' : ''}> التاريخ لازم يكون تاريخ اليوم</label></div>
     <div class="field"><label><input type="checkbox" name="lock_dept" ${r.lock_dept ? 'checked' : ''}> الدائرة مقفولة على دائرة المستخدم</label></div>
     ${kind === 'stock_count' ? `<div class="field" style="grid-column:1/-1"><label>لجنة الجرد (الأسماء، بتنطبع بالتواقيع)</label><input name="committee" value="${esc(r.committee || '')}" placeholder="مثلاً: أحمد، سارة، محمود"></div>` : ''}
+    ${gl ? `<div class="field"><label><input type="checkbox" name="require_attach" ${r.require_attach ? 'checked' : ''}> 📎 ما بيترحّل بدون مرفق</label></div>
+    <div class="field"><label><input type="checkbox" name="require_party" ${r.require_party ? 'checked' : ''}> حساب الذمم بدّه عميل/مورد على السطر</label></div>
+    <div class="field" style="grid-column:1/-1"><label>الحسابات المسموحة بهالنوع (فاضي = كل الحسابات؛ الحساب الرئيسي بيشمل فروعه)</label>
+      <input id="acc-q" placeholder="🔍 بحث…" style="margin-bottom:4px"><div id="acc-box" style="max-height:170px;overflow:auto;border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:6px;font-size:13px">
+      ${accs.map(a => `<label style="display:flex;gap:6px;align-items:center;margin:2px 0;font-weight:${a.is_group ? 700 : 400}" data-acc="${esc(a.code + ' ' + a.name)}"><input type="checkbox" style="width:auto;margin:0" value="${a.id}" ${allowed.has(a.id) ? 'checked' : ''}> ${esc(a.code)} — ${esc(a.name)}</label>`).join('')}</div></div>` : ''}
     <div class="field" style="grid-column:1/-1"><label>ملاحظات</label><input name="notes" value="${esc(r.notes || '')}"></div></form>
     <p class="muted" style="font-size:12px">القيود (التاريخ، مدة التعديل، الدائرة) ما بتنطبق على المدير ولا على مين إله صلاحية تعديل «أنواع السندات».</p>`,
     foot: `<button class="btn primary" data-save>💾 حفظ</button>${row ? '<button class="btn danger" data-del>حذف</button>' : ''}<button class="btn" data-close>إلغاء</button>` });
   const f = m.el.querySelector('form');
+  m.el.querySelector('#acc-q')?.addEventListener('input', (e) => { const q = e.target.value.trim(); m.el.querySelectorAll('#acc-box [data-acc]').forEach(l => l.hidden = !!q && !l.dataset.acc.includes(q)); });
   m.el.querySelector('[data-save]').onclick = async () => {
     if (!f.reportValidity()) return;
     const d = formData(f);
@@ -65,7 +75,8 @@ function typeForm(kind, row, ctx) {
     const rec = { company_id: S.company.id, kind, code: d.code.trim(), name: d.name.trim(), notes: d.notes || null,
       is_default: f.is_default.checked, is_active: f.is_active.checked, own_seq: f.own_seq.checked, prefix: d.prefix || null,
       print_copies: Math.min(Math.max(+d.print_copies || 1, 1), 5), edit_days: d.edit_days === '' || d.edit_days == null ? null : +d.edit_days,
-      date_today: f.date_today.checked, lock_dept: f.lock_dept.checked, ...(kind === 'stock_count' ? { committee: d.committee || null } : {}) };
+      date_today: f.date_today.checked, lock_dept: f.lock_dept.checked, ...(kind === 'stock_count' ? { committee: d.committee || null } : {}),
+      ...(gl ? { require_attach: f.require_attach.checked, require_party: f.require_party.checked, allowed_accounts: (() => { const a = [...m.el.querySelectorAll('#acc-box input:checked')].map(x => x.value); return a.length ? a : null; })() } : {}) };
     const { error } = row ? await sb.from('doc_types').update(rec).eq('id', row.id) : await sb.from('doc_types').insert(rec);
     if (error) return toast(arError(error), 'err');
     toast('انحفظ', 'ok'); m.close(true); await loadDocTypes(true); ctx.rerender();
@@ -87,7 +98,7 @@ async function viewDocTypes(v, ctx) {
     <div class="card table-wrap"><table class="t"><thead><tr><th>الرمز</th><th>الاسم</th><th>الترقيم</th><th>نسخ الطباعة</th><th>القيود</th><th>الحالة</th></tr></thead><tbody>
     ${rows.map(t => `<tr data-t="${t.id}" ${ed ? 'style="cursor:pointer"' : ''}><td>${esc(t.code)}</td><td>${esc(t.name)} ${t.is_default ? '<span class="badge brand">افتراضي</span>' : ''}</td>
       <td>${t.own_seq ? `تسلسل خاص${t.prefix ? ` (${esc(t.prefix)})` : ''}` : 'مع تسلسل النوع'}</td><td class="n">${t.print_copies}</td>
-      <td>${[t.date_today ? 'تاريخ اليوم' : '', t.edit_days != null ? `تعديل ${t.edit_days} يوم` : '', t.lock_dept ? 'دائرة المستخدم' : '', t.committee ? `اللجنة: ${esc(t.committee)}` : ''].filter(Boolean).join(' · ') || '—'}</td>
+      <td>${[t.date_today ? 'تاريخ اليوم' : '', t.edit_days != null ? `تعديل ${t.edit_days} يوم` : '', t.lock_dept ? 'دائرة المستخدم' : '', t.committee ? `اللجنة: ${esc(t.committee)}` : '', t.require_attach ? '📎 مرفق إلزامي' : '', t.require_party ? 'طرف على الذمم' : '', t.allowed_accounts?.length ? `${t.allowed_accounts.length} حساب مسموح` : ''].filter(Boolean).join(' · ') || '—'}</td>
       <td>${t.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge">موقوف</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">ما في أنواع</td></tr>'}</tbody></table></div>
     <p class="muted" style="font-size:12px">كل مستند لازم يكون إله نوع؛ إذا ما اخترت بياخذ الافتراضي. النوع بيبيّن باليوميات وكشوف الحسابات، وبيحدد عدد نسخ الطباعة.</p>`;
   v.querySelector('#add')?.addEventListener('click', () => typeForm(k, null, ctx));

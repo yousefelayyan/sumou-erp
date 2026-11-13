@@ -5,7 +5,7 @@
 //  «اشتراكي» لمدير المشترك: تفاصيل اشتراكه ودفعاته.
 // =====================================================================
 import { SALES_WHATSAPP } from './config.js';
-import { S, sb, esc, toast, arError, modal, confirmBox, formData, fmtDate, fmtDateTime, fmtNum, num, today, isSuper, MODULES } from './core.js';
+import { S, sb, esc, toast, arError, modal, confirmBox, formData, fmtDate, fmtDateTime, fmtNum, num, today, isSuper, MODULES, qm } from './core.js';
 
 const METHODS = ['كليك', 'تحويل بنكي', 'نقدي', 'شيك'];
 const modLabel = (k) => MODULES.find(m => m.key === k)?.label || k;
@@ -38,7 +38,7 @@ async function viewTenants(v, ctx) {
   const expired = rows.filter(t => !t.is_default && t.expires_at && t.expires_at < today()).length;
   const paid = rows.reduce((s, t) => s + Number(t.paid_total || 0), 0);
   const draw = () => {
-    const list = rows.filter(t => (!onlyTrial || t.is_trial) && (!q || [t.code, t.name, t.contact_name, t.phone].some(x => (x || '').toLowerCase().includes(q))));
+    const list = rows.filter(t => (!onlyTrial || t.is_trial) && (!q || qm([t.code, t.name, t.contact_name, t.phone], q)));
     v.querySelector('tbody').innerHTML = list.map(t => `<tr>
       <td><b dir="ltr">${esc(t.code)}</b></td><td><b>${esc(t.name)}</b>${t.is_trial ? ` <span class="badge warn">🧪 تجربة · ${t.docs_used || 0}/${t.max_docs || '∞'} حركة</span>` : ''}${t.plan ? `<div class="muted" style="font-size:12px">${esc(t.plan)}</div>` : ''}</td>
       <td>${esc(t.contact_name || '')}${t.phone ? `<div class="muted" dir="ltr" style="font-size:12px">${esc(t.phone)}</div>` : ''}</td>

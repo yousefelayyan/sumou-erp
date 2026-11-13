@@ -5,7 +5,7 @@ import { LANG, initLang, setLang, tr } from './i18n.js';
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
-import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, canHiddenYears, THEMES, applyTheme, canTheme, canBranchReports, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, canHiddenYears, THEMES, applyTheme, canTheme, canBranchReports, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today, qm } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
@@ -557,7 +557,7 @@ function switchCompanyDialog() {
   const m = modal({ title: '🏢 تبديل الشركة', body: `<input class="search" id="sc-q" placeholder="بحث بالاسم أو الرمز…" style="width:100%;margin-bottom:10px">
     <div id="sc-list" style="display:grid;gap:6px;max-height:60vh;overflow:auto"></div>`, foot: '<button class="btn" data-close>إلغاء</button>' });
   const draw = () => { const q = m.el.querySelector('#sc-q').value.trim().toLowerCase();
-    m.el.querySelector('#sc-list').innerHTML = list.filter(c => !q || [c.code, c.name].some(x => (x || '').toLowerCase().includes(q))).map(c => `
+    m.el.querySelector('#sc-list').innerHTML = list.filter(c => !q || qm([c.code, c.name], q)).map(c => `
       <button type="button" class="btn ${c.id === S.company?.id ? 'primary' : ''}" data-co="${c.id}" style="justify-content:flex-start;text-align:start">
         <b dir="ltr" style="min-width:42px">${esc(c.code)}</b> ${esc(c.name)}</button>`).join('') || '<div class="empty">ما في شركات</div>'; };
   draw(); m.el.querySelector('#sc-q').oninput = draw; m.el.querySelector('#sc-q').focus();
@@ -1475,7 +1475,7 @@ async function viewLog(v) {
   }
   function draw() {
     const fq = $('#fq').value.trim().toLowerCase();
-    const base = data.filter(r => !fq || [det(r), uName[r.user_id], r.action, cName[r.company_id]].some(x => (x || '').toLowerCase().includes(fq)));
+    const base = data.filter(r => !fq || qm([det(r), uName[r.user_id], r.action, cName[r.company_id]], fq));
     const auth = base.filter(r => r.entity === 'auth');
     const st = (l, n, s = '') => `<div class="card stat"><span class="k">${l}</span><span class="v">${n}</span>${s ? `<span class="muted" style="font-size:12px">${s}</span>` : ''}</div>`;
     $('#stats').innerHTML = st('كل الحركات', base.length) + st('مرات الدخول', auth.filter(r => r.action === 'دخول').length, `${new Set(auth.map(r => r.user_id)).size} مستخدم`)

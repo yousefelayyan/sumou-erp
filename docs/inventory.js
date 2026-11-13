@@ -8,7 +8,7 @@ import { attachDocNav, setNavList } from './docnav.js';
 import { deptField, deptValue } from './departments.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, fmtQty, fmtPrice } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, fmtQty, fmtPrice, qm } from './core.js';
 import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadItems, serialCellHTML, serialPicker, parseSerials } from './invoices.js';
 import { printDoc } from './print.js';
@@ -55,7 +55,7 @@ async function viewStock(v) {
     const { data, error } = await sb.rpc('rep_stock_balance', { p_company: S.company.id, p_date: d, p_wh: w });
     if (error) return void (v.querySelector('#out').innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
     const it = Object.fromEntries(items.map(i => [i.id, i])), wn = Object.fromEntries(whs.map(x => [x.id, x.name]));
-    const rows = data.filter(r => !q || itemLabel(it[r.item_id]).toLowerCase().includes(q)).sort((a, b) => (it[a.item_id]?.code || '').localeCompare(it[b.item_id]?.code || '', 'en', { numeric: true }));
+    const rows = data.filter(r => !q || qm(itemLabel(it[r.item_id]), q)).sort((a, b) => (it[a.item_id]?.code || '').localeCompare(it[b.item_id]?.code || '', 'en', { numeric: true }));
     const tv = rows.reduce((s, r) => s + num(r.value), 0);
     const table = `<table class="t pt rep"><thead><tr><th>الصنف</th><th>المستودع</th><th>الوحدة</th><th>الكمية</th><th>متوسط الكلفة</th><th>القيمة</th><th class="no-print"></th></tr></thead><tbody>
       ${rows.map(r => `<tr><td>${esc(itemLabel(it[r.item_id]))}</td><td>${esc(wn[r.warehouse_id] || '')}</td><td>${esc(it[r.item_id]?.unit || '')}</td>
@@ -165,8 +165,9 @@ async function docEditor(type, doc, whs, ctx) {
         <small class="muted">${type === 'in' ? 'مثلاً لبضاعة أول المدة اختار رأس المال أو الأرصدة الافتتاحية' : 'مثلاً مصروف تالف أو هدايا'}</small></div>` : ''}
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(d0.notes)}" ${ro}></div></div></form>
     <datalist id="sd-items">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}"></option>`).join('')}</datalist>
-    ${isCount ? '<div class="notice info">اكتب الكمية الفعلية اللي عدّيتها. لما ترحّل، النظام بيحسب الفرق عن رصيد الدفاتر وبيعمل تسوية.</div>' : ''}
-    <table class="t lines" id="sdl"><thead><tr><th>#</th><th style="min-width:240px">الصنف</th><th style="width:130px">${isCount ? 'الكمية الفعلية' : 'الكمية'}</th>${isCount && doc?.status === 'posted' ? '<th style="width:120px">التسوية</th>' : ''}<th style="width:130px">الكلفة للوحدة</th><th></th></tr></thead><tbody></tbody></table>
+    ${isCount ? `<div class="notice info">اكتب الكمية الفعلية اللي عدّيتها. لما ترحّل، النظام بيحسب الفرق عن رصيد الدفاتر وبيعمل تسوية.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${!readOnly ? '<button class="btn sm" type="button" id="cn-fill">📥 تعبئة الأصناف</button><button class="btn sm" type="button" id="cn-sys">🔄 رصيد الدفاتر</button><button class="btn sm" type="button" id="cn-same">= الفعلي مثل الدفاتر للفاضي</button>' : ''}<button class="btn sm" type="button" id="cn-sheet">🖨️ ورقة جرد للعدّ</button></div>` : ''}
+    <table class="t lines" id="sdl"><thead><tr><th>#</th><th style="min-width:240px">الصنف</th>${isCount && doc?.status !== 'posted' ? '<th style="width:100px">الدفاتر</th>' : ''}<th style="width:130px">${isCount ? 'الكمية الفعلية' : 'الكمية'}</th>${isCount && doc?.status !== 'posted' ? '<th style="width:90px">الفرق</th>' : ''}${isCount && doc?.status === 'posted' ? '<th style="width:120px">التسوية</th>' : ''}<th style="width:130px">الكلفة للوحدة</th><th></th></tr></thead><tbody></tbody></table>
     ${!readOnly ? '<button class="btn sm" id="sd-add" type="button" style="margin-top:6px">➕ سطر</button>' : ''}`,
     foot: `${!readOnly ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}
       ${doc && can('inventory', 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
@@ -188,16 +189,20 @@ async function docEditor(type, doc, whs, ctx) {
     return `<div class="batch-cell"><span>🧪</span><input class="cell" data-i="${i}" data-k="batch" value="${esc(r.batch)}" list="sbl-${i}" placeholder="${inbound ? 'رقم الدفعة' : 'الدفعة (فاضي = الأقرب انتهاء)'}" ${ro}>
       <datalist id="sbl-${i}">${opts.map(x => `<option value="${esc(x.batch_no)}">${fmtQty(x.qty)}${x.expiry_date ? ' · ينتهي ' + fmtDate(x.expiry_date) : ''}</option>`).join('')}</datalist>
       ${inbound && it.batch_mode === 'expiry' ? `<input class="cell" type="date" data-i="${i}" data-k="exp" value="${esc(r.exp)}" title="تاريخ الانتهاء" ${ro}>` : ''}</div>`; };
+  const diffCell = (r) => { if (r.sys == null || r.counted === '' || r.counted == null) return ''; const d = num(r.counted) - num(r.sys); return d ? `<span style="color:${d < 0 ? 'var(--bad)' : 'var(--ok)'}">${d > 0 ? '+' : ''}${fmtQty(d)}</span>` : '<span class="muted">✓</span>'; };
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${batchCell(r, i)}${isCount ? '' : serialCellHTML(r, i, resolveItem(items, r.item), ro, type === 'in')}</td>
+      ${isCount && doc?.status !== 'posted' ? `<td class="n muted">${r.sys == null ? '' : fmtQty(r.sys)}</td>` : ''}
       <td><input class="cell n" data-i="${i}" data-k="${isCount ? 'counted' : 'qty'}" value="${isCount ? r.counted : (r.qty || '')}" inputmode="decimal" ${ro}></td>
+      ${isCount && doc?.status !== 'posted' ? `<td class="n" data-diff="${i}">${diffCell(r)}</td>` : ''}
       ${isCount && doc?.status === 'posted' ? `<td class="n" style="color:${r.qty < 0 ? 'var(--bad)' : 'var(--ok)'}">${r.qty ? fmtQty(r.qty) : '—'}</td>` : ''}
       <td><input class="cell n" data-i="${i}" data-k="cost" value="${r.cost || ''}" inputmode="decimal" ${ro}></td>
       <td>${!readOnly ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('');
   };
   draw(); loadBal(); m.el.querySelector('[name=warehouse_id]')?.addEventListener('change', loadBal);
   tb.addEventListener('input', (e) => { const t = e.target; if (t.dataset.k) rows[+t.dataset.i][t.dataset.k] = t.value;
+    if (t.dataset.k === 'counted') { const c = tb.querySelector(`[data-diff="${t.dataset.i}"]`); if (c) c.innerHTML = diffCell(rows[+t.dataset.i]); }
     if (t.dataset.k === 'serials' || t.dataset.k === 'qty') { const c = tb.querySelector(`[data-scnt="${t.dataset.i}"]`); if (c) { const r = rows[+t.dataset.i], n = parseSerials(r.serials).length; c.textContent = `${n}/${fmtQty(num(r.qty))}`; c.className = n === num(r.qty) ? 'muted' : 'bad-txt'; } } });
   tb.addEventListener('click', async (e) => { const b = e.target.closest('[data-spick]'); if (!b) return; const r = rows[+b.dataset.spick], it = resolveItem(items, r.item); if (!it) return;
     const sel = await serialPicker(it, m.el.querySelector('[name=warehouse_id]').value || null, r.serials); if (!sel) return;
@@ -206,6 +211,51 @@ async function docEditor(type, doc, whs, ctx) {
     if (it) { t.value = itemLabel(it); rows[+t.dataset.i].item = t.value; if (!num(rows[+t.dataset.i].cost)) rows[+t.dataset.i].cost = num(it.purchase_price); draw(); } });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 }); draw(); });
   m.el.querySelector('#sd-add')?.addEventListener('click', () => { rows.push({ item: '', qty: 0, counted: '', cost: 0 }); draw(); });
+  // أدوات الجرد: رصيد الدفاتر لكل سطر، تعبئة الأصناف، ورقة العدّ
+  const sysBal = async (ids) => {
+    const wh = m.el.querySelector('[name=warehouse_id]').value, dt = m.el.querySelector('[name=doc_date]').value || today();
+    const out = {}; for (let k = 0; k < ids.length; k += 500) { const { data, error } = await sb.rpc('items_available', { p_company: S.company.id, p_warehouse: wh, p_date: dt, p_items: ids.slice(k, k + 500) });
+      if (error) { toast(arError(error), 'err'); return null; } (data || []).forEach(x => out[x.item_id] = num(x.available)); }
+    return out; };
+  const refreshSys = async () => { const ids = rows.map(r => resolveItem(items, r.item)?.id).filter(Boolean); if (!ids.length) return;
+    const b = await sysBal([...new Set(ids)]); if (!b) return; rows.forEach(r => { const it = resolveItem(items, r.item); r.sys = it ? (b[it.id] ?? 0) : null; }); draw(); };
+  m.el.querySelector('#cn-sys')?.addEventListener('click', refreshSys);
+  m.el.querySelector('#cn-same')?.addEventListener('click', async () => { if (rows.some(r => r.item && r.sys == null)) await refreshSys();
+    let n = 0; rows.forEach(r => { if (r.item && (r.counted === '' || r.counted == null) && r.sys != null) { r.counted = String(r.sys); n++; } }); draw(); toast(`تعبّى ${n} سطر`, 'ok'); });
+  m.el.querySelector('#cn-fill')?.addEventListener('click', async () => {
+    const cats = (await sb.from('item_categories').select('id,code,name').eq('company_id', S.company.id).order('code')).data || [];
+    const d = modal({ title: '📥 تعبئة أصناف الجرد', size: 'sm', stack: true, body: `<form id="cf">
+      <div class="field"><label>الفئة</label><select name="cat"><option value="">كل الفئات</option><option value="-">بدون فئة</option>${cats.map(c => `<option value="${c.id}">${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>الأصناف</label><select name="which"><option value="bal">اللي إلها رصيد بالمستودع بس</option><option value="all">كل الأصناف المخزنية الفعّالة</option></select></div>
+      <div class="field"><label>الكمية الفعلية</label><select name="fill"><option value="">فاضية (بتعبّيها بعد العدّ)</option><option value="sys">مثل رصيد الدفاتر (بتعدّل اللي اختلف بس)</option></select></div>
+      <label class="check"><input type="checkbox" name="cost" checked> الكلفة = آخر سعر شراء للصنف</label>
+      <p class="muted" style="font-size:12px">الأصناف الموجودة بالسند ما بتتكرر.</p></form>`, foot: '<button class="btn primary" data-ok>تعبئة</button><button class="btn" data-close>إلغاء</button>' });
+    d.el.querySelector('[data-ok]').onclick = async () => {
+      const f = Object.fromEntries(new FormData(d.el.querySelector('#cf')));
+      const have = new Set(rows.map(r => resolveItem(items, r.item)?.id).filter(Boolean));
+      let list = items.filter(i => i.is_active && i.item_type !== 'service' && i.track_stock !== false && !have.has(i.id) && (!f.cat || (f.cat === '-' ? !i.category_id : i.category_id === f.cat)));
+      if (!list.length) return toast('ما في أصناف جديدة بهالاختيار', 'err');
+      const b = await sysBal(list.map(i => i.id)); if (!b) return;
+      if (f.which === 'bal') list = list.filter(i => num(b[i.id]) !== 0);
+      if (!list.length) return toast('ما في أصناف إلها رصيد', 'err');
+      rows = rows.filter(r => r.item);
+      list.forEach(i => rows.push({ item: itemLabel(i), qty: 0, sys: num(b[i.id]), counted: f.fill === 'sys' ? String(num(b[i.id])) : '', cost: f.cost ? num(i.purchase_price) : 0 }));
+      if (rows.length > 2000) toast('السند صار كبير كثير، الأفضل تقسمه على فئات', 'err');
+      draw(); d.close(); toast(`انضاف ${list.length} صنف`, 'ok');
+    };
+  });
+  m.el.querySelector('#cn-sheet')?.addEventListener('click', async () => {
+    if (!doc || doc.status !== 'posted') await refreshSys();
+    const wh = whs.find(w => w.id === m.el.querySelector('[name=warehouse_id]').value)?.name || '';
+    const showSys = doc?.status !== 'posted' && confirm('تطبع رصيد الدفاتر بالورقة؟ (للجرد الأعمى اختار «إلغاء»)');
+    const list = rows.filter(r => r.item).map(r => ({ r, it: resolveItem(items, r.item) })).filter(x => x.it).sort((a, b) => String(a.it.code).localeCompare(String(b.it.code)));
+    if (!list.length) return toast('عبّي الأصناف أول', 'err');
+    const comm = docCommittee(docTypeValue(m.el.querySelector('#sd-form')).doc_type_id || doc?.doc_type_id);
+    printDoc(`ورقة جرد — ${wh}`, `<table class="meta"><tr><td><b>المستودع:</b> ${esc(wh)}</td><td><b>تاريخ الجرد:</b> ${fmtDate(m.el.querySelector('[name=doc_date]').value)}</td><td><b>عدد الأصناف:</b> ${list.length}</td></tr></table>
+      <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الرمز</th><th>الصنف</th><th>الوحدة</th>${showSys ? '<th>الدفاتر</th>' : ''}<th style="width:110px">العدد الفعلي</th><th style="width:140px">ملاحظات</th></tr></thead><tbody>
+      ${list.map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.it.code)}</td><td>${esc(x.it.name)}${x.r.batch ? `<br><small>دفعة ${esc(x.r.batch)}</small>` : ''}</td><td>${esc(x.it.unit || '')}</td>${showSys ? `<td class="n">${x.r.sys == null ? '' : fmtQty(x.r.sys)}</td>` : ''}<td style="height:26px"></td><td></td></tr>`).join('')}</tbody></table>
+      <div class="signs" style="margin-top:24px">${(comm ? comm.split(/[،,]/).map(x => x.trim()).filter(Boolean) : ['العادّ', 'المراجع', 'أمين المستودع']).map(x => `<div>${esc(x)}</div>`).join('')}</div>`, { kind: 'stock' });
+  });
   const save = async (post) => {
     const h = formData(m.el.querySelector('#sd-form'));
     if (!h.warehouse_id) return toast('اختار المستودع', 'err');

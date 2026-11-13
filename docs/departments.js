@@ -2,7 +2,7 @@
 //  السمو ERP — الدوائر: شجرة فروع/أقسام الشركة (رئيسية وفرعية)
 //  الدائرة الفرعية بتنختار على القيود والفواتير وسندات المخزون، وكل مستخدم إله دائرة افتراضية.
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, setupTabs } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, setupTabs, qm } from './core.js';
 import { masterCode, loadNumbering } from './numbering.js';
 import { attachAudit } from './audit.js';
 
@@ -49,7 +49,7 @@ async function viewDepartments(v) {
   let editing = null;   // null = عرض، {} = جديد، row = تعديل
   let q = '';
   const kids = (pid) => rows.filter(d => (d.parent_id || null) === pid).sort((a, b) => a.code.localeCompare(b.code, 'en', { numeric: true }));
-  const match = (d) => !q || [d.code, d.name, d.name2].some(x => (x || '').toLowerCase().includes(q)) || kids(d.id).some(match);
+  const match = (d) => !q || qm([d.code, d.name, d.name2], q) || kids(d.id).some(match);
   const node = (d) => {
     if (!match(d)) return '';
     const ch = kids(d.id);

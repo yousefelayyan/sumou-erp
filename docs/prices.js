@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — قوائم الأسعار (route price-lists): قائمة لكل فئة زبائن (جملة، موزعين…) وسعر كل صنف فيها
 // =====================================================================
-import { S, sb, esc, fmtNum, num, toast, arError, modal, can, fmtPrice } from './core.js';
+import { S, sb, esc, fmtNum, num, toast, arError, modal, can, fmtPrice, qm } from './core.js';
 import { loadItems } from './invoices.js';
 
 async function listEditor(list, ctx) {
@@ -22,7 +22,7 @@ async function listEditor(list, ctx) {
       <td><input class="cell n" dir="ltr" inputmode="decimal" data-it="${i.id}" value="${prices[i.id] ?? ''}" ${ed ? '' : 'disabled'}></td></tr>`).join('')}</tbody></table></div>
     <p class="muted" style="font-size:12px">الصنف اللي سعره فاضي بياخذ سعر البيع العادي. القائمة بتنربط بالزبون من بطاقته، والفاتورة بتاخذ السعر لحالها.</p>`,
     foot: `${ed ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${!isNew && can('items', 'delete') ? '<button class="btn danger" data-del>حذف القائمة</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
-  m.el.querySelector('#pl-q').oninput = (e) => { const q = e.target.value.trim().toLowerCase(); m.el.querySelectorAll('[data-row]').forEach(tr => tr.style.display = !q || tr.dataset.row.includes(q) ? '' : 'none'); };
+  m.el.querySelector('#pl-q').oninput = (e) => { const q = e.target.value.trim().toLowerCase(); m.el.querySelectorAll('[data-row]').forEach(tr => tr.style.display = !q || qm(tr.dataset.row, q) ? '' : 'none'); };
   m.el.querySelector('#pl-fill')?.addEventListener('click', () => {
     const pct = num(m.el.querySelector('#pl-pct').value);
     items.forEach(i => { const el = m.el.querySelector(`[data-it="${i.id}"]`); if (el && num(i.sale_price)) el.value = (Math.round(num(i.sale_price) * (1 + pct / 100) * 1000) / 1000).toString(); });

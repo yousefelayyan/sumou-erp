@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — متابعة إقرارات العملاء ومواعيدها (شاشة المكتب لكل الشركات)
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, isAdmin, log } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, isAdmin, log, qm } from './core.js';
 import { downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
 
@@ -57,7 +57,7 @@ async function viewObligations(v, ctx) {
     shown = data.filter(o => (!fc || o.company_id === fc) && (!ft || o.ob_type === ft)
       && (fs === '' || (fs === 'open' && o.status === 'pending' && daysTo(o.due_date) <= 45) || (fs === 'late' && o.status === 'pending' && daysTo(o.due_date) < 0)
           || (fs === '30' && o.status === 'pending' && daysTo(o.due_date) >= 0 && daysTo(o.due_date) <= 30) || (fs === 'done' && o.status !== 'pending'))
-      && (!q || [o.title, o.period_label, o.reference, o.notes, cName[o.company_id]].some(x => (x || '').toLowerCase().includes(q))));
+      && (!q || qm([o.title, o.period_label, o.reference, o.notes, cName[o.company_id]], q)));
     v.querySelector('#rows').innerHTML = shown.map(o => { const [l, c] = stateOf(o);
       return `<tr><td><b>${fmtDate(o.due_date)}</b></td><td>${esc(cName[o.company_id] || '')}</td><td>${esc(o.title)} <span class="muted" style="font-size:12px">(${OB_TYPES[o.ob_type]})</span></td>
         <td>${esc(o.period_label || '')}</td><td><span class="badge ${c}">${l}</span></td><td dir="ltr" style="text-align:left">${o.amount ? fmtNum(o.amount) : ''}</td><td>${esc(o.reference || '')}</td>

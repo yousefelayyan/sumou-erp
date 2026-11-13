@@ -3,7 +3,7 @@
 //  مستند بيوزّع مصاريف الشحن والجمارك والتخليص على أصناف فواتير شراء مرحّلة (بالقيمة أو بالكمية).
 //  الكتابة من الدوال بس: landed_save / landed_post / landed_cancel / landed_delete، والمعاينة landed_preview.
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, can, fmtQty } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, can, fmtQty, qm } from './core.js';
 import { loadParties, partyLabel, partyDatalist, resolveParty } from './parties.js';
 import { loadAccounts, accountDatalist, resolveAccount, accLabel } from './finance.js';
 import { loadItems } from './invoices.js';
@@ -72,7 +72,7 @@ async function editor(doc, ctx) {
   const invTb = m.el.querySelector('#l-invs');
   const drawInv = () => {
     const q = (m.el.querySelector('#l-q')?.value || '').trim().toLowerCase();
-    const list = ro ? invList.filter(i => selInv.includes(i.id)) : invList.filter(i => selInv.includes(i.id) || !q || [docNo(i), pById[i.party_id]?.name].some(x => String(x || '').toLowerCase().includes(q)));
+    const list = ro ? invList.filter(i => selInv.includes(i.id)) : invList.filter(i => selInv.includes(i.id) || !q || [docNo(i), pById[i.party_id]?.name].some(x => qm(String(x || ''), q)));
     invTb.innerHTML = list.map(i => `<tr><td><input type="checkbox" data-inv="${i.id}" ${selInv.includes(i.id) ? 'checked' : ''} ${dis}></td><td>${esc(docNo(i))}</td><td>${fmtDate(i.inv_date)}</td>
       <td>${esc(pById[i.party_id]?.name || '')}</td><td class="n">${fmtNum(i.subtotal)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty">ما في فواتير شراء مرحّلة للمحاسبة والمخزون.</td></tr>';
   };

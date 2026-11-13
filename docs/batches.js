@@ -3,7 +3,7 @@
 //  أرصدة كل دفعة بكل مستودع من batch_balances، والمنتهية والقريبة حسب company_settings.expiry_warn_days،
 //  سجل الدفعة (batch_history)، وتعديل تاريخ الانتهاء (inventory edit).
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtQty, toast, arError, modal, can } from './core.js';
+import { S, sb, esc, fmtDate, fmtQty, toast, arError, modal, can, qm } from './core.js';
 import { loadItems } from './invoices.js';
 import { loadWarehouses } from './inventory.js';
 import { printDoc } from './print.js';
@@ -42,7 +42,7 @@ async function viewBatches(v) {
   const draw = () => {
     const w = v.querySelector('#f-w').value, q = v.querySelector('#f-q').value.trim().toLowerCase(), s = v.querySelector('#f-s')?.value || '';
     let rows = (t === 'expiry' ? [...expired, ...soon] : pos).filter(x => (!w || x.warehouse_id === w)
-      && (!q || `${itById[x.item_id].code} ${itById[x.item_id].name} ${x.batch_no || ''}`.toLowerCase().includes(q))
+      && (!q || qm(`${itById[x.item_id].code} ${itById[x.item_id].name} ${x.batch_no || ''}`, q))
       && (!s || (s === 'none' ? !status(x)[1] : status(x)[1] === s)));
     if (t === 'expiry') rows.sort((a, b) => a.days_left - b.days_left);
     const tot = rows.reduce((a, x) => a + Number(x.qty), 0);

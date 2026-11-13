@@ -4,7 +4,7 @@
 //  الحفظ = RPC pos_checkout (فاتورة بيع نقدية مرحّلة للمحاسبة والمخزون)،
 //  وبعدها وصل على طابعة الرول (80 أو 58 ملم). فتح درج الكاش من إعداد الطابعة.
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, formData, fmtNum, fmtDateTime, num, localStorageGet, localStorageSet, fmtQty, fmtPrice } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, formData, fmtNum, fmtDateTime, num, localStorageGet, localStorageSet, fmtQty, fmtPrice, qm } from './core.js';
 import { loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadWarehouses } from './inventory.js';
 import { posMethods, loadLookups } from './lookups.js';
@@ -112,7 +112,7 @@ async function viewPos(v, ctx) {
   };
   const drawGrid = () => {
     const qq = q.toLowerCase();
-    const list = items.filter(i => (!cat || (cat === '-' ? !i.category_id : i.category_id === cat)) && (!qq || [i.name, i.code, i.barcode].some(x => (x || '').toLowerCase().includes(qq)))).slice(0, 400);
+    const list = items.filter(i => (!cat || (cat === '-' ? !i.category_id : i.category_id === cat)) && (!qq || qm([i.name, i.code, i.barcode], qq))).slice(0, 400);
     $('#pos-grid').innerHTML = list.map(i => `<button class="pos-item" data-i="${i.id}">
         <span class="pi-img">${i.image ? `<img src="${esc(i.image)}" alt="" loading="lazy">` : `<span class="pi-ph">${esc((i.name || '?').trim().charAt(0))}</span>`}</span>
         <span class="pi-name">${esc(i.name)}</span><span class="pi-price">${fmtNum(shownPrice(i, cfg))}</span></button>`).join('')
@@ -202,7 +202,7 @@ async function viewPos(v, ctx) {
     const m = modal({ title: '👤 اختيار الزبون', body: `<input class="pos-search" id="cq" placeholder="ابحث بالاسم أو الرقم أو الهاتف" autocomplete="off">
       <div id="cl" style="display:grid;gap:6px;max-height:55vh;overflow:auto;margin-top:10px"></div>`, foot: '<button class="btn" data-cash>زبون نقدي</button><button class="btn" data-close>إلغاء</button>' });
     const draw = () => { const q2 = m.el.querySelector('#cq').value.trim().toLowerCase();
-      m.el.querySelector('#cl').innerHTML = parties.filter(x => !q2 || [x.name, x.code, x.mobile, x.phone].some(y => (y || '').toLowerCase().includes(q2))).slice(0, 80)
+      m.el.querySelector('#cl').innerHTML = parties.filter(x => !q2 || qm([x.name, x.code, x.mobile, x.phone], q2)).slice(0, 80)
         .map(x => `<button class="btn" data-pid="${x.id}" style="justify-content:space-between;text-align:start;min-height:46px"><span><b>${esc(x.name)}</b> <span class="muted">${esc(x.code)}</span></span><span dir="ltr" class="muted">${esc(x.mobile || x.phone || '')}</span></button>`).join('')
         || '<div class="empty">ما في زبائن بهالاسم</div>'; };
     draw(); m.el.querySelector('#cq').oninput = draw; m.el.querySelector('#cq').focus();

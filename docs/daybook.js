@@ -2,7 +2,7 @@
 //  السمو ERP — اليوميات (لكل نوع سند)، تقرير مندوبي المبيعات، وتحليل المخزون
 //  (تعمير المخزون، المخزون بطيء الحركة، معدل دوران المخزون)
 // =====================================================================
-import { S, sb, esc, toast, arError, fmtNum, fmtDate, num, today } from './core.js';
+import { S, sb, esc, toast, arError, fmtNum, fmtDate, num, today, qm } from './core.js';
 import { downloadCSV, loadAccounts } from './finance.js';
 import { loadParties } from './parties.js';
 import { loadItems } from './invoices.js';
@@ -68,7 +68,7 @@ async function viewDaybook(v) {
       let r = sb.from('journal_entries').select('*').eq('company_id', S.company.id).eq('entry_type', D.t).gte('entry_date', from).lte('entry_date', to).order('entry_date').limit(5000);
       if (st) r = r.eq('status', st); if (dep) r = r.eq('department_id', dep);
       const { data, error } = await r; if (error) return toast(arError(error), 'err');
-      rows = (data || []).filter(e => !q || [docNo(e), e.description, e.reference, e.party_name].some(x => String(x || '').toLowerCase().includes(q)));
+      rows = (data || []).filter(e => !q || qm([docNo(e), e.description, e.reference, e.party_name], q));
       head = ['التاريخ', 'رقم السند', ...(D.t === 'journal' || D.t === 'opening' ? [] : [D.t === 'receipt' ? 'استلمنا من' : 'صرفنا إلى', 'الصندوق / البنك']), 'البيان', 'المرجع', 'الدائرة', 'المبلغ', 'الحالة'];
       const cash = !(D.t === 'journal' || D.t === 'opening');
       body = rows.map(e => [fmtDate(e.entry_date), docNo(e), ...(cash ? [e.party_name || '', accById[e.cash_account_id]?.name || ''] : []), e.description || '', e.reference || '', dById[e.department_id]?.name || '', num(e.total), e.status]);
@@ -79,7 +79,7 @@ async function viewDaybook(v) {
       let r = sb.from('invoices').select('*').eq('company_id', S.company.id).eq('inv_type', D.t).gte('inv_date', from).lte('inv_date', to).order('inv_date').limit(5000);
       if (st) r = r.eq('status', st); if (dep) r = r.eq('department_id', dep);
       const { data, error } = await r; if (error) return toast(arError(error), 'err');
-      rows = (data || []).filter(i => !q || [docNo(i), i.reference, i.party_name, pById[i.party_id]?.name, i.notes].some(x => String(x || '').toLowerCase().includes(q)));
+      rows = (data || []).filter(i => !q || [docNo(i), i.reference, i.party_name, pById[i.party_id]?.name, i.notes].some(x => qm(String(x || ''), q)));
       head = ['التاريخ', 'رقم الفاتورة', 'العميل / المورد', 'الدفع', 'المرجع', 'قبل الضريبة', 'الخصم', 'الضريبة', 'الإجمالي', 'الحالة'];
       body = rows.map(i => [fmtDate(i.inv_date), docNo(i), pById[i.party_id]?.name || i.party_name || '', i.payment_type === 'cash' ? 'نقدي' : 'آجل', i.reference || '', num(i.subtotal), num(i.discount_total), num(i.tax_total), num(i.total), i.status]);
       const s = (key) => rows.reduce((a, i) => a + num(i[key]), 0);
@@ -89,7 +89,7 @@ async function viewDaybook(v) {
       let r = sb.from('stock_docs').select('*').eq('company_id', S.company.id).eq('doc_type', D.t).gte('doc_date', from).lte('doc_date', to).order('doc_date').limit(5000);
       if (st) r = r.eq('status', st); if (dep) r = r.eq('department_id', dep);
       const { data, error } = await r; if (error) return toast(arError(error), 'err');
-      rows = (data || []).filter(d => !q || [docNo(d), d.notes].some(x => String(x || '').toLowerCase().includes(q)));
+      rows = (data || []).filter(d => !q || qm([docNo(d), d.notes], q));
       let val = {};
       if (rows.length) {
         const mv = await sb.from('stock_moves').select('source_id,qty,unit_cost').eq('company_id', S.company.id).in('source_id', rows.map(d => d.id));
@@ -103,7 +103,7 @@ async function viewDaybook(v) {
     } else {
       const r = sb.from('cheques').select('*').eq('company_id', S.company.id).eq('direction', D.t).gte('issue_date', from).lte('issue_date', to).order('due_date').limit(5000);
       const { data, error } = await r; if (error) return toast(arError(error), 'err');
-      rows = (data || []).filter(c => !q || [c.cheque_no, c.bank_name, c.drawer_name, pById[c.party_id]?.name].some(x => String(x || '').toLowerCase().includes(q)));
+      rows = (data || []).filter(c => !q || [c.cheque_no, c.bank_name, c.drawer_name, pById[c.party_id]?.name].some(x => qm(String(x || ''), q)));
       const CS = { portfolio: 'بالمحفظة', collected: 'محصّل', returned: 'راجع', issued: 'صادر', paid: 'مصروف', cancelled: 'ملغى' };
       head = ['تاريخ التحرير', 'تاريخ الاستحقاق', 'رقم الشيك', 'البنك', D.t === 'in' ? 'العميل' : 'المورد', 'المبلغ', 'الحالة'];
       body = rows.map(c => [fmtDate(c.issue_date), fmtDate(c.due_date), c.cheque_no, c.bank_name || '', pById[c.party_id]?.name || c.drawer_name || '', num(c.amount), CS[c.status] || c.status]);
@@ -150,7 +150,7 @@ async function viewSalesReps(v) {
       if (i.inv_type === 'sale') { x.n++; x.s += net; } else x.r += net; if (i.party_id) x.cust.add(i.party_id); });
     (rR.data || []).forEach(l => { const x = get(repOfParty[l.party_id]); x.c += num(l.credit) - num(l.debit); });
     const list = [...reps, ...(t['-'] ? [{ id: '-', code: '', name: 'بدون مندوب', rate: 0 }] : [])]
-      .filter(r => !q || [r.code, r.name].some(x => (x || '').toLowerCase().includes(q)));
+      .filter(r => !q || qm([r.code, r.name], q));
     const row = (r) => { const x = t[r.id] || { n: 0, s: 0, r: 0, c: 0, cust: new Set() }; const net = x.s - x.r; return { r, x, net, com: net * num(r.rate) / 100 }; };
     const rows = list.map(row).sort((a, b) => b.net - a.net);
     const sum = (k) => rows.reduce((a, y) => a + y[k], 0), sx = (k) => rows.reduce((a, y) => a + y.x[k], 0);
@@ -198,7 +198,7 @@ async function viewStockAnalysis(v) {
     if (wh) r = r.eq('warehouse_id', wh);
     const { data, error } = await r; if (error) return toast(arError(error), 'err');
     const mv = {}; (data || []).forEach(m => (mv[m.item_id] ||= []).push(m));
-    const list = goods.filter(i => (!cat || i.category_id === cat) && (!q || [i.code, i.name].some(x => (x || '').toLowerCase().includes(q))));
+    const list = goods.filter(i => (!cat || i.category_id === cat) && (!q || qm([i.code, i.name], q)));
     const ref = to > today() ? today() : to; const days = (d) => Math.floor((new Date(ref) - new Date(d)) / 864e5);
     const kp = (arr) => v.querySelector('#kp').innerHTML = arr.map(([l, x]) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`).join('');
     let rows = [];

@@ -8,7 +8,7 @@ import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { attachAudit } from './audit.js';
 import { docNo, loadNumbering, masterCode } from './numbering.js';
 import { emailDialog, emailWrap, emailTable } from './messages.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, qm } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, ENTRY_TYPES, downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
 
@@ -19,6 +19,13 @@ export const PARTY = {
 };
 
 const STOPS = [['stop_credit', 'وقف البيع الآجل'], ['stop_cheques', 'وقف استلام الشيكات منه'], ['stop_if_debit', 'وقف البيع الآجل إذا عليه رصيد مدين']];
+// إحداثيات من نص أو رابط خرائط (‎@31.9,35.9 أو q=31.9,35.9 أو «31.9, 35.9»)
+export function parseGeo(t) {
+  const m = String(t || '').match(/(-?\d{1,2}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/) || String(t || '').match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (!m) return null; const lat = +m[1], lng = +m[2];
+  return Math.abs(lat) <= 90 && Math.abs(lng) <= 180 ? { lat, lng } : null;
+}
+
 export async function loadParties(force = false) {
   if (!S.company) return [];
   if (!force && S.parties && S.partiesCompany === S.company.id) return S.parties;
@@ -73,7 +80,7 @@ function partyList(type) {
       <p class="muted" style="font-size:13px">الرصيد من القيود المرحّلة بالسنة المالية الحالية. ${type === 'customer' ? 'الرصيد الموجب = علينا نحصّله من العميل.' : 'الرصيد الموجب = علينا ندفعه للمورد.'}</p>`;
     const draw = () => {
       const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value;
-      const rows = list.filter(p => (!fc || (fc === '-' ? !p.category_id : p.category_id === fc))).filter(p => !q || [p.code, p.name, p.name2, p.reference, p.trade_name, p.phone, p.mobile, p.tax_no].some(x => (x || '').toLowerCase().includes(q)));
+      const rows = list.filter(p => (!fc || (fc === '-' ? !p.category_id : p.category_id === fc))).filter(p => !q || qm([p.code, p.name, p.name2, p.reference, p.trade_name, p.phone, p.mobile, p.tax_no], q));
       v.querySelector('#rows').innerHTML = rows.map(p => { const b = (bal[p.id] || 0) * P.side; const over = p.credit_limit > 0 && b > p.credit_limit;
         return `<tr><td>${esc(p.code)}</td><td><b>${esc(p.name)}</b>${p.trade_name ? `<div class="muted" style="font-size:12px">${esc(p.trade_name)}</div>` : ''}</td><td>${esc(catById[p.category_id]?.name || '')}</td>
         <td dir="ltr" style="text-align:right">${esc(p.mobile || p.phone || '')}</td><td>${esc(p.city || '')}</td><td dir="ltr" style="text-align:right">${esc(p.tax_no || '')}</td>
@@ -143,7 +150,12 @@ async function partyForm(type, p, accs, ctx, cats = []) {
         <div class="field"><label>إيميل ثاني</label><input name="email2" type="email" value="${esc(p.email2 || '')}" dir="ltr"></div>
         <div class="field"><label>إيميل ثالث</label><input name="email3" type="email" value="${esc(p.email3 || '')}" dir="ltr"></div>
         <div class="field"><label>المدينة</label><input name="city" list="lk-city" value="${esc(p.city)}">${lookupDatalistSync('lk-city', ['region', 'country'])}</div></div>
-        <div class="field"><label>العنوان</label><input name="address" value="${esc(p.address)}"></div></div>
+        <div class="field"><label>العنوان</label><input name="address" value="${esc(p.address)}"></div>
+        <div class="grid cols-3" style="align-items:end"><div class="field"><label>📍 خط العرض</label><input name="geo_lat" value="${p.geo_lat ?? ''}" inputmode="decimal" dir="ltr" placeholder="31.95"></div>
+          <div class="field"><label>خط الطول</label><input name="geo_lng" value="${p.geo_lng ?? ''}" inputmode="decimal" dir="ltr" placeholder="35.91"></div>
+          <div class="field"><label>نصف قطر الزيارة (متر)</label><input name="geo_radius" value="${p.geo_radius ?? ''}" inputmode="numeric" dir="ltr" placeholder="حسب الإعداد"></div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="btn sm" id="geo-me">📍 موقعي الحالي</button><button type="button" class="btn sm" id="geo-paste">📋 لصق رابط خرائط</button><a class="btn sm" id="geo-open" target="_blank" rel="noopener" href="#">🗺️ فتح على الخريطة</a></div>
+        <span class="hint">موقع العميل بيستعمله تطبيق المندوب للتحقق إنه الزيارة صارت عند العميل، وبخريطة العملاء.</span></div>
       <div class="tab-panel" data-tab="f"><div class="grid cols-2">
         <div class="field" style="grid-column:span 2"><label>الحساب بدليل الحسابات *</label><select name="account_id">
           ${sorted.map(a => `<option value="${a.id}" ${a.id === p.account_id ? 'selected' : ''}>${esc(accLabel(a))}${okAcc(a) ? ' ★' : ''}</option>`).join('')}</select>
@@ -165,6 +177,15 @@ async function partyForm(type, p, accs, ctx, cats = []) {
     m.el.querySelectorAll('.tab-panel').forEach(x => x.classList.toggle('active', x.dataset.tab === t.dataset.tab));
   }));
   applyLayout(m.el.querySelector('#p-form'), type);
+  { const F = m.el.querySelector('#p-form'), la = F.querySelector('[name=geo_lat]'), ln = F.querySelector('[name=geo_lng]'), op = m.el.querySelector('#geo-open');
+    const sync = () => { const ok = la.value && ln.value; op.href = ok ? `https://maps.google.com/?q=${encodeURIComponent(la.value)},${encodeURIComponent(ln.value)}` : '#'; op.style.opacity = ok ? 1 : .4; };
+    const set = (a, b) => { la.value = (+a).toFixed(6); ln.value = (+b).toFixed(6); sync(); F.dispatchEvent(new Event('input', { bubbles: true })); };
+    la.oninput = ln.oninput = sync; sync();
+    m.el.querySelector('#geo-me').onclick = () => { if (!navigator.geolocation) return toast('الجهاز ما بيدعم تحديد الموقع', 'err');
+      navigator.geolocation.getCurrentPosition(g => { set(g.coords.latitude, g.coords.longitude); toast('تم أخذ الموقع', 'ok'); }, () => toast('ما قدرت آخذ الموقع، اسمح للمتصفح', 'err'), { enableHighAccuracy: true, timeout: 10000 }); };
+    m.el.querySelector('#geo-paste').onclick = async () => { let t = ''; try { t = await navigator.clipboard.readText(); } catch (e) { t = prompt('الصق رابط الموقع أو الإحداثيات') || ''; }
+      const g = parseGeo(t); if (!g) return toast('ما لقيت إحداثيات بالنص', 'err'); set(g.lat, g.lng); };
+    op.onclick = (e) => { if (op.style.opacity < 1) e.preventDefault(); }; }
   sb.from('currencies').select('code,name').eq('company_id', S.company.id).eq('is_active', true).then(({ data }) => {
     const dl = m.el.querySelector('#cur-list'); if (dl) dl.innerHTML = '<option value="JOD">دينار أردني</option>' + (data || []).map(c => `<option value="${esc(c.code)}">${esc(c.name)}</option>`).join('');
   });
@@ -177,6 +198,9 @@ async function partyForm(type, p, accs, ctx, cats = []) {
     if ('loyalty_type_id' in d) d.loyalty_type_id = d.loyalty_type_id || null; if ('loyalty_card_no' in d) d.loyalty_card_no = d.loyalty_card_no || null;
     if (type === 'customer') STOPS.forEach(([k]) => d[k] = !!d[k]);
     d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null; if ('price_list_id' in d) d.price_list_id = d.price_list_id || null;
+    { const la = String(d.geo_lat ?? '').trim(), ln = String(d.geo_lng ?? '').trim();
+      if (!!la !== !!ln || (la && (isNaN(+la) || isNaN(+ln) || Math.abs(+la) > 90 || Math.abs(+ln) > 180))) return toast('اكتب خط العرض وخط الطول صح (أو فضّيهم)', 'err');
+      d.geo_lat = la ? +(+la).toFixed(6) : null; d.geo_lng = ln ? +(+ln).toFixed(6) : null; d.geo_radius = parseInt(d.geo_radius) || null; }
     ['route_id', 'payment_method_id', 'department_id', 'currency', 'reference', 'name2', 'email2', 'email3'].forEach(k => { if (k in d) d[k] = String(d[k] || '').trim() || null; });
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
     else if (!d.code) delete d.code;

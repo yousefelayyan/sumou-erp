@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — محفظة الشيكات (واردة وصادرة)
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, qm } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadLookups, lookupDatalistSync } from './lookups.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
@@ -45,7 +45,7 @@ async function viewCheques(v, ctx) {
     const fs = v.querySelector('#f-s').value, ff = v.querySelector('#f-from').value, ft = v.querySelector('#f-to').value, q = v.querySelector('#f-q').value.trim().toLowerCase();
     shown = data.filter(c => (fs === '' || (fs === 'open' ? c.status === (dir === 'in' ? 'portfolio' : 'issued') : c.status === fs))
       && (!ff || c.due_date >= ff) && (!ft || c.due_date <= ft)
-      && (!q || [c.cheque_no, c.bank_name, c.drawer_name, pName[c.party_id]].some(x => (x || '').toLowerCase().includes(q))));
+      && (!q || qm([c.cheque_no, c.bank_name, c.drawer_name, pName[c.party_id]], q)));
     v.querySelector('#rows').innerHTML = shown.map(c => { const d = daysTo(c.due_date), isOpen = ['portfolio', 'issued'].includes(c.status);
       return `<tr><td><b>${fmtDate(c.due_date)}</b>${isOpen ? `<div style="font-size:12px;color:${d < 0 ? 'var(--bad)' : d <= 7 ? 'var(--warn)' : 'var(--muted)'}">${d < 0 ? `فات ${-d} يوم` : d === 0 ? 'اليوم' : `باقي ${d} يوم`}</div>` : ''}</td>
         <td dir="ltr" style="text-align:right">${esc(c.cheque_no)}</td><td>${esc([c.bank_name, c.branch].filter(Boolean).join(' - '))}</td>

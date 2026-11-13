@@ -11,7 +11,7 @@ import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin, fmtPrice, fmtQty, DEC } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin, fmtPrice, fmtQty, DEC, qm } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords, loadPrintSettings } from './print.js';
@@ -128,7 +128,7 @@ export async function serialPicker(it, wh, current) {
     const m = modal({ stack: true, title: `🔢 سيريالات ${it.name} الموجودة`, body: `<input id="sq" placeholder="بحث…" dir="ltr" style="width:100%;margin-bottom:8px">
       <div id="sl" style="max-height:50vh;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px">${(data || []).map(x => `<label class="check" data-s="${esc(x.serial)}"><input type="checkbox" value="${esc(x.serial)}" ${cur.has(x.serial) ? 'checked' : ''}> <span dir="ltr">${esc(x.serial)}</span></label>`).join('') || '<div class="muted">ما في سيريالات بهالمستودع</div>'}</div>`,
       foot: '<button class="btn primary" data-ok>تمام</button><button class="btn" data-close>إلغاء</button>' });
-    m.el.querySelector('#sq').oninput = (e) => { const q = e.target.value.trim().toLowerCase(); m.el.querySelectorAll('[data-s]').forEach(l => { l.style.display = !q || l.dataset.s.toLowerCase().includes(q) ? '' : 'none'; }); };
+    m.el.querySelector('#sq').oninput = (e) => { const q = e.target.value.trim().toLowerCase(); m.el.querySelectorAll('[data-s]').forEach(l => { l.style.display = !q || qm(l.dataset.s, q) ? '' : 'none'; }); };
     m.el.querySelector('[data-ok]').onclick = () => { res([...m.el.querySelectorAll('#sl input:checked')].map(x => x.value)); m.close(); };
     m.el.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => res(null)));
   });
@@ -267,7 +267,7 @@ async function viewItems(v, ctx) {
     <div class="card table-wrap"><table class="t"><thead><tr><th>الرقم</th><th>الاسم</th><th>الفئة</th><th>الماركة</th><th>النوع</th><th>الوحدة</th><th style="text-align:left">سعر البيع</th><th style="text-align:left">سعر الشراء</th><th>الضريبة</th><th>الحالة</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>`;
   const draw = () => {
     const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value, fb = v.querySelector('#fb')?.value || '';
-    v.querySelector('#rows').innerHTML = items.filter(i => (!fc || (fc === '-' ? !i.category_id : i.category_id === fc)) && (!fb || (fb === '-' ? !i.brand_id : i.brand_id === fb)) && (!q || [i.code, i.name, i.barcode, i.model].some(x => (x || '').toLowerCase().includes(q)))).map(i => `<tr>
+    v.querySelector('#rows').innerHTML = items.filter(i => (!fc || (fc === '-' ? !i.category_id : i.category_id === fc)) && (!fb || (fb === '-' ? !i.brand_id : i.brand_id === fb)) && (!q || qm([i.code, i.name, i.barcode, i.model], q))).map(i => `<tr>
       <td>${esc(i.code)}</td><td><b>${esc(i.name)}</b></td><td>${esc(catById[i.category_id]?.name || '')}</td><td>${esc(brById[i.brand_id]?.name || '')}</td><td>${i.item_type === 'service' ? 'خدمة' : 'سلعة'}</td><td>${esc(i.unit || '')}</td>
       <td dir="ltr" style="text-align:left">${fmtPrice(i.sale_price)}</td><td dir="ltr" style="text-align:left">${fmtPrice(i.purchase_price)}</td><td>${num(i.tax_rate)}%</td>
       <td>${i.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
@@ -411,7 +411,7 @@ function invoiceList(group) {
       <div class="card table-wrap"><table class="t"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th><th>${INV[types[0]].partyLabel}</th><th>الدفع</th><th>المرجع</th><th style="text-align:left">قبل الضريبة</th><th style="text-align:left">الضريبة</th><th style="text-align:left">الإجمالي</th><th>الحالة</th></tr></thead><tbody id="rows"></tbody></table></div>`;
     const draw = () => {
       const q = v.querySelector('#q').value.trim().toLowerCase(), ft = v.querySelector('#ft').value, fs = v.querySelector('#fs').value, ff = v.querySelector('#ff')?.value || '';
-      v.querySelector('#rows').innerHTML = data.filter(i => (!ft || i.inv_type === ft) && (!fs || i.status === fs) && (!ff || (ff === '-' ? !fmap[i.id] : fmap[i.id]?.id === ff)) && (!q || [docNo(i), String(i.inv_no), pName[i.party_id], i.party_name, i.reference].some(x => (x || '').toLowerCase().includes(q))))
+      v.querySelector('#rows').innerHTML = data.filter(i => (!ft || i.inv_type === ft) && (!fs || i.status === fs) && (!ff || (ff === '-' ? !fmap[i.id] : fmap[i.id]?.id === ff)) && (!q || qm([docNo(i), String(i.inv_no), pName[i.party_id], i.party_name, i.reference], q)))
         .map(i => `<tr class="click" data-open="${i.id}"><td>${i.inv_type.endsWith('return') ? `<span class="badge warn">${INV[i.inv_type].label}</span>` : INV[i.inv_type].label}</td><td><b dir="ltr">${esc(docNo(i))}</b></td><td>${fmtDate(i.inv_date)}</td>
           <td>${esc(pName[i.party_id] || i.party_name || '')}</td><td>${i.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td><td>${esc(i.reference || '')}</td>
           <td dir="ltr" style="text-align:left">${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.subtotal)}</td><td dir="ltr" style="text-align:left">${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.tax_total)}</td>
@@ -473,7 +473,7 @@ async function invoiceEditor(type, inv, ctx) {
       <div class="field"><label>تاريخ الاستحقاق</label><input type="date" name="due_date" value="${esc(i0.due_date)}" ${ro}></div>
       <div class="field" style="grid-column:span 2"><label>${T.partyLabel} <span id="p-req">*</span></label><input list="party-list" id="party" value="${esc(partyLabel(pById[i0.party_id]))}" placeholder="رقم أو اسم ${T.partyLabel}…" ${ro}>${partyDatalist(myParties)}</div>
       <div class="field" id="pn-box"><label>الاسم (للنقدي بدون بطاقة)</label><input name="party_name" value="${esc(i0.party_name)}" ${ro}></div>
-      <div class="field" id="cash-box"><label>الصندوق / البنك</label><select name="cash_account_id" ${ro}><option value="">— اختار —</option>${pmOptions(isSale ? 'sales' : 'purchases')}${cashAccs.map(a => `<option value="${a.id}" ${a.id === i0.cash_account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>
+      <div class="field" id="cash-box"><label>الصندوق / البنك</label><select name="cash_account_id" ${ro}><option value="">— اختار —</option>${pmOptions(isSale ? 'sales' : 'purchases').replace(new RegExp(`data-pm="${inv?.payment_method_id || '-'}"`), '$& selected')}${cashAccs.map(a => `<option value="${a.id}" ${a.id === i0.cash_account_id && !inv?.payment_method_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>
       <div class="field"><label>${isSale ? 'رقم الطلب / المرجع' : 'رقم فاتورة المورد'}</label><input name="reference" value="${esc(i0.reference)}" ${ro}></div>
       ${isSale ? `<div class="field"><label>المشروع</label><input name="project" value="${esc(i0.project || '')}" ${ro}></div>` : ''}
       ${ccs.length ? `<div class="field"><label>مركز الكلفة</label><select name="cost_center_id" ${ro}><option value="">—</option>${ccs.map(c => `<option value="${c.id}" ${c.id === i0.cost_center_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : ''}
@@ -689,6 +689,7 @@ async function invoiceEditor(type, inv, ctx) {
     if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم الفاتورة (رقم صحيح أكبر من صفر)', 'err');
     const header = { ...(mn.value ? { inv_no: mn.value } : {}), inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
       party_name: h.payment_type === 'cash' ? (h.party_name || p?.name || null) : null, cash_account_id: h.payment_type === 'cash' ? h.cash_account_id : null,
+      payment_method_id: h.payment_type === 'cash' ? (m.el.querySelector('[name=cash_account_id]').selectedOptions[0]?.dataset.pm || null) : null,
       reference: h.reference, ...(isSale ? { project: h.project || null } : {}), prices_include_tax: h.prices_include_tax, tax_mode: h.tax_mode || 'normal', notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...docTypeValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
       subtotal: r3(out.reduce((s, l) => s + l.subtotal, 0)), tax_total: r3(out.reduce((s, l) => s + l.tax_amount, 0)), discount_total: r3(out.reduce((s, l) => s + l.discount, 0)) };
     header.total = r3(header.subtotal + header.tax_total);

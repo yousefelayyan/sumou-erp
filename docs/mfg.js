@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — التصنيع (الوصفات وأوامر الإنتاج)، الصيانة، تنسيق الحقول، تنسيق التقارير (اختيار الأعمدة)
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, localStorageGet, localStorageSet, fmtQty } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, localStorageGet, localStorageSet, fmtQty, qm } from './core.js';
 import { loadItems, openInvoicePrefill } from './invoices.js';
 import { printBarHTML } from './print.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
@@ -152,7 +152,7 @@ async function viewService(v, ctx) {
     <div class="card table-wrap"><table class="t rep"><thead><tr><th>الرقم</th><th>الاستلام</th><th>العميل</th><th>الهاتف</th><th>الجهاز</th><th>المشكلة</th><th>الفني</th><th>التقدير</th><th>الموعد</th><th>الحالة</th></tr></thead><tbody id="tb"></tbody></table></div>`;
   let fs = '';
   const draw = () => { const q = v.querySelector('#q').value.trim().toLowerCase();
-    const list = rows.filter(t => (!fs || t.status === fs) && (!q || [String(t.ticket_no), t.customer_name, pById[t.party_id]?.name, t.device, t.serial_no, t.phone].some(x => (x || '').toLowerCase().includes(q))));
+    const list = rows.filter(t => (!fs || t.status === fs) && (!q || qm([String(t.ticket_no), t.customer_name, pById[t.party_id]?.name, t.device, t.serial_no, t.phone], q)));
     v.querySelector('#tb').innerHTML = list.map(t => `<tr class="clickable" data-open="${t.id}"><td><b>${t.ticket_no}</b></td><td>${fmtDate(t.received_at)}</td><td>${esc(pById[t.party_id]?.name || t.customer_name || '')}</td>
       <td dir="ltr" style="text-align:right">${esc(t.phone || '')}</td><td>${esc(t.device)}${t.serial_no ? ` <span class="muted" style="font-size:11px">${esc(t.serial_no)}</span>` : ''}</td><td>${esc(t.problem || '')}</td><td>${esc(t.technician || '')}</td>
       <td class="n">${num(t.estimate) ? fmtNum(t.estimate) : ''}</td><td>${t.promised_at ? fmtDate(t.promised_at) + (t.promised_at < today() && !['delivered', 'cancelled', 'ready'].includes(t.status) ? ' <span class="badge bad">متأخر</span>' : '') : ''}</td>

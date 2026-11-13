@@ -18859,3 +18859,368 @@ language sql immutable as $$
    (89, 'attachments', 'company_id = $1', 'created_at'),
    (90, 'fiscal_periods', 'company_id = $1', 'start_date')
 $$;
+
+
+-- #################### 92_pm_commission.sql ####################
+-- =====================================================================
+--  المرحلة 92: عمولة وسيلة الدفع بفواتير البيع النقدية ونقطة البيع
+--  invoices.payment_method_id = وسيلة الدفع اللي انختارت بالفاتورة (نقطة البيع بتستعمل pos_method_id).
+--  بعد ترحيل فاتورة بيع نقدية: إذا الوسيلة إلها نسبة عمولة وحساب عمولة (المرحلة 48)، سطر الصندوق/البنك بينزل
+--  بالعمولة وبينضاف سطر مدين على حساب العمولة (يعني البنك بياخذ الصافي). القيد العكسي (إلغاء الفاتورة) بينسخهم.
+-- =====================================================================
+alter table public.invoices add column if not exists payment_method_id uuid references public.lookups(id) on delete set null;
+alter table public.invoices add column if not exists pm_commission numeric(18,3) not null default 0;
+
+create or replace function public.ad_invoice_pm_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.payment_method_id is not null and (tg_op = 'INSERT' or new.payment_method_id is distinct from old.payment_method_id)
+     and not exists (select 1 from public.lookups where id = new.payment_method_id and company_id = new.company_id and kind = 'payment_method') then
+    raise exception 'وسيلة الدفع مش من هالشركة';
+  end if;
+  if new.payment_type <> 'cash' then new.payment_method_id := null; end if;
+  if not public.is_internal() then new.pm_commission := coalesce(case when tg_op = 'UPDATE' then old.pm_commission end, 0); end if;
+  return new;
+end $$;
+drop trigger if exists ad_invoice_pm_check on public.invoices;
+create trigger ad_invoice_pm_check before insert or update on public.invoices for each row execute function public.ad_invoice_pm_check();
+revoke execute on function public.ad_invoice_pm_check() from public, anon, authenticated;
+
+create or replace function public.zj_invoice_pm_commission() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare pm public.lookups; c numeric; cl public.journal_lines; ln int; prev text := current_setting('sumou.internal', true);
+begin
+  if not (old.status = 'draft' and new.status = 'posted' and new.inv_type = 'sale' and new.payment_type = 'cash' and new.entry_id is not null) then return null; end if;
+  if new.pm_commission <> 0 then
+    perform set_config('sumou.internal', public.internal_token(), true);
+    update public.invoices set pm_commission = 0 where id = new.id;
+    perform set_config('sumou.internal', coalesce(prev, ''), true);
+  end if;
+  select * into pm from public.lookups where id = coalesce(new.payment_method_id, new.pos_method_id) and company_id = new.company_id and kind = 'payment_method';
+  if pm.id is null or coalesce(pm.rate, 0) <= 0 or pm.commission_account_id is null then return null; end if;
+  c := round(new.total * pm.rate / 100, 3);
+  if c <= 0 then return null; end if;
+  select * into cl from public.journal_lines where entry_id = new.entry_id and debit > 0
+     and account_id = coalesce(new.cash_account_id, (select cash_account_id from public.company_settings where company_id = new.company_id)) order by line_no limit 1;
+  if cl.id is null or cl.debit < c then return null; end if;
+  perform set_config('sumou.internal', public.internal_token(), true);
+  update public.journal_lines set debit = debit - c where id = cl.id;
+  select coalesce(max(line_no), 0) + 1 into ln from public.journal_lines where entry_id = new.entry_id;
+  insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit, cost_center_id)
+  values (new.entry_id, ln, pm.commission_account_id, 'عمولة ' || pm.name || ' ' || pm.rate || '% — ' || coalesce(cl.description, 'فاتورة بيع'), c, 0, cl.cost_center_id);
+  update public.invoices set pm_commission = c where id = new.id;
+  if (select abs(sum(debit) - sum(credit)) from public.journal_lines where entry_id = new.entry_id) > 0.0005 then raise exception 'قيد الفاتورة مش متوازن بعد العمولة'; end if;
+  perform set_config('sumou.internal', coalesce(prev, ''), true);
+  return null;
+end $$;
+drop trigger if exists zj_invoice_pm_commission on public.invoices;
+create trigger zj_invoice_pm_commission after update of status on public.invoices for each row execute function public.zj_invoice_pm_commission();
+revoke execute on function public.zj_invoice_pm_commission() from public, anon, authenticated;
+
+
+-- #################### 93_party_location.sql ####################
+-- =====================================================================
+--  المرحلة 93: موقع العميل الجغرافي والتحقق من مكان الزيارة
+--  parties.geo_lat/geo_lng/geo_radius (نصف القطر بالمتر؛ الفاضي = إعداد الشركة)
+--  company_settings.rep_geo = {mode none|warn|block, radius (افتراضي 300م), learn (أول زيارة بتحفظ موقع العميل إذا فاضي)}
+--  visit_start انعادت تعريفها: بتحسب بُعد المندوب عن العميل (distance_m) وبتعلّم geo_ok،
+--  وبوضع block بترفض الزيارة إذا بعيد أو بدون موقع (المشرف rep_visits edit مستثنى).
+-- =====================================================================
+alter table public.parties add column if not exists geo_lat numeric(10,6);
+alter table public.parties add column if not exists geo_lng numeric(10,6);
+alter table public.parties add column if not exists geo_radius int;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'parties_geo_chk') then
+    alter table public.parties add constraint parties_geo_chk check (
+      (geo_lat is null) = (geo_lng is null) and (geo_lat is null or (geo_lat between -90 and 90 and geo_lng between -180 and 180))
+      and (geo_radius is null or geo_radius between 10 and 50000));
+  end if;
+end $$;
+alter table public.company_settings add column if not exists rep_geo jsonb not null default '{}'::jsonb;
+alter table public.sales_visits add column if not exists distance_m int;
+alter table public.sales_visits add column if not exists geo_ok boolean;
+
+-- المسافة: geo_dist_m من المرحلة 47
+
+create or replace function public.visit_start(p_company uuid, p_party uuid, p_lat numeric default null, p_lng numeric default null, p_purpose text default null) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare vid uuid; pa public.parties; cfg jsonb; mode text; rad int; d int; ok boolean; sup boolean; prev text := current_setting('sumou.internal', true);
+begin
+  if not public.can(p_company, 'rep_visits', 'add') then raise exception 'ما عندك صلاحية تسجيل زيارات'; end if;
+  select * into pa from public.parties where id = p_party and company_id = p_company and party_type = 'customer' and is_active;
+  if pa.id is null then raise exception 'العميل مش موجود'; end if;
+  if exists (select 1 from public.sales_visits where company_id = p_company and user_id = auth.uid() and status = 'open') then
+    raise exception 'عندك زيارة مفتوحة، أنهيها أول';
+  end if;
+  if (p_lat is null) <> (p_lng is null) or (p_lat is not null and (p_lat not between -90 and 90 or p_lng not between -180 and 180)) then raise exception 'الموقع مش صحيح'; end if;
+  select coalesce(rep_geo, '{}'::jsonb) into cfg from public.company_settings where company_id = p_company;
+  mode := coalesce(cfg ->> 'mode', 'none'); rad := coalesce(pa.geo_radius, nullif(cfg ->> 'radius', '')::int, 300);
+  sup := public.can(p_company, 'rep_visits', 'edit');
+  d := public.geo_dist_m(p_lat, p_lng, pa.geo_lat, pa.geo_lng);
+  ok := case when d is null then null else d <= rad end;
+  if mode = 'block' and not sup then
+    if p_lat is null then raise exception 'لازم تسمح بالموقع عشان تبلّش الزيارة'; end if;
+    if ok is false then raise exception 'إنت بعيد عن موقع العميل (% متر، والمسموح % متر)', d, rad; end if;
+  end if;
+  insert into public.sales_visits (company_id, party_id, rep_id, start_lat, start_lng, purpose, distance_m, geo_ok)
+  values (p_company, p_party, pa.sales_rep_id, p_lat, p_lng, nullif(trim(p_purpose), ''), d, ok) returning id into vid;
+  -- أول زيارة بتحفظ موقع العميل إذا ما إله موقع (إعداد learn)
+  -- بس المشرف بيحفظ موقع العميل (عشان المندوب ما يثبّت موقع غلط ويتحقق منه بعدين)
+  if pa.geo_lat is null and p_lat is not null and sup and coalesce((cfg ->> 'learn')::boolean, false) then
+    perform set_config('sumou.internal', public.internal_token(), true);
+    update public.parties set geo_lat = p_lat, geo_lng = p_lng where id = p_party;
+    perform set_config('sumou.internal', coalesce(prev, ''), true);
+  end if;
+  return vid;
+exception when unique_violation then raise exception 'عندك زيارة مفتوحة، أنهيها أول';
+end $$;
+
+-- إعداد التحقق من الموقع (من شاشة المندوب للمشرف)
+create or replace function public.rep_geo_save(p_company uuid, p jsonb) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not (public.can(p_company, 'rep_visits', 'edit') or public.can(p_company, 'companies', 'edit')) or not public.tenant_writable() then raise exception 'ما عندك صلاحية'; end if;
+  -- سعر الكيلو بس لمين إله تعديل الشركات؛ غيره بيضل القديم
+  if not public.can(p_company, 'companies', 'edit') then
+    p := p || jsonb_build_object('km_rate', coalesce((select rep_geo ->> 'km_rate' from public.company_settings where company_id = p_company), '0'));
+  end if;
+  if coalesce(p ->> 'mode', 'none') not in ('none','warn','block') then raise exception 'نوع التحقق غلط'; end if;
+  if coalesce((p ->> 'radius')::int, 300) not between 10 and 50000 then raise exception 'نصف القطر لازم بين 10 و 50000 متر'; end if;
+  perform public.ensure_company_settings(p_company);
+  update public.company_settings set rep_geo = jsonb_build_object('mode', coalesce(p ->> 'mode', 'none'), 'radius', coalesce((p ->> 'radius')::int, 300),
+    'learn', coalesce((p ->> 'learn')::boolean, false), 'km_rate', greatest(0, least(5, coalesce((p ->> 'km_rate')::numeric, 0))))
+   where company_id = p_company;
+end $$;
+revoke execute on function public.rep_geo_save(uuid, jsonb) from public, anon;
+grant execute on function public.rep_geo_save(uuid, jsonb) to authenticated;
+
+-- =====================================================================
+--  مسافات المندوبين وبدل المواصلات: لكل مستخدم ويوم مجموع المسافة بين مواقع
+--  بداية الزيارات بالترتيب (بخط مستقيم) × km_rate من إعداد rep_geo.
+--  المشرف (rep_visits edit) بيشوف الكل، والمندوب حاله بس.
+-- =====================================================================
+create or replace function public.rep_km_report(p_company uuid, p_from date, p_to date)
+returns table (user_id uuid, day date, visits bigint, located bigint, km numeric, allowance numeric, taxi numeric, parking numeric, far_visits bigint)
+language plpgsql stable security definer set search_path = public as $$
+declare sup boolean := public.can(p_company, 'rep_visits', 'edit'); rate numeric;
+begin
+  if not (sup or public.can(p_company, 'rep_visits', 'view')) then raise exception 'ما عندك صلاحية'; end if;
+  if p_to - p_from > 370 then raise exception 'الفترة طويلة (سنة كحد أقصى)'; end if;
+  select coalesce(nullif(rep_geo ->> 'km_rate', '')::numeric, 0) into rate from public.company_settings where company_id = p_company;
+  return query
+  with v as (
+    select s.user_id u, (s.started_at at time zone 'Asia/Amman')::date d, s.started_at, s.start_lat, s.start_lng, s.taxi_fee, s.parking_fee, s.geo_ok,
+           lag(s.start_lat) over w plat, lag(s.start_lng) over w plng
+      from public.sales_visits s
+     where s.company_id = p_company and s.status <> 'cancelled'
+       and (s.started_at at time zone 'Asia/Amman')::date between p_from and p_to
+       and (sup or s.user_id = auth.uid())
+     window w as (partition by s.user_id, (s.started_at at time zone 'Asia/Amman')::date order by s.started_at)
+  )
+  select v.u, v.d, count(*), count(*) filter (where v.start_lat is not null),
+         round(coalesce(sum(public.geo_dist_m(v.plat, v.plng, v.start_lat, v.start_lng)), 0) / 1000.0, 2),
+         round(coalesce(sum(public.geo_dist_m(v.plat, v.plng, v.start_lat, v.start_lng)), 0) / 1000.0 * coalesce(rate, 0), 3),
+         sum(v.taxi_fee), sum(v.parking_fee), count(*) filter (where v.geo_ok is false)
+    from v group by v.u, v.d order by v.d, v.u;
+end $$;
+revoke execute on function public.rep_km_report(uuid, date, date) from public, anon;
+grant execute on function public.rep_km_report(uuid, date, date) to authenticated;
+
+-- =====================================================================
+--  تطبيق المندوب بدون إنترنت: كل عملية من الطابور إلها client_ref،
+--  فإعادة الإرسال ما بتكرّر الدفعة. offline_sync(company, ref, op, payload).
+--  op: payment (mobile_payment) | visit_end (بوقت النهاية من الجهاز بين البداية والآن)
+-- =====================================================================
+create table if not exists public.offline_refs (
+  company_id uuid not null references public.companies(id) on delete cascade,
+  user_id    uuid not null default auth.uid(),
+  ref        text not null check (length(ref) between 8 and 64),
+  op         text not null,
+  result     jsonb,
+  created_at timestamptz not null default now(),
+  primary key (company_id, user_id, ref)
+);
+alter table public.offline_refs enable row level security;
+revoke all on public.offline_refs from authenticated, anon;
+
+create or replace function public.offline_sync(p_company uuid, p_ref text, p_op text, p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r jsonb; v public.sales_visits; at timestamptz;
+begin
+  if not public.can(p_company, 'rep_visits', 'add') and not public.can(p_company, 'receipt_vouchers', 'add') then raise exception 'ما عندك صلاحية'; end if;
+  if p_ref is null or length(p_ref) not between 8 and 64 then raise exception 'رقم العملية غلط'; end if;
+  perform pg_advisory_xact_lock(hashtext('offline:' || auth.uid()::text || p_ref));
+  select result into r from public.offline_refs where company_id = p_company and user_id = auth.uid() and ref = p_ref;
+  if found then return coalesce(r, '{}'::jsonb) || jsonb_build_object('duplicate', true); end if;
+  if p_op = 'payment' then
+    if (p ->> 'company_id')::uuid is distinct from p_company then raise exception 'الشركة غلط'; end if;
+    r := public.mobile_payment(p);
+  elsif p_op = 'visit_end' then
+    select * into v from public.sales_visits where id = (p ->> 'visit_id')::uuid and company_id = p_company;
+    if v.id is null then raise exception 'الزيارة مش موجودة'; end if;
+    perform public.visit_end(v.id, nullif(p ->> 'lat', '')::numeric, nullif(p ->> 'lng', '')::numeric, p ->> 'notes', p ->> 'outcome',
+      coalesce(nullif(p ->> 'taxi', '')::numeric, 0), coalesce(nullif(p ->> 'parking', '')::numeric, 0));
+    at := nullif(p ->> 'ended_at', '')::timestamptz;
+    if at is not null then
+      at := least(greatest(at, v.started_at), now());
+      update public.sales_visits set ended_at = at where id = v.id;
+    end if;
+    r := jsonb_build_object('ok', true);
+  else raise exception 'عملية مش معروفة';
+  end if;
+  insert into public.offline_refs (company_id, user_id, ref, op, result) values (p_company, auth.uid(), p_ref, p_op, r);
+  delete from public.offline_refs where user_id = auth.uid() and created_at < now() - interval '120 days';
+  return r;
+end $$;
+revoke execute on function public.offline_sync(uuid, text, text, jsonb) from public, anon;
+grant execute on function public.offline_sync(uuid, text, text, jsonb) to authenticated;
+
+
+-- #################### 94_small_rules.sql ####################
+-- =====================================================================
+--  المرحلة 94: ضوابط أنواع السندات + دفعة مقدمة على طلب المبيعات + كوبونات السحب
+--  doc_types.require_attach: ما بيترحّل السند إلا إذا عليه مرفق
+--  doc_types.require_party:  سطر على حساب عملاء/موردين (account_type customer/supplier) لازم عليه طرف
+--  doc_types.allowed_accounts: الحسابات (أو الحسابات الرئيسية وفروعها) المسموحة بسطور هالنوع
+--  الفحص بـ post_entry (ترحيل المستخدم)، مش بالترحيل الداخلي (الرواتب، المندوب…)
+-- =====================================================================
+alter table public.doc_types add column if not exists require_attach boolean not null default false;
+alter table public.doc_types add column if not exists require_party boolean not null default false;
+alter table public.doc_types add column if not exists allowed_accounts uuid[];
+
+create or replace function public.ad_doc_type_accounts_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.allowed_accounts is not null then
+    new.allowed_accounts := nullif((select array_agg(distinct x) from unnest(new.allowed_accounts) x where x is not null), '{}');
+    if cardinality(coalesce(new.allowed_accounts, '{}')) > 200 then raise exception 'الحسابات المسموحة كثير (200 كحد أقصى)'; end if;
+    if exists (select 1 from unnest(coalesce(new.allowed_accounts, '{}')) x where not exists (select 1 from public.accounts a where a.id = x and a.company_id = new.company_id)) then
+      raise exception 'الحسابات المسموحة لازم من نفس الشركة';
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists ad_doc_type_accounts_check on public.doc_types;
+create trigger ad_doc_type_accounts_check before insert or update of allowed_accounts on public.doc_types for each row execute function public.ad_doc_type_accounts_check();
+
+create or replace function public.entry_doctype_check(p_id uuid) returns void
+language plpgsql stable security definer set search_path = public as $$
+declare e public.journal_entries; t public.doc_types; bad text;
+begin
+  select * into e from public.journal_entries where id = p_id;
+  if e.doc_type_id is null then return; end if;
+  select * into t from public.doc_types where id = e.doc_type_id;
+  if t.id is null then return; end if;
+  if t.require_attach and not exists (select 1 from public.attachments where company_id = e.company_id and entity = 'entry' and entity_id = p_id) then
+    raise exception 'نوع السند «%» بدّه مرفق قبل الترحيل (📎 مرفقات)', t.name;
+  end if;
+  if t.require_party then
+    select string_agg(distinct a.code || ' ' || a.name, '، ') into bad from public.journal_lines l join public.accounts a on a.id = l.account_id
+     where l.entry_id = p_id and a.account_type in ('customer','supplier') and l.party_id is null;
+    if bad is not null then raise exception 'سطر على حساب الذمم لازم يكون عليه عميل/مورد: %', bad; end if;
+  end if;
+  if t.allowed_accounts is not null then
+    with recursive ok as (select a.id from public.accounts a where a.id = any(t.allowed_accounts)
+                          union select c.id from public.accounts c join ok on c.parent_id = ok.id)
+    select string_agg(distinct a.code || ' ' || a.name, '، ') into bad from public.journal_lines l join public.accounts a on a.id = l.account_id
+     where l.entry_id = p_id and l.account_id not in (select id from ok);
+    if bad is not null then raise exception 'حسابات مش مسموحة بنوع السند «%»: %', t.name, bad; end if;
+  end if;
+end $$;
+revoke execute on function public.entry_doctype_check(uuid) from public, anon, authenticated;
+
+create or replace function public.post_entry(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare e public.journal_entries; d numeric; c numeric; n int; fy public.fiscal_years;
+begin
+  select * into e from public.journal_entries where id = p_id for update;
+  if e.id is null then raise exception 'القيد غير موجود'; end if;
+  if not public.can(e.company_id, public.entry_screen(e.entry_type), 'post') then raise exception 'ما عندك صلاحية ترحيل'; end if;
+  if e.status <> 'draft' then raise exception 'القيد مرحّل من قبل'; end if;
+  select * into fy from public.fiscal_years where id = e.fiscal_year_id;
+  if fy.is_closed then raise exception 'السنة المالية مغلقة'; end if;
+  select coalesce(sum(debit),0), coalesce(sum(credit),0), count(*) into d, c, n from public.journal_lines where entry_id = p_id;
+  if n < 2 then raise exception 'القيد لازم يكون فيه سطرين على الأقل'; end if;
+  if d <> c then raise exception 'القيد مش متوازن: المدين % والدائن %', d, c; end if;
+  if d = 0 then raise exception 'القيد بدون مبالغ'; end if;
+  if e.order_id is not null and exists (select 1 from public.journal_lines l where l.entry_id = p_id and l.party_id is not null
+       and l.party_id is distinct from (select party_id from public.orders where id = e.order_id)) then
+    raise exception 'الدفعة المقدمة لازم تكون من عميل الطلب نفسه';
+  end if;
+  -- ضوابط نوع السند بس لما المستخدم يرحّل مباشرة (مش من دفعات المندوب والخصومات والتسويات)
+  if position('post_entry' in lower(coalesce(current_query(), ''))) > 0 then perform public.entry_doctype_check(p_id); end if;
+  perform set_config('sumou.internal', public.internal_token(), true);
+  update public.journal_entries set status = 'posted', total = d, posted_by = auth.uid(), posted_at = now() where id = p_id;
+  perform set_config('sumou.internal', '', true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), e.company_id, 'ترحيل', public.entry_screen(e.entry_type), p_id::text, jsonb_build_object('no', e.entry_no, 'total', d));
+end $$;
+
+-- =====================================================================
+--  دفعة مقدمة على طلب المبيعات: journal_entries.order_id (سند قبض بس، نفس الشركة، نفس العميل)
+-- =====================================================================
+alter table public.journal_entries add column if not exists order_id uuid;
+do $$ begin
+  if exists (select 1 from pg_constraint where conname = 'journal_entries_order_id_fkey' and not condeferrable) then
+    alter table public.journal_entries drop constraint journal_entries_order_id_fkey;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'journal_entries_order_id_fkey') then
+    alter table public.journal_entries add constraint journal_entries_order_id_fkey foreign key (order_id) references public.orders(id) on delete set null deferrable initially deferred;
+  end if;
+end $$;
+create index if not exists journal_entries_order on public.journal_entries (order_id) where order_id is not null;
+create or replace function public.ad_entry_order_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare o public.orders;
+begin
+  if new.order_id is null or (tg_op = 'UPDATE' and new.order_id is not distinct from old.order_id) then return new; end if;
+  if public.is_internal() and tg_op = 'INSERT' then return new; end if;
+  if new.entry_type <> 'receipt' then raise exception 'الدفعة المقدمة بسند قبض بس'; end if;
+  select * into o from public.orders where id = new.order_id;
+  if o.id is null or o.company_id <> new.company_id or o.order_type <> 'sales_order' then raise exception 'الطلب مش من هالشركة'; end if;
+  if not public.can(o.company_id, 'sales_orders', 'view') then raise exception 'ما عندك صلاحية على طلبات المبيعات'; end if;
+  if o.status = 'cancelled' or o.closed then raise exception 'الطلب ملغى أو مغلق'; end if;
+  if not public.dept_ok(o.company_id, o.department_id) then raise exception 'الطلب من فرع ثاني'; end if;
+  return new;
+end $$;
+drop trigger if exists ad_entry_order_check on public.journal_entries;
+create trigger ad_entry_order_check before insert or update of order_id on public.journal_entries for each row execute function public.ad_entry_order_check();
+
+-- مجموع الدفعات المقدمة الفعّالة لكل طلب
+create or replace function public.order_advances(p_company uuid, p_orders uuid[] default null)
+returns table (order_id uuid, posted numeric, draft numeric, entries int)
+language sql stable security definer set search_path = public as $$
+  select e.order_id, coalesce(sum(e.total) filter (where e.status = 'posted' and e.reversed_by is null), 0),
+         coalesce(sum((select sum(l.debit) from public.journal_lines l where l.entry_id = e.id)) filter (where e.status = 'draft'), 0), count(*)::int
+    from public.journal_entries e
+   where e.company_id = p_company and e.order_id is not null and (p_orders is null or e.order_id = any(p_orders))
+     and e.status in ('draft','posted') and public.can(p_company, 'sales_orders', 'view')
+     and public.dept_ok(p_company, e.department_id)
+   group by e.order_id;
+$$;
+revoke execute on function public.order_advances(uuid, uuid[]) from public, anon;
+grant execute on function public.order_advances(uuid, uuid[]) to authenticated;
+
+-- =====================================================================
+--  كوبونات السحب: كوبون لكل X دينار من صافي مشتريات العميل المرحّلة بالفترة (بعد المرتجع)
+-- =====================================================================
+create or replace function public.coupon_counts(p_company uuid, p_from date, p_to date, p_per numeric, p_category uuid default null)
+returns table (party_id uuid, code text, name text, mobile text, net numeric, coupons int)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.can(p_company, 'marketing', 'view') then raise exception 'ما عندك صلاحية'; end if;
+  if coalesce(p_per, 0) <= 0 then raise exception 'اكتب قيمة الكوبون'; end if;
+  if p_to < p_from or p_to - p_from > 400 then raise exception 'الفترة غلط'; end if;
+  return query
+  select p.id, p.code, p.name, coalesce(p.mobile, p.phone), round(s.net, 3), floor(s.net / p_per)::int
+    from (select i.party_id pid, sum(case when i.inv_type = 'sale' then i.subtotal else -i.subtotal end) net
+            from public.invoices i
+           where i.company_id = p_company and i.status = 'posted' and i.inv_type in ('sale','sale_return')
+             and i.inv_date between p_from and p_to and i.party_id is not null and public.dept_ok(p_company, i.department_id)
+           group by i.party_id) s
+    join public.parties p on p.id = s.pid
+   where s.net >= p_per and p.is_active and (p_category is null or p.category_id = p_category)
+   order by 6 desc, 3;
+end $$;
+revoke execute on function public.coupon_counts(uuid, date, date, numeric, uuid) from public, anon;
+grant execute on function public.coupon_counts(uuid, date, date, numeric, uuid) to authenticated;

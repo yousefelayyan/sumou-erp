@@ -4425,3 +4425,129 @@ Set the issued cheques account in linked accounts
 No open fiscal year on the payment date
 All salaries of this run are already paid
 Salaries of this run were paid by a payment voucher; delete or reverse it before cancelling the run
+Largest balances
+📈 Chart
+Month debit
+Month credit
+Month-end balance
+📊 Largest closing balances
+📎 Attachment required
+Party on receivables
+allowed accounts
+📥 Fill items
+🔄 Book balance
+= Counted as book for empty
+📥 Fill count items
+Only items with stock in the warehouse
+All active stock items
+Counted qty
+Empty (fill after counting
+Same as book balance (edit only the differences
+Cost = item's last purchase price
+Items already in the document won't repeat
+Fill
+No new items for this selection
+No items with stock
+The document is very large; better split it by category
+Print book balance on the sheet? (for a blind count choose "Cancel
+Fill the items first
+Count sheet
+Count date
+Counted
+
+💵 Advance payment
+Advance payment on sales order no.
+Order
+🎟️ Coupon draw
+🎟️ Customer coupon draw
+One coupon per (JOD
+Customer category
+Number of winners
+🔎 Calculate coupons
+🎲 Draw
+coupon
+Coupons
+No customers reached the threshold
+Coupon draw
+One coupon per
+Draw time
+Draw organizer
+Witness
+As per setting
+📍 Latitude
+Visit radius (m
+📍 My current location
+📋 Paste maps link
+🗺️ Open on map
+The rep app uses the customer location to verify visits happen at the customer, and in the customers map
+Location captured
+Couldn't get the location, allow the browser
+Paste the location link or coordinates
+No coordinates found in the text
+Enter latitude and longitude correctly (or leave both empty
+Far from customer location
+At the customer
+Synced
+operation
+km
+Far
+operations saved on the device waiting for internet
+🔄 Sync now
+📴 No internet — payments and visit endings will be saved on the device and sent automatically
+📴 No internet
+payments and visit endings will be saved on the device and sent automatically
+Customers map
+Distances & transport
+📍 My location
+customers have a location
+Distance = sum of straight-line distances between visit start points on the same day in order. Allowance = km × the per-km rate in settings
+Summary
+Days
+Visits
+Per-km allowance
+Taxi
+Far visits
+By day
+With location
+Allowance
+Taxi + parking
+Still no internet
+📴 Operations waiting to be sent
+Delete the operation from the device? It won't be sent
+Starting a visit needs internet (to verify location). Payments are saved on the device
+Visit started — ⚠️ you are far
+You are
+from the customer location
+End visit
+📴 Visit ending saved on the device; it will be sent when internet returns
+📴 No internet: the payment was saved on the device and will be sent automatically when internet returns
+The payment was saved on the device and will be sent automatically when internet returns
+Couldn't load the map (needs internet
+🧭 Directions
+Couldn't get your location
+My location
+⚙️ Visit location check & per-km allowance
+Check when the rep starts a visit
+No check
+Warning and "far" flag only
+Block the visit if far or without location
+A supervisor can always start, and their visit is flagged if far
+A customer with a radius on their card uses it
+The first visit of a customer without a location saves it
+Transport allowance per km (JOD
+Payment method is not from this company
+The invoice entry is unbalanced after the commission
+You must allow location to start the visit
+Invalid check type
+Radius must be between 10 and 50000 m
+Period too long (one year max
+Invalid operation id
+Wrong company
+Unknown operation
+Too many allowed accounts (200 max
+Allowed accounts must be from the same company
+Advance payment must be a receipt voucher
+The order is not from this company
+You don't have permission on sales orders
+Enter the coupon value
+Invalid period

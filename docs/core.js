@@ -305,3 +305,31 @@ export async function loadFiscalYears() {
 
 export function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 export function localStorageSet(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} }
+
+// بحث بأكثر من جزء: «عربي%501» = لازم الجزئين يكونوا موجودين (بأي ترتيب). بدون % = نفس البحث العادي.
+export function qm(hay, q) {
+  const h = (Array.isArray(hay) ? hay.map(x => x == null ? '' : String(x)).join(' ') : String(hay ?? '')).toLowerCase();
+  const parts = String(q ?? '').toLowerCase().split('%').map(x => x.trim()).filter(Boolean);
+  return !parts.length || parts.every(x => h.includes(x));
+}
+
+// 🧮 آلة حاسبة بخانات المبالغ: اكتب مثلاً 120*3+15 أو 250/4 وبس تطلع من الخانة بينحسب
+export function calcExpr(src) {
+  const s = String(src || '').replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[×xX]/g, '*').replace(/÷/g, '/').replace(/,/g, '').replace(/\s+/g, '');
+  if (!/^[\d.+\-*/()%]+$/.test(s) || !/[+\-*/()]/.test(s.slice(1))) return null;
+  let i = 0;
+  const num_ = () => { const m = /^\d*\.?\d+/.exec(s.slice(i)); if (!m) throw 0; i += m[0].length; return parseFloat(m[0]); };
+  const atom = () => { if (s[i] === '(') { i++; const v = expr(); if (s[i++] !== ')') throw 0; return v; } if (s[i] === '-') { i++; return -atom(); } if (s[i] === '+') { i++; return atom(); } let v = num_(); if (s[i] === '%') { i++; v /= 100; } return v; };
+  const term = () => { let v = atom(); while (s[i] === '*' || s[i] === '/') { const o = s[i++], r = atom(); if (o === '/' && r === 0) throw 0; v = o === '*' ? v * r : v / r; } return v; };
+  const expr = () => { let v = term(); while (s[i] === '+' || s[i] === '-') { const o = s[i++], r = term(); v = o === '+' ? v + r : v - r; } return v; };
+  try { const v = expr(); if (i !== s.length || !isFinite(v)) return null; return Math.round(v * 1000) / 1000; } catch (e) { return null; }
+}
+if (typeof document !== 'undefined' && !window.__calcWired) {
+  window.__calcWired = 1;
+  document.addEventListener('focusout', (e) => {
+    const el = e.target; if (!(el instanceof HTMLInputElement) || el.readOnly || el.disabled) return;
+    if (el.inputMode !== 'decimal' && !el.classList.contains('n')) return;
+    const r = calcExpr(el.value); if (r == null) return;
+    el.value = String(r); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, true);
+}

@@ -2,7 +2,7 @@
 //  السمو ERP — العقود والرسوم المتكررة (route contracts)
 //  عقد على عميل بسطور زي الفاتورة، كل كم شهر وبيوم محدد. «توليد الفواتير المستحقة» = contract_generate (مسودة أو مرحّلة).
 // =====================================================================
-import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, modal, confirmBox, can, today } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, modal, confirmBox, can, today, qm } from './core.js';
 import { loadParties, partyLabel, partyDatalist, resolveParty } from './parties.js';
 import { loadItems, openInvoiceById } from './invoices.js';
 import { deptField, deptValue } from './departments.js';
@@ -111,7 +111,7 @@ async function viewContracts(v, ctx) {
     <div class="card table-wrap" id="tbl"></div>`;
   const draw = () => {
     const s = v.querySelector('#f-s').value, q = v.querySelector('#f-q').value.trim().toLowerCase();
-    const list = (rows || []).filter(c => (!s || c.status === s) && (!q || `${pById[c.party_id]?.name || ''} ${c.title}`.toLowerCase().includes(q)));
+    const list = (rows || []).filter(c => (!s || c.status === s) && (!q || qm(`${pById[c.party_id]?.name || ''} ${c.title}`, q)));
     const due = (c) => c.status === 'active' && c.next_date <= today() && (!c.end_date || c.next_date <= c.end_date);
     const monthly = list.filter(c => c.status === 'active').reduce((a, c) => a + amt[c.id] / c.every_months, 0);
     v.querySelector('#tbl').innerHTML = `<table class="t"><thead><tr><th>الرقم</th><th>العميل</th><th>العقد</th><th>الدورية</th><th>من</th><th>إلى</th><th>الاستحقاق الجاي</th><th style="text-align:left">قيمة الفاتورة</th><th>ترحيل تلقائي</th><th>الحالة</th></tr></thead><tbody>
