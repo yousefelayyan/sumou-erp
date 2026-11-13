@@ -356,3 +356,18 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .docnav .dn-sep{width:1px;height:22px;background:var(--tint-2);margin:0 4px}
 .docnav .dn-pos{min-width:56px;text-align:center;font-size:13px;color:var(--ink2);font-weight:700}
 .docnav .btn[disabled]{opacity:.4;cursor:not-allowed}
+
+/* الواجهة الرئيسية: أزرار المجموعات */
+.launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.launch-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center;
+  background: var(--card, #fff); border: 1px solid var(--tint-2); border-radius: 16px; padding: 18px 10px; min-height: 120px;
+  color: inherit; text-decoration: none; box-shadow: 0 1px 3px rgba(0,0,0,.05); transition: transform .12s, box-shadow .12s, border-color .12s; }
+.launch-tile:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.08); border-color: var(--brand); }
+.launch-tile .li { font-size: 38px; line-height: 1; width: 64px; height: 64px; display: grid; place-items: center; border-radius: 18px; background: var(--tint); }
+.launch-tile b { font-size: 15px; color: var(--ink2, inherit); }
+.launch-tile small { color: #888; font-size: 12px; }
+.launch-tile.sub { min-height: 105px; }
+.launch-tile.sub .li { font-size: 30px; width: 54px; height: 54px; }
+.launch-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.launch-head h3 { margin: 0; font-size: 20px; }
+@media (max-width: 600px) { .launch-grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; } .launch-tile { min-height: 100px; padding: 12px 6px; } .launch-tile .li { font-size: 30px; width: 52px; height: 52px; } }

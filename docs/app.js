@@ -523,7 +523,7 @@ function pgTabsHTML() {
 }
 function notePageTab() {
   if (!S.company) return;
-  const h = curHash();
+  const h = curHash().startsWith('#/home?') ? '#/home' : curHash();   // أزرار المجموعات جوّا نفس تبويب الرئيسية
   const t = tabsLoad(); t.pages = t.pages || {};
   const list = t.pages[S.company.id] = t.pages[S.company.id] || [];
   const info = navInfo(h) || { l: (document.querySelector('#view .page-head h2')?.textContent || 'شاشة').replace(/^[^\p{L}]+/u, '').trim().slice(0, 40), i: '📄' };
@@ -589,14 +589,30 @@ window.addEventListener('hashchange', () => { document.getElementById('modal-roo
 // ---------------------------------------------------------------------
 //  لوحة التحكم
 // ---------------------------------------------------------------------
+// الواجهة الرئيسية: مجموعات القائمة كأزرار كبيرة، والكبسة بتفتح فروعها
+function launcherHTML() {
+  const gsel = new URLSearchParams(location.hash.split('?')[1] || '').get('g');
+  const groups = NAV().filter(g => g.title !== 'الرئيسية').map(g => ({ ...g, items: g.items.filter(it => !it.soon && (!it.show || it.show() || (DEMO() && it.r))) })).filter(g => g.items.length);
+  const g = gsel && groups.find(x => x.title === gsel);
+  if (g) return `<div class="launch-head"><a class="btn" href="#/home">→ رجوع</a><h3><span>${GROUP_ICONS[g.title] || '📁'}</span> ${esc(g.title)}</h3></div>
+    <div class="launch-grid">${g.items.map(it => it.href ? `<a class="launch-tile sub" href="${it.href}" target="_blank" rel="noopener"><span class="li">${it.i}</span><b>${it.l}</b></a>`
+      : it.act ? `<a class="launch-tile sub" href="#" data-act="${it.act}"><span class="li">${it.i}</span><b>${it.l}</b></a>`
+      : `<a class="launch-tile sub" href="#/${it.r}"><span class="li">${it.i}</span><b>${it.l}</b></a>`).join('')}</div>`;
+  return `<div class="launch-grid">${groups.map(x => `<a class="launch-tile" href="#/home?g=${encodeURIComponent(x.title)}"><span class="li">${GROUP_ICONS[x.title] || '📁'}</span><b>${esc(x.title)}</b><small>${x.items.length} شاشة</small></a>`).join('')}</div>`;
+}
+function wireLauncher(v) {
+  v.querySelectorAll('.launch-tile[data-act]').forEach(a => a.onclick = (e) => { e.preventDefault(); if (a.dataset.act === 'year') switchYearDialog(); });
+}
+
 async function viewHome(v) {
   if (!S.company) {
     v.innerHTML = `<div class="page-head"><h2>أهلاً ${esc(S.profile.full_name || '')} 👋</h2></div>
       <div class="notice info">${isAdmin()
         ? 'ما في شركات لسا. ابدأ بإضافة أول شركة من <a href="#/companies">الشركات</a>.'
         : 'ما عندك صلاحية على أي شركة لسا. تواصل مع مدير النظام.'}</div>
-      ${isAdmin() ? '<button class="btn primary" id="first-co" style="margin-top:12px;font-size:17px;padding:12px 22px">➕ إضافة شركة جديدة</button>' : ''}`;
-    v.querySelector('#first-co')?.addEventListener('click', () => openCompanyForm(null));
+      ${isAdmin() ? '<button class="btn primary" id="first-co" style="margin-top:12px;font-size:17px;padding:12px 22px">➕ إضافة شركة جديدة</button>' : ''}
+      <div style="margin-top:16px">${launcherHTML()}</div>`;
+    v.querySelector('#first-co')?.addEventListener('click', () => openCompanyForm(null)); wireLauncher(v);
     return;
   }
   const tw = localStorageGet('sumou.trialWelcome');
@@ -610,9 +626,11 @@ async function viewHome(v) {
       foot: '<button class="btn primary" data-close>يلا نبلّش</button>' }), 300); } catch {}
   }
   const c = S.company;
+  if (new URLSearchParams(location.hash.split('?')[1] || '').get('g')) { v.innerHTML = launcherHTML(); wireLauncher(v); return; }
   v.innerHTML = `
     <div class="page-head"><h2>${esc(c.name)}</h2><span class="badge brand">${esc(c.code)}</span></div>
-    <div class="grid cols-4">
+    ${launcherHTML()}
+    <div class="grid cols-4" style="margin-top:16px">
       <div class="card stat"><span class="k">السنة المالية الحالية</span><span class="v" style="font-size:18px">${esc(S.fy ? (S.fy.name || S.fy.code) : '—')}</span>
         <span class="muted">${S.fy ? fmtDate(S.fy.start_date) + ' ← ' + fmtDate(S.fy.end_date) : 'ما في سنة مالية'}</span>
         ${S.fiscalYears.length ? '<button class="btn sm" id="home-fy" style="margin-top:8px;align-self:flex-start">🔄 تبديل السنة المالية</button>' : ''}</div>
@@ -634,7 +652,7 @@ async function viewHome(v) {
         ${can('reports', 'view') ? '<a class="btn" href="#/rep-trial">⚖️ ميزان المراجعة</a>' : ''}
       </div>
     </div>`;
-  v.querySelector('#home-fy')?.addEventListener('click', switchYearDialog);
+  v.querySelector('#home-fy')?.addEventListener('click', switchYearDialog); wireLauncher(v);
   // لون الواجهة: كل مستخدم بيختار لونه (إذا المدير سامحله من الصلاحيات)
   if (canTheme()) {
     const cur = S.profile?.theme || 'purple';
