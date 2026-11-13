@@ -122,10 +122,13 @@ async function toggleStatement(tr, cols, loader) {
 // ---------------------------------------------------------------------
 async function viewAccountCenter(v) {
   if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
-  const accs = await loadAccounts();
+  // «مركز تحكم المصاريف» = نفس الشاشة على حسابات المصاريف بس (account-center?cat=expenses)
+  const cat = new URLSearchParams(location.hash.split('?')[1] || '').get('cat');
+  const CATN = { expenses: 'مركز تحكم المصاريف', revenue: 'مركز تحكم الإيرادات', assets: 'مركز تحكم الأصول', liabilities: 'مركز تحكم الالتزامات', equity: 'مركز تحكم حقوق الملكية' };
+  const accs = (await loadAccounts()).filter(a => !CATN[cat] || a.category === cat);
   const byId = Object.fromEntries(accs.map(a => [a.id, a]));
   const groups = accs.filter(a => a.is_group);
-  v.innerHTML = `<div class="page-head"><h2>📗 الأستاذ العام للحسابات</h2><div class="spacer"></div><span class="muted">${esc(S.company.name)} — ${esc(S.fy.name || S.fy.code)}</span></div>
+  v.innerHTML = `<div class="page-head"><h2>${CATN[cat] ? '💸 ' + CATN[cat] : '📗 الأستاذ العام للحسابات'}</h2><div class="spacer"></div><span class="muted">${esc(S.company.name)} — ${esc(S.fy.name || S.fy.code)}</span></div>
     ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>`;
   v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>تحت حساب</label><select data-f="par"><option value="">كل الحسابات</option>${groups.map(g => `<option value="${g.id}">${esc(g.code)} — ${esc(g.name)}</option>`).join('')}</select></div>
     <div class="field"><label>المستوى</label><select data-f="lvl"><option value="0">كل المستويات</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></div>`;

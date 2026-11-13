@@ -107,6 +107,7 @@ export async function loadItems(force = false) {
   if (error) throw error;
   S.items = data; S.itemsCompany = S.company.id; return data;
 }
+const TAXM = { normal: 'ضريبة عادية', exempt: 'معفى من الضريبة', zero: 'ضريبة مبيعات صفر', export: 'تصدير' };
 const itemLabel = (i) => i ? `${i.code} — ${i.name}` : '';
 const resolveItem = (items, t) => { t = (t || '').trim(); if (!t) return null; const c = t.split('—')[0].trim(); return items.find(i => i.code === c) || items.find(i => i.name === t || i.barcode === t) || null; };
 
@@ -368,7 +369,7 @@ async function invoiceEditor(type, inv, ctx) {
   const i0 = inv || { inv_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, payment_type: pre?.inv.payment_type || 'credit',
     prices_include_tax: pre?.inv.prices_include_tax || false, cash_account_id: pre?.inv.cash_account_id || st.cash_account_id, party_id: pre?.inv.party_id,
     party_name: pre?.inv.party_name, reference: pre ? (pre.fromOrder ? pre.ref : `مرتجع من ${INV[pre.inv.inv_type].label} ${docNo(pre.inv)}`) : '',
-    original_invoice_id: pre && !pre.fromOrder ? pre.inv.id : null, sales_rep_id: pre?.inv.sales_rep_id || null, department_id: pre?.inv.department_id || null, notes: pre?.inv.notes || '', project: pre?.inv.project || '' };
+    original_invoice_id: pre && !pre.fromOrder ? pre.inv.id : null, sales_rep_id: pre?.inv.sales_rep_id || null, department_id: pre?.inv.department_id || null, notes: pre?.inv.notes || '', project: pre?.inv.project || '', tax_mode: pre?.inv.tax_mode || 'normal' };
   if (pre) lines = pre.lines;
   const pById = Object.fromEntries(parties.map(p => [p.id, p])), itById = Object.fromEntries(items.map(i => [i.id, i]));
   let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '' }));
@@ -391,6 +392,7 @@ async function invoiceEditor(type, inv, ctx) {
       ${dept}${dtf}
       ${isSale && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id" ${ro}><option value="">— مندوب العميل —</option>${repOptions(i0.sales_rep_id)}</select></div>` : ''}
       ${whs.length > 1 ? `<div class="field"><label>المستودع</label><select name="warehouse_id" ${ro}>${whs.map(w => `<option value="${w.id}" ${w.id === (i0.warehouse_id || pre?.inv.warehouse_id) ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>` : ''}
+      <div class="field"><label>الضريبة</label><select name="tax_mode" ${ro}>${Object.entries(TAXM).map(([k, l]) => `<option value="${k}" ${(i0.tax_mode || 'normal') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" name="prices_include_tax" ${i0.prices_include_tax ? 'checked' : ''} ${ro}> الأسعار شاملة الضريبة</label></div>
     </div></form>
     <datalist id="item-list">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}"></option>`).join('')}</datalist>
@@ -427,7 +429,7 @@ async function invoiceEditor(type, inv, ctx) {
       <td><input class="cell n" data-i="${i}" data-k="qty" value="${r.qty || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="price" value="${r.price || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="disc" value="${r.disc || ''}" inputmode="decimal" ${ro}></td>
-      <td><input class="cell n" data-i="${i}" data-k="rate" value="${r.rate}" inputmode="decimal" ${ro}></td>
+      <td><input class="cell n" data-i="${i}" data-k="rate" value="${r.rate}" inputmode="decimal" ${ro} ${(f?.tax_mode?.value || i0.tax_mode || 'normal') !== 'normal' ? 'disabled' : ''}></td>
       <td class="n" data-tot="${i}"></td><td>${!readOnly ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('');
     totals();
   };
@@ -462,12 +464,14 @@ async function invoiceEditor(type, inv, ctx) {
   };
   draw();
   f.prices_include_tax.onchange = totals;
+  const taxOff = () => (f.tax_mode?.value || 'normal') !== 'normal';
+  f.tax_mode?.addEventListener('change', () => { rows.forEach(r => { const it = resolveItem(items, r.item); r.rate = taxOff() ? 0 : (it ? num(it.tax_rate) : num(st.default_tax_rate ?? 16)); }); draw(); });
   tb.addEventListener('input', (e) => { const t = e.target; if (!t.dataset.k) return; const r = rows[+t.dataset.i]; r[t.dataset.k] = t.dataset.k === 'item' || t.dataset.k === 'desc' ? t.value : t.value; totals(); });
   tb.addEventListener('change', (e) => {
     const t = e.target; if (t.dataset.k !== 'item') return;
     const it = resolveItem(items, t.value), r = rows[+t.dataset.i];
     t.classList.toggle('bad', !!t.value && !it);
-    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale && listPrice[it.id] != null ? listPrice[it.id] : lastPrice(it) ?? (isSale ? it.sale_price : it.purchase_price)) || r.price; r.rate = num(it.tax_rate);
+    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(isSale && listPrice[it.id] != null ? listPrice[it.id] : lastPrice(it) ?? (isSale ? it.sale_price : it.purchase_price)) || r.price; r.rate = taxOff() ? 0 : num(it.tax_rate);
       r.manualDisc = false; applyPromo(r, it, true); draw(); }
   });
   // العرض الترويجي بيتحدّث مع الكمية والسعر والتاريخ، والخصم اليدوي بيلغي العرض عن السطر
@@ -531,7 +535,7 @@ async function invoiceEditor(type, inv, ctx) {
       const bm = it?.batch_mode && it.batch_mode !== 'none';
       if (bm && inbound && !(r.batch || '').trim()) return toast(`السطر ${k + 1}: ${it.name} بده رقم دفعة`, 'err');
       if (bm && inbound && it.batch_mode === 'expiry' && !r.exp) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
-      out.push({ batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate),
+      out.push({ batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate),
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
     }
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
@@ -562,7 +566,7 @@ async function invoiceEditor(type, inv, ctx) {
     if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم الفاتورة (رقم صحيح أكبر من صفر)', 'err');
     const header = { ...(mn.value ? { inv_no: mn.value } : {}), inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
       party_name: h.payment_type === 'cash' ? (h.party_name || p?.name || null) : null, cash_account_id: h.payment_type === 'cash' ? h.cash_account_id : null,
-      reference: h.reference, ...(isSale ? { project: h.project || null } : {}), prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...docTypeValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
+      reference: h.reference, ...(isSale ? { project: h.project || null } : {}), prices_include_tax: h.prices_include_tax, tax_mode: h.tax_mode || 'normal', notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...docTypeValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
       subtotal: r3(out.reduce((s, l) => s + l.subtotal, 0)), tax_total: r3(out.reduce((s, l) => s + l.tax_amount, 0)), discount_total: r3(out.reduce((s, l) => s + l.discount, 0)) };
     header.total = r3(header.subtotal + header.tax_total);
     if (p && isSale && type === 'sale' && p.credit_limit > 0 && h.payment_type === 'credit') {

@@ -66,6 +66,9 @@ function printOrder(type, ord, lines, party, items) {
       <div class="amount-box">${amountToWords(sub + tax)}</div>${ord.notes ? `<p><b>ملاحظات:</b> ${esc(ord.notes)}</p>` : ''}`, { kind: 'invoice' });
 }
 
+export const TAX_MODES = { normal: 'ضريبة عادية', exempt: 'معفى من الضريبة', zero: 'ضريبة مبيعات صفر', export: 'تصدير' };
+const pmList = (sel, where) => (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => r.kind === 'payment_method' && (r.is_active || r.id === sel)
+  && (where === 'sales' ? r.use_sales !== false : r.use_purchases !== false)).map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
 async function orderEditor(type, ord, ctx) {
   const O = ORD[type];
   const [parties, items] = await Promise.all([loadParties(), loadItems(), loadLookups()]);
@@ -76,8 +79,13 @@ async function orderEditor(type, ord, ctx) {
   const o0 = ord || { order_date: today(), party_id: null, reference: '', notes: '' };
   let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 });
+  const inv0 = ord?.invoice_id ? (await sb.from('invoices').select('id,inv_no,doc_code,inv_date,status').eq('id', ord.invoice_id).maybeSingle()).data : null;
+  const canFlags = ord && can(O.screen, 'edit') && !ord.is_frozen;
   const m = modal({ title: ord ? `${O.label} رقم ${ord.order_no}` : `${O.label} جديد`, body: `
-    ${ord ? `<div style="margin:-6px 0 12px">${obadge(ord.status)}</div>` : ''}
+    ${ord ? `<div class="ord-strip">${obadge(ord.status)}
+      ${inv0 ? `<span class="badge ok">مفوتر</span> <span>فاتورة <b>${esc(inv0.doc_code || String(inv0.inv_no))}</b> بتاريخ ${fmtDate(inv0.inv_date)}</span>` : ''}
+      <label class="check" style="margin:0"><input type="checkbox" data-flag="delivered" ${ord.delivered ? 'checked' : ''} ${canFlags ? '' : 'disabled'}> تم التسليم${ord.delivered_date ? ' ' + fmtDate(ord.delivered_date) : ''}</label>
+      <label class="check" style="margin:0"><input type="checkbox" data-flag="closed" ${ord.closed ? 'checked' : ''} ${canFlags ? '' : 'disabled'}> مغلق</label></div>` : ''}
     <form id="o-form"><div class="grid cols-3">
       <div class="field"><label>التاريخ *</label><input type="date" name="order_date" value="${esc(o0.order_date)}" ${ro}></div>
       <div class="field"><label>صالح لغاية</label><input type="date" name="valid_until" value="${esc(o0.valid_until || '')}" ${ro}></div>
@@ -86,15 +94,19 @@ async function orderEditor(type, ord, ctx) {
       <div class="field" style="grid-column:span 2"><label>${O.partyLabel}</label><input list="party-list" id="party" value="${esc(partyLabel(pById[o0.party_id]))}" placeholder="رقم أو اسم ${O.partyLabel}…" ${ro}>${partyDatalist(myParties)}</div>
       <div class="field"><label>الاسم (بدون بطاقة)</label><input name="party_name" value="${esc(o0.party_name || '')}" ${ro}></div>
       ${type === 'sales_order' && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id" ${ro}><option value="">—</option>${repOptions(o0.sales_rep_id)}</select></div>` : ''}
-      <div class="field" style="grid-column:span 2"><label>ملاحظات</label><input name="notes" value="${esc(o0.notes || '')}" ${ro}></div>
+      <div class="field"><label>وسيلة الدفع</label><select name="payment_method_id" ${ro}><option value="">—</option>${pmList(o0.payment_method_id, type === 'sales_order' ? 'sales' : 'purchases')}</select></div>
+      <div class="field"><label>الضريبة</label><select name="tax_mode" id="o-taxmode" ${ro}>${Object.entries(TAX_MODES).map(([k, l]) => `<option value="${k}" ${(o0.tax_mode || 'normal') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label>خصم على الطلب %</label><div style="display:flex;gap:6px"><input name="discount_pct" id="o-dpct" inputmode="decimal" value="${num(o0.discount_pct) || ''}" ${ro}>${ro ? '' : '<button type="button" class="btn sm" id="o-dapply" title="بيتوزّع على كل السطور">تطبيق</button>'}</div></div>
+      <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(o0.notes || '')}" ${ro}></div>
     </div></form>
     <datalist id="item-list">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}">`).join('')}</datalist>
-    <div class="table-wrap"><table class="t lines"><thead><tr><th>#</th><th>الصنف</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الضريبة %</th><th>المجموع</th><th></th></tr></thead><tbody id="ol"></tbody></table></div>
+    <div class="table-wrap"><table class="t lines"><thead><tr><th>#</th><th>الصنف</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الضريبة %</th><th>السعر شامل</th><th>المجموع شامل</th><th></th></tr></thead><tbody id="ol"></tbody></table></div>
     ${ro ? '' : '<button class="btn sm" id="add-line" type="button">➕ سطر</button>'}
-    <div class="inv-totals"><div><span>قبل الضريبة</span><b id="t-sub" dir="ltr"></b></div><div><span>الضريبة</span><b id="t-tax" dir="ltr"></b></div><div><span>الإجمالي</span><b id="t-tot" dir="ltr"></b></div></div>
+    <div class="inv-totals"><div><span>الكمية</span><b id="t-qty" dir="ltr"></b></div><div><span>الإجمالي قبل الخصم</span><b id="t-gross" dir="ltr"></b></div><div><span>قيمة الخصم</span><b id="t-disc" dir="ltr"></b></div>
+      <div><span>قبل الضريبة</span><b id="t-sub" dir="ltr"></b></div><div><span>الضريبة</span><b id="t-tax" dir="ltr"></b></div><div class="big"><span>الصافي</span><b id="t-tot" dir="ltr"></b></div></div>
     <div id="o-audit"></div>`,
     foot: `${!ro ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}
-      ${ord && ord.status === 'open' && can(INVSCR[O.inv], 'add') ? `<button class="btn" data-conv>🧾 تحويل لفاتورة ${O.inv === 'sale' ? 'بيع' : 'شراء'}</button>` : ''}
+      ${ord && ord.status === 'open' && !ord.closed && can(INVSCR[O.inv], 'add') ? `<button class="btn" data-conv>🧾 تحويل لفاتورة ${O.inv === 'sale' ? 'بيع' : 'شراء'}</button>` : ''}
       ${ord && ord.status === 'converted' ? '<span class="muted">تحوّل لفاتورة — شوفها من شاشة الفواتير</span>' : ''}
       ${ord && ord.status === 'open' && can(O.screen, 'edit') ? '<button class="btn" data-cancelord>🚫 إلغاء الطلب</button>' : ''}
       ${ord && can(O.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
@@ -103,19 +115,33 @@ async function orderEditor(type, ord, ctx) {
   m.el.querySelector('.modal').style.maxWidth = '1000px';
   const tb = m.el.querySelector('#ol');
   const calc = (r) => { const g = r3(num(r.qty) * num(r.price) - num(r.disc)); const t = r3(g * num(r.rate) / 100); return { g, t, tot: g + t }; };
-  const totals = () => { let s = 0, t = 0; rows.forEach((r, i) => { const c = calc(r); s += c.g; t += c.t; const el = tb.querySelector(`[data-tot="${i}"]`); if (el) el.textContent = fmtNum(c.tot); });
+  const taxOff = () => (m.el.querySelector('#o-taxmode')?.value || 'normal') !== 'normal';
+  const totals = () => { let s = 0, t = 0, q = 0, gr = 0, d = 0; rows.forEach((r, i) => { const c = calc(r); s += c.g; t += c.t; q += num(r.qty); gr += num(r.qty) * num(r.price); d += num(r.disc);
+      const el = tb.querySelector(`[data-tot="${i}"]`); if (el) el.textContent = fmtNum(c.tot);
+      const pi = tb.querySelector(`[data-pinc="${i}"]`); if (pi && document.activeElement !== pi) pi.value = num(r.price) ? r3(num(r.price) * (1 + num(r.rate) / 100)) : ''; });
+    m.el.querySelector('#t-qty').textContent = fmtNum(q); m.el.querySelector('#t-gross').textContent = fmtNum(gr); m.el.querySelector('#t-disc').textContent = fmtNum(d);
     m.el.querySelector('#t-sub').textContent = fmtNum(s); m.el.querySelector('#t-tax').textContent = fmtNum(t); m.el.querySelector('#t-tot').textContent = fmtNum(s + t); };
   const draw = () => { tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input list="item-list" class="cell" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td><td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!ro || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}</td>
-      ${['qty', 'price', 'disc', 'rate'].map(k => `<td><input class="cell n" dir="ltr" inputmode="decimal" data-i="${i}" data-k="${k}" value="${esc(r[k] || '')}" ${ro}></td>`).join('')}
+      ${['qty', 'price', 'disc', 'rate'].map(k => `<td><input class="cell n" dir="ltr" inputmode="decimal" data-i="${i}" data-k="${k}" value="${esc(k === 'rate' ? String(r[k] ?? '') : (r[k] || ''))}" ${ro || (k === 'rate' && taxOff()) ? 'disabled' : ''}></td>`).join('')}
+      <td><input class="cell n" dir="ltr" inputmode="decimal" data-pinc="${i}" title="السعر شامل الضريبة — اكتبه وبيتحسب السعر قبل الضريبة" ${ro}></td>
       <td class="n" data-tot="${i}"></td><td>${ro ? '' : `<button class="btn sm" type="button" data-rm="${i}">✕</button>`}</td></tr>`).join(''); totals(); };
   draw();
-  tb.addEventListener('input', (e) => { const t = e.target; if (!t.dataset.k) return; rows[+t.dataset.i][t.dataset.k] = t.value; totals(); });
+  tb.addEventListener('input', (e) => { const t = e.target;
+    if (t.dataset.pinc != null) { const r = rows[+t.dataset.pinc]; r.price = r3(num(t.value) / (1 + num(r.rate) / 100)); const pe = tb.querySelector(`[data-i="${t.dataset.pinc}"][data-k="price"]`); if (pe) pe.value = r.price || ''; totals(); return; }
+    if (!t.dataset.k) return; rows[+t.dataset.i][t.dataset.k] = t.value; totals(); });
+  m.el.querySelector('#o-taxmode')?.addEventListener('change', () => { if (taxOff()) rows.forEach(r => r.rate = 0); else rows.forEach(r => { const it = resolveItem(items, r.item); r.rate = it ? num(it.tax_rate) : 16; }); draw(); });
+  m.el.querySelector('#o-dapply')?.addEventListener('click', () => { const pc = num(m.el.querySelector('#o-dpct').value); if (pc < 0 || pc > 100) return toast('النسبة بين 0 و 100', 'err');
+    rows.forEach(r => r.disc = r3(num(r.qty) * num(r.price) * pc / 100)); draw(); toast(`انطبق خصم ${pc}% على كل السطور`, 'ok'); });
+  m.el.querySelectorAll('[data-flag]').forEach(cb => cb.addEventListener('change', async () => {
+    const { error } = await sb.rpc('order_set_flags', { p_id: ord.id, p: { [cb.dataset.flag]: cb.checked } });
+    if (error) { cb.checked = !cb.checked; return toast(arError(error), 'err'); }
+    toast(cb.checked ? (cb.dataset.flag === 'closed' ? 'انغلق الطلب' : 'تم التسليم') : 'انشال', 'ok'); ctx.rerender(); }));
   tb.addEventListener('change', (e) => { const t = e.target; if (t.dataset.k !== 'item') return; const it = resolveItem(items, t.value), r = rows[+t.dataset.i];
     t.classList.toggle('bad', !!t.value && !it);
-    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(type === 'sales_order' ? it.sale_price : it.purchase_price) || r.price; r.rate = num(it.tax_rate); draw(); } });
-  tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
-  m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
+    if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(type === 'sales_order' ? it.sale_price : it.purchase_price) || r.price; r.rate = taxOff() ? 0 : num(it.tax_rate); draw(); } });
+  tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: taxOff() ? 0 : 16 }); draw(); });
+  m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: taxOff() ? 0 : 16 }); draw(); });
   if (ord) { attachAudit(m.el, ord); attachFollow(m.el, 'orders', ord, type, O.screen); }
   attachDocNav(m, ord, { key: 'ord:' + type, open: (r) => orderEditor(type, r, ctx), onNew: can(O.screen, 'add') ? () => orderEditor(type, null, ctx) : null, table: 'orders', canFreeze: can(O.screen, 'edit'), editable: !ro });
   m.el.querySelector('[data-print]')?.addEventListener('click', () => printOrder(type, ord, lines, pById[ord.party_id], items));
@@ -126,7 +152,7 @@ async function orderEditor(type, ord, ctx) {
       const it = resolveItem(items, r.item); if (r.item && !it) { toast(`السطر ${k + 1}: الصنف مش موجود`, 'err'); return null; }
       if (num(r.qty) <= 0) { toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err'); return null; }
       if (num(r.disc) > num(r.qty) * num(r.price)) { toast(`السطر ${k + 1}: الخصم أكبر من قيمة السطر`, 'err'); return null; }
-      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate) });
+      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate) });
     }
     if (!out.length) { toast('ضيف سطر واحد على الأقل', 'err'); return null; }
     return out;
@@ -135,7 +161,7 @@ async function orderEditor(type, ord, ctx) {
     const h = formData(m.el.querySelector('#o-form')); const pv = m.el.querySelector('#party').value; const p = resolveParty(myParties, pv);
     if (pv && !p) return toast(`${O.partyLabel} مش موجود بالقائمة`, 'err');
     const out = collect(); if (!out) return;
-    const header = { order_date: h.order_date, valid_until: h.valid_until || null, reference: h.reference || null, party_id: p?.id || null, party_name: h.party_name || p?.name || null, notes: h.notes || null, ...('project' in h ? { project: h.project || null } : {}),
+    const header = { order_date: h.order_date, valid_until: h.valid_until || null, reference: h.reference || null, party_id: p?.id || null, party_name: h.party_name || p?.name || null, notes: h.notes || null, payment_method_id: h.payment_method_id || null, tax_mode: h.tax_mode || 'normal', discount_pct: num(h.discount_pct), ...('project' in h ? { project: h.project || null } : {}),
       ...('sales_rep_id' in h ? { sales_rep_id: h.sales_rep_id || null } : {}) };
     e.target.disabled = true;
     try {
@@ -151,7 +177,7 @@ async function orderEditor(type, ord, ctx) {
     const { data: cur } = await sb.from('orders').select('status').eq('id', ord.id).single();
     if (cur?.status !== 'open') { toast('الطلب مش مفتوح، يمكن حدا حوّله من قبل', 'err'); m.close(); return ctx.rerender(); }
     m.close();
-    openInvoicePrefill(O.inv, { inv: { inv_type: O.inv, party_id: ord.party_id, party_name: ord.party_name, payment_type: 'credit', sales_rep_id: ord.sales_rep_id, notes: ord.notes, project: ord.project },
+    openInvoicePrefill(O.inv, { inv: { inv_type: O.inv, party_id: ord.party_id, party_name: ord.party_name, payment_type: 'credit', sales_rep_id: ord.sales_rep_id, notes: ord.notes, project: ord.project, tax_mode: ord.tax_mode || 'normal' },
       lines, ref: `من ${O.label} رقم ${ord.order_no}${ord.reference ? ' — ' + ord.reference : ''}`,
       onSaved: async (invId) => { const { error } = await sb.rpc('link_order_invoice', { p_order: ord.id, p_invoice: invId }); if (error) toast(arError(error), 'err'); else toast('الطلب تحوّل لفاتورة', 'ok'); } }, ctx);
   });

@@ -261,6 +261,7 @@ const NAV = () => [
   ]},
   { title: 'المصاريف', items: [
     { r: 'expenses', i: '💸', l: 'بطاقات المصاريف', show: () => S.company && can('expense_cards', 'view') },
+    { r: 'account-center?cat=expenses', i: '💸', l: 'مركز تحكم المصاريف', show: () => S.company && can('reports', 'view') },
     { r: 'party-center?type=expense', i: '📒', l: 'أستاذ مساعد المصاريف', show: () => S.company && can('reports', 'view') },
     { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
     { r: 'party-categories?type=expense', i: '🗂️', l: 'فئات المصاريف', show: () => S.company && can('expense_cards', 'view') },
