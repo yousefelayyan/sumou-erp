@@ -3,6 +3,7 @@
 -- =====================================================================
 
 -- الرصيد المتوفر لأصناف بمستودع (لتنبيه «الكمية المطلوبة أكبر من المتوفرة»)
+drop function if exists public.items_available(uuid, uuid, date, uuid[]);   -- المرحلة 85 بتزيد أعمدة (المحجوز والحر)
 create or replace function public.items_available(p_company uuid, p_warehouse uuid, p_date date, p_items uuid[])
 returns table (item_id uuid, code text, name text, available numeric)
 language plpgsql stable security definer set search_path = public as $$

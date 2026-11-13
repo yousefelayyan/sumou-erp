@@ -321,6 +321,7 @@ const NAV = () => [
     { r: 'items', i: '🏷️', l: 'الأصناف والخدمات', show: () => S.company && can('items', 'view') },
     { r: 'price-lists', i: '💲', l: 'قوائم الأسعار', show: () => S.company && can('items', 'view') },
     { r: 'stock', i: '📦', l: 'رصيد المخزون', show: () => S.company && can('inventory', 'view') },
+    { r: 'reservations', i: '📌', l: 'الكميات المحجوزة بالطلبات', show: () => S.company && (can('inventory', 'view') || can('sales_orders', 'view')) },
     { r: 'batches', i: '🧪', l: 'الدفعات وتواريخ الانتهاء', show: () => S.company && can('inventory', 'view') },
     { r: 'stock-docs?type=in', i: '📥', l: 'سندات الإدخال والإخراج', show: () => S.company && can('inventory', 'view') },
     { r: 'stock-docs?type=count', i: '📋', l: 'الجرد والتسوية', show: () => S.company && can('inventory', 'view') },

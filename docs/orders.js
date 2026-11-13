@@ -2,7 +2,7 @@ import { attachFollow } from './follow.js';
 // =====================================================================
 //  السمو ERP — طلبات المبيعات والتزويد، العروض الترويجية، بطاقات الولاء، الحقول الإضافية
 // =====================================================================
-import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, fmtPrice } from './core.js';
+import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today, fmtPrice, fmtQty } from './core.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { loadItems, openInvoicePrefill, bilingualDoc } from './invoices.js';
 import { printDoc, amountToWords } from './print.js';
@@ -10,6 +10,7 @@ import { loadLookups, repOptions, hasReps } from './lookups.js';
 import { downloadCSV } from './finance.js';
 import { attachAudit } from './audit.js';
 import { attachDocNav, setNavList } from './docnav.js';
+import { loadWarehouses } from './inventory.js';
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
 const amt = (x) => Math.abs(x) < 0.0005 ? '' : fmtNum(x);
@@ -71,7 +72,8 @@ const pmList = (sel, where) => (S._lk?.cid === S.company?.id ? S._lk.rows : []).
   && (where === 'sales' ? r.use_sales !== false : r.use_purchases !== false)).map(r => `<option value="${r.id}" ${r.id === sel ? 'selected' : ''}>${esc(r.name)}</option>`).join('');
 async function orderEditor(type, ord, ctx) {
   const O = ORD[type];
-  const [parties, items] = await Promise.all([loadParties(), loadItems(), loadLookups()]);
+  const [parties, items, , whs, csR] = await Promise.all([loadParties(), loadItems(), loadLookups(), loadWarehouses(), sb.from('company_settings').select('reserve_orders').eq('company_id', S.company.id).maybeSingle()]);
+  const resDef = !!csR?.data?.reserve_orders;
   const myParties = parties.filter(p => p.party_type === O.partyType && p.is_active), pById = Object.fromEntries(parties.map(p => [p.id, p])), itById = Object.fromEntries(items.map(i => [i.id, i]));
   let lines = [];
   if (ord) lines = (await sb.from('order_lines').select('*').eq('order_id', ord.id).order('line_no')).data || [];
@@ -97,6 +99,8 @@ async function orderEditor(type, ord, ctx) {
       <div class="field"><label>وسيلة الدفع</label><select name="payment_method_id" ${ro}><option value="">—</option>${pmList(o0.payment_method_id, type === 'sales_order' ? 'sales' : 'purchases')}</select></div>
       <div class="field"><label>الضريبة</label><select name="tax_mode" id="o-taxmode" ${ro}>${Object.entries(TAX_MODES).map(([k, l]) => `<option value="${k}" ${(o0.tax_mode || 'normal') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field"><label>خصم على الطلب %</label><div style="display:flex;gap:6px"><input name="discount_pct" id="o-dpct" inputmode="decimal" value="${num(o0.discount_pct) || ''}" ${ro}>${ro ? '' : '<button type="button" class="btn sm" id="o-dapply" title="بيتوزّع على كل السطور">تطبيق</button>'}</div></div>
+      ${type === 'sales_order' ? `<div class="field"><label>مستودع التسليم</label><select name="warehouse_id" ${ro}><option value="">— الافتراضي —</option>${whs.map(w => `<option value="${w.id}" ${w.id === o0.warehouse_id ? 'selected' : ''}>${esc(w.name)}</option>`).join('')}</select></div>
+        <div class="field" style="justify-content:flex-end"><label class="check"><input type="checkbox" name="reserve" ${(ord ? o0.reserve : resDef) ? 'checked' : ''} ${ro}> 📌 حجز الكميات بالمستودع</label><span class="hint">المحجوز بينقص من المتوفر لحد ما الطلب يتحوّل أو ينلغى أو تخلص صلاحيته</span></div>` : ''}
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(o0.notes || '')}" ${ro}></div>
     </div></form>
     <datalist id="item-list">${items.filter(i => i.is_active).map(i => `<option value="${esc(itemLabel(i))}">`).join('')}</datalist>
@@ -157,12 +161,28 @@ async function orderEditor(type, ord, ctx) {
     if (!out.length) { toast('ضيف سطر واحد على الأقل', 'err'); return null; }
     return out;
   };
+  let resAck = false;
   m.el.querySelector('[data-save]')?.addEventListener('click', async (e) => {
     const h = formData(m.el.querySelector('#o-form')); const pv = m.el.querySelector('#party').value; const p = resolveParty(myParties, pv);
     if (pv && !p) return toast(`${O.partyLabel} مش موجود بالقائمة`, 'err');
     const out = collect(); if (!out) return;
     const header = { order_date: h.order_date, valid_until: h.valid_until || null, reference: h.reference || null, party_id: p?.id || null, party_name: h.party_name || p?.name || null, notes: h.notes || null, payment_method_id: h.payment_method_id || null, tax_mode: h.tax_mode || 'normal', discount_pct: num(h.discount_pct), ...('project' in h ? { project: h.project || null } : {}),
-      ...('sales_rep_id' in h ? { sales_rep_id: h.sales_rep_id || null } : {}) };
+      ...('sales_rep_id' in h ? { sales_rep_id: h.sales_rep_id || null } : {}),
+      ...(type === 'sales_order' ? { warehouse_id: h.warehouse_id || null, reserve: !!m.el.querySelector('[name=reserve]')?.checked } : {}) };
+    // تنبيه: الكمية أكبر من الحر (المتوفر − المحجوز بطلبات ثانية)
+    if (type === 'sales_order' && !resAck) {
+      const need = {}; out.forEach(l => { if (l.item_id) need[l.item_id] = (need[l.item_id] || 0) + l.qty; });
+      const ids = Object.keys(need);
+      if (ids.length) {
+        const { data: av } = await sb.rpc('items_available', { p_company: S.company.id, p_warehouse: header.warehouse_id, p_date: today(), p_items: ids });
+        const own = {}; if (ord?.reserve && ord.status === 'open') lines.forEach(l => { if (l.item_id) own[l.item_id] = (own[l.item_id] || 0) + num(l.qty); });
+        const short = (av || []).filter(x => need[x.item_id] > num(x.free) + (own[x.item_id] || 0) + 0.0005);
+        if (short.length) {
+          const ok = await confirmBox(`الكمية أكبر من المتوفر غير المحجوز:\n${short.map(x => `${x.code} — ${x.name}: المطلوب ${fmtQty(need[x.item_id])}، المتوفر ${fmtQty(x.available)}، محجوز لطلبات ثانية ${fmtQty(num(x.reserved) - (own[x.item_id] || 0))}`).join('\n')}\n\nتحفظ الطلب رغم هيك؟`);
+          if (!ok) return; resAck = true;
+        }
+      }
+    }
     e.target.disabled = true;
     try {
       let id = ord?.id;
@@ -178,7 +198,7 @@ async function orderEditor(type, ord, ctx) {
     if (cur?.status !== 'open') { toast('الطلب مش مفتوح، يمكن حدا حوّله من قبل', 'err'); m.close(); return ctx.rerender(); }
     m.close();
     openInvoicePrefill(O.inv, { inv: { inv_type: O.inv, party_id: ord.party_id, party_name: ord.party_name, payment_type: 'credit', sales_rep_id: ord.sales_rep_id, notes: ord.notes, project: ord.project, tax_mode: ord.tax_mode || 'normal' },
-      lines, ref: `من ${O.label} رقم ${ord.order_no}${ord.reference ? ' — ' + ord.reference : ''}`,
+      lines, orderReserve: ord.reserve ? lines : null, ref: `من ${O.label} رقم ${ord.order_no}${ord.reference ? ' — ' + ord.reference : ''}`,
       onSaved: async (invId) => { const { error } = await sb.rpc('link_order_invoice', { p_order: ord.id, p_invoice: invId }); if (error) toast(arError(error), 'err'); else toast('الطلب تحوّل لفاتورة', 'ok'); } }, ctx);
   });
   m.el.querySelector('[data-cancelord]')?.addEventListener('click', async () => {
@@ -445,4 +465,28 @@ async function viewCashback(v, ctx) {
   });
 }
 
-export const ORDER_ROUTES = { 'orders': viewOrders, 'promotions': viewPromotions, 'loyalty': viewLoyalty, 'loyalty-cashback': viewCashback, 'custom-fields': viewCustomFields };
+// ===== الكميات المحجوزة بطلبات المبيعات (المرحلة 85) =====
+async function viewReservations(v, ctx) {
+  if (!S.company) return void (v.innerHTML = '<div class="notice info">اختار شركة من فوق أول.</div>');
+  const [r, items, whs] = await Promise.all([sb.rpc('items_reservations', { p_company: S.company.id }), loadItems(), loadWarehouses()]);
+  if (r.error) return void (v.innerHTML = `<div class="notice">${esc(arError(r.error))}</div>`);
+  const iBy = Object.fromEntries(items.map(i => [i.id, i])), wBy = Object.fromEntries(whs.map(w => [w.id, w]));
+  const rows = (r.data || []).sort((a, b) => num(a.free) - num(b.free));
+  v.innerHTML = `<div class="page-head"><h2>📌 الكميات المحجوزة بطلبات المبيعات</h2><div class="spacer"></div><button class="btn" id="pr">🖨️ طباعة</button></div>
+    <p class="muted" style="font-size:12px;margin:0 0 10px">الطلب بيحجز إذا مأشّر عليه «حجز الكميات»، ومفتوح، ومش مغلق، وصلاحيته ما خلصت. «الحر» = الرصيد − المحجوز.</p>
+    <div class="card table-wrap"><table class="t rep" id="rt"><thead><tr><th>الصنف</th><th>المستودع</th><th>الرصيد</th><th>المحجوز</th><th>الحر</th><th>عدد الطلبات</th></tr></thead><tbody>
+    ${rows.map(x => `<tr data-it="${x.item_id}" style="cursor:pointer"><td>${esc(iBy[x.item_id]?.code || '')} — ${esc(iBy[x.item_id]?.name || '')}</td><td>${esc(wBy[x.warehouse_id]?.name || '')}</td>
+      <td class="n">${fmtQty(x.on_hand)}</td><td class="n">${fmtQty(x.reserved)}</td><td class="n" style="color:${num(x.free) < 0 ? 'var(--bad)' : 'inherit'}"><b>${fmtQty(x.free)}</b></td><td class="n">${x.orders}</td></tr>`).join('')
+      || '<tr><td colspan="6" class="empty">ما في كميات محجوزة</td></tr>'}</tbody></table></div><div id="ro"></div>`;
+  v.querySelector('#pr').onclick = () => printDoc('الكميات المحجوزة', v.querySelector('#rt').outerHTML.replace('class="t rep"', 'class="pt"'));
+  v.querySelector('#rt tbody').onclick = async (e) => {
+    const tr = e.target.closest('[data-it]'); if (!tr) return;
+    const { data } = await sb.from('order_lines').select('qty, orders!inner(id,order_no,order_date,party_name,valid_until,status,closed,reserve,order_type,company_id)')
+      .eq('item_id', tr.dataset.it).eq('orders.company_id', S.company.id).eq('orders.order_type', 'sales_order').eq('orders.status', 'open').eq('orders.reserve', true).eq('orders.closed', false);
+    const list = (data || []).filter(l => !l.orders.valid_until || l.orders.valid_until >= today());
+    v.querySelector('#ro').innerHTML = `<div class="card" style="margin-top:10px"><h4 style="margin-top:0">الطلبات اللي حاجزة ${esc(iBy[tr.dataset.it]?.name || '')}</h4><table class="t"><thead><tr><th>رقم الطلب</th><th>التاريخ</th><th>العميل</th><th>صالح لغاية</th><th>الكمية</th></tr></thead><tbody>
+      ${list.map(l => `<tr><td><a href="#/orders?t=sales_order">${l.orders.order_no}</a></td><td>${fmtDate(l.orders.order_date)}</td><td>${esc(l.orders.party_name || '')}</td><td>${l.orders.valid_until ? fmtDate(l.orders.valid_until) : ''}</td><td class="n">${fmtQty(l.qty)}</td></tr>`).join('')}</tbody></table></div>`;
+  };
+}
+
+export const ORDER_ROUTES = { 'reservations': viewReservations, 'orders': viewOrders, 'promotions': viewPromotions, 'loyalty': viewLoyalty, 'loyalty-cashback': viewCashback, 'custom-fields': viewCustomFields };

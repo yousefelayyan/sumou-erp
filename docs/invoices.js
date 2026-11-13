@@ -162,6 +162,7 @@ async function viewSettings(v, ctx) {
       <div class="grid cols-2" style="max-width:640px;margin:6px 0"><div class="field"><label>🧪 نبّهني قبل انتهاء الدفعة بـ (يوم)</label><input type="number" name="expiry_warn_days" min="0" max="730" value="${st.expiry_warn_days ?? 60}" ${editable ? '' : 'disabled'}></div><div></div></div>
       <label class="check"><input type="checkbox" name="block_expired_sale" ${st.block_expired_sale ? 'checked' : ''} ${editable ? '' : 'disabled'}> 🧪 منع بيع دفعة منتهية (والبيع التلقائي دايماً بيتخطّى المنتهي)</label>
       <label class="check"><input type="checkbox" name="block_negative_stock" ${st.block_negative_stock ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع والإخراج بأكثر من الكمية المتوفرة بالمستودع (البيع بالسالب)</label>
+      <label class="check"><input type="checkbox" name="reserve_orders" ${st.reserve_orders ? 'checked' : ''} ${editable ? '' : 'disabled'}> 📌 طلبات المبيعات الجديدة بتحجز كمياتها (المحجوز بينقص من المتوفر بتنبيه الفاتورة والطلبات)</label>
       <p class="muted" style="font-size:12px;margin:2px 0 0">الصنف اللي مأشّر عليه «تجاهل تتبع الكمية» بنوع المستند ما بيتفحص.</p>
       <h3 style="margin:16px 0 6px">🔢 الخانات العشرية بالعرض والطباعة</h3>
       <div class="grid cols-3" style="max-width:640px">${[['amount', 'المبالغ'], ['qty', 'الكميات'], ['price', 'الأسعار']].map(([k, l]) => `<div class="field"><label>${l}</label><select data-dec="${k}" ${editable ? '' : 'disabled'}>${[0, 1, 2, 3].map(n => `<option value="${n}" ${((st.decimals || {})[k] ?? 3) === n ? 'selected' : ''}>${n} — ${(1234.5678).toLocaleString('en-US', { minimumFractionDigits: n, maximumFractionDigits: n })}</option>`).join('')}</select></div>`).join('')}</div>
@@ -172,7 +173,7 @@ async function viewSettings(v, ctx) {
         .map(([k, l]) => `<div class="field"><label>${l}</label><input data-ctpl="${k}" value="${esc((st.cheque_templates || {})[k] || '')}" placeholder="${k === 'deposit' ? 'إيداع شيك وارد رقم: [رقم الشيك] / [البنك] حق [الاستحقاق]' : ''}" ${editable ? '' : 'disabled'}></div>`).join('')}</div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
-    d.block_negative_stock = !!d.block_negative_stock; d.block_below_cost = !!d.block_below_cost; d.use_last_price = !!d.use_last_price; d.block_expired_sale = !!d.block_expired_sale; d.expiry_warn_days = Math.max(0, Math.min(730, Math.round(num(d.expiry_warn_days ?? 60)))); d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
+    d.block_negative_stock = !!d.block_negative_stock; d.reserve_orders = !!d.reserve_orders; d.block_below_cost = !!d.block_below_cost; d.use_last_price = !!d.use_last_price; d.block_expired_sale = !!d.block_expired_sale; d.expiry_warn_days = Math.max(0, Math.min(730, Math.round(num(d.expiry_warn_days ?? 60)))); d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
     d.decimals = Object.fromEntries([...v.querySelectorAll('[data-dec]')].map(i => [i.dataset.dec, +i.value]));
     d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
@@ -366,6 +367,7 @@ async function invoiceEditor(type, inv, ctx) {
     postFlag(type, 'gl') || inv.status === 'posted' ? { key: 'gl', posted: inv.status === 'posted', canPost: inv.status === 'draft' && can(T.screen, 'post') && postFlag(type, 'gl'), canUnpost: inv.status === 'posted' && can(T.screen, 'unpost') } : null,
     postFlag(type, 'stock') || inv.stock_posted ? { key: 'stock', posted: !!inv.stock_posted, canPost: !inv.stock_posted && can(T.screen, 'post') && postFlag(type, 'stock'), canUnpost: inv.stock_posted && can(T.screen, 'unpost') } : null]) : '';
   const pre = !inv && returnPrefill ? returnPrefill : null; returnPrefill = null;
+  const preReserve = pre?.orderReserve || null;
   const i0 = inv || { inv_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, payment_type: pre?.inv.payment_type || 'credit',
     prices_include_tax: pre?.inv.prices_include_tax || false, cash_account_id: pre?.inv.cash_account_id || st.cash_account_id, party_id: pre?.inv.party_id,
     party_name: pre?.inv.party_name, reference: pre ? (pre.fromOrder ? pre.ref : `مرتجع من ${INV[pre.inv.inv_type].label} ${docNo(pre.inv)}`) : '',
@@ -578,12 +580,15 @@ async function invoiceEditor(type, inv, ctx) {
       if (ids.length) {
         const { data: av } = await sb.rpc('items_available', { p_company: S.company.id, p_warehouse: h.warehouse_id || null, p_date: h.inv_date, p_items: ids });
         // الكمية الموجودة بنفس الفاتورة لو كانت مرحّلة للمخزون من قبل ما بتنحسب (التعديل ممنوع بعد الترحيل أصلاً)
-        const short = (av || []).filter(x => need[x.item_id] > num(x.available) + 0.0005);
+        // المحجوز لطلبات المبيعات بينقص من المتوفر (المرحلة 85)، إلا حجز الطلب اللي الفاتورة طالعة منه
+        const own = {}; (preReserve || []).forEach(l => { if (l.item_id) own[l.item_id] = (own[l.item_id] || 0) + num(l.qty); });
+        const freeOf = (x) => num(x.free ?? x.available) + (own[x.item_id] || 0);
+        const short = (av || []).filter(x => need[x.item_id] > freeOf(x) + 0.0005);
         if (short.length) {
           const box = m.el.querySelector('#stock-warn');
           box.innerHTML = `<div class="notice" style="border:2px solid #d97706;background:#fff7ed;margin-top:10px"><b>⚠️ تنبيهات فاتورة المبيعات: الكمية المطلوبة أكبر من الكمية المتوفرة</b>
-            <table class="t" style="margin:6px 0"><thead><tr><th>الصنف</th><th>المطلوب</th><th>المتوفر</th><th>النقص</th></tr></thead><tbody>
-            ${short.map(x => `<tr><td>${esc(x.code)} — ${esc(x.name)}</td><td class="n">${fmtNum(need[x.item_id])}</td><td class="n">${fmtNum(x.available)}</td><td class="n" style="color:#b91c1c">${fmtNum(need[x.item_id] - num(x.available))}</td></tr>`).join('')}</tbody></table>
+            <table class="t" style="margin:6px 0"><thead><tr><th>الصنف</th><th>المطلوب</th><th>المتوفر</th><th>محجوز لطلبات</th><th>النقص</th></tr></thead><tbody>
+            ${short.map(x => `<tr><td>${esc(x.code)} — ${esc(x.name)}</td><td class="n">${fmtNum(need[x.item_id])}</td><td class="n">${fmtNum(x.available)}</td><td class="n">${fmtNum(Math.max(num(x.reserved) - (own[x.item_id] || 0), 0))}</td><td class="n" style="color:#b91c1c">${fmtNum(need[x.item_id] - freeOf(x))}</td></tr>`).join('')}</tbody></table>
             ${st.block_negative_stock ? '<div style="color:#b91c1c;margin:4px 0"><b>البيع بالسالب ممنوع بإعدادات الشركة:</b> بتقدر تحفظ الفاتورة مسودة، بس ترحيلها للمخزون ما بيمشي قبل ما يتوفر الرصيد.</div>' : ''}
             <button type="button" class="btn primary" id="sw-go">${st.block_negative_stock ? 'حفظ كمسودة' : 'متابعة الحفظ رغم النقص'}</button> <button type="button" class="btn" id="sw-no">رجوع للتعديل</button></div>`;
           box.scrollIntoView({ block: 'nearest' });

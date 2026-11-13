@@ -175,7 +175,7 @@ export const hasUnsavedModal = () => !!document.querySelector('#modal-root .moda
 
 export function confirmBox(text) {
   return new Promise(resolve => {
-    const m = modal({ title: 'تأكيد', size: 'sm', body: `<p>${esc(text)}</p>`,
+    const m = modal({ title: 'تأكيد', size: 'sm', body: `<p style="white-space:pre-line">${esc(text)}</p>`,
       foot: `<button class="btn primary" data-yes>نعم</button><button class="btn" data-close>إلغاء</button>` });
     m.el.querySelector('[data-yes]').onclick = () => { m.close(); resolve(true); };
     m.el.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => resolve(false)));

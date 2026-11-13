@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..84). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..85). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -116,7 +116,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t65 t66 t67 t68 t69 t70 t71 t72 t73 t74 t75 t76 t77 t78 t79 t80 t81 t82 t83 t84 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t65 t66 t67 t68 t69 t70 t71 t72 t73 t74 t75 t76 t77 t78 t79 t80 t81 t82 t83 t84 t85 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -140,7 +140,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.66.0)
+## اللي انبنى (لحد النسخة 4.67.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -259,6 +259,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **تحميل أرصدة على سند قيد (المرحلة 82):** `entry_load_balances(company, fy, {kind: accounts (parent | accounts[] | category، by_party) | parties (type، category_id) | employees (account), to, nonzero})` → (account_id, party_id, employee_id, balance مدين−دائن)؛ بصلاحية journal_entries add، المرحّل بدون الإقفال، وموظف الفرع دوائره بس. الواجهة: زر «📥 تحميل أرصدة» تحت سطور سند القيد (`loadBalancesDialog` بـ finance.js): عكس الرصيد (تصفير) أو نفسه، وحساب مقابل اختياري لسطر الموازنة، لحد 500 سطر.
 - **ملخص نهاية اليوم وإغلاق الصندوق (المرحلة 83):** `pos_day_rows` (داخلية) → لكل كاشير (invoices.created_by) بفواتير نقطة البيع: العدد، الملغى، المبيعات، الخصم، الضريبة، الصافي، الآجل، `expected_cash` (نقدي على حساب نوعه cash)، حسب الوسيلة (`pos_method`)، مرتجعات البيع اللي عملها نفس اليوم، والإغلاق. `pos_day_summary(company, day, user)`: المشرف (`pos_sup` = pos edit أو sales_invoices view) بيشوف الكل، والكاشير (pos add) حاله بس. `pos_closings` (company, cashier, day فريد؛ المتوقع، المعدود، الفرق، details؛ قراءة: صاحبه أو المشرف؛ كتابة من الدوال بس): `pos_close_day(company, day, counted, notes, user)` (الكاشير لحاله، أو pos edit لغيره)، `pos_reopen_day(id)` (pos edit). trigger `ab_pos_closed_check`: بعد الإغلاق ما في بيع pos لنفس الكاشير بنفس اليوم. مش بالنسخة الاحتياطية. الواجهة: زر «🧾 إغلاق اليوم» بشريط الكاشير (ملخص + المعدود + الفرق + طباعة رول)، وشاشة «🧾 ملخص الكاشير اليومي» (route `pos-day`) للمشرف مع إغلاق/فتح لكل كاشير.
 - **سياسة كلمات السر (المرحلة 84):** `tenants.settings.password_policy` {min_len 4..32، require_digit/letter/mixed/symbol، expiry_days، force_change}؛ `tenant_password_policy(t)` و`password_check(t, pwd)` (داخليات)، `password_policy()`، `set_password_policy(jsonb)` (مدير المشترك). `admin_create_user`/`admin_update_user` انعادت تعريفها بالمرحلة 84 (بتفحص السياسة، وبتعلّم must_change إذا force_change والمدير غيّر كلمة سر غيره) — أي تعديل بعدها لازم يحافظ على شرط المشترك وعلى هالفحص. `profiles.password_changed_at`/`must_change_password` (من النظام بس: `ab_profile_pwd_guard`، GUC `sumou.pwd`). `change_my_password(old, new)` (بيتأكد من القديمة بـ crypt)، `admin_force_password_change(user, on)`، `my_password_status()` → {policy, must_change, expired, days_left}. الواجهة: boot بيفتح `renderForcedPassword` إذا لازم يغيّر أو انتهت، تنبيه قبل 7 أيام، زر «🔑 تغيير كلمة السر» بلوحة التحكم (`changePasswordDialog`)، «🔐 سياسة كلمات السر» بشاشة المستخدمين، و«🔑 إجبار تغيير كلمة السر» بنموذج المستخدم. ناقص: تغيير كلمة السر برابط الاسترجاع (updateUser) ما بيمر على السياسة، والقفل بعد محاولات فاشلة من Supabase نفسه.
+- **حجز الكميات بطلبات المبيعات (المرحلة 85):** `orders.reserve` و`orders.warehouse_id` (`ad_order_reserve_check`: المستودع من نفس الشركة، وطلب الشراء ما بيحجز) و`company_settings.reserve_orders` (الافتراضي للطلب الجديد، «حسابات الربط ← المخزون»). الطلب بيحجز: طلب مبيعات مفتوح، مش مغلق، reserve، وvalid_until ما فات. `reserved_rows(company)` (داخلية؛ المستودع الفاضي = `reserve_default_wh` — **ما تستعمل `default_warehouse` بالدوال الـ stable، لأنها بتعمل مستودع إذا ما في**). `items_available` صار فيه `reserved` و`free` (المرحلة 37 بتعمل drop قبل ما تعيد التعريف). `items_reservations(company)` (inventory أو sales_orders view). الواجهة: «📌 حجز الكميات» و«مستودع التسليم» بطلب المبيعات مع تنبيه إذا الكمية أكبر من الحر (بيرجّع حجز نفس الطلب)، تنبيه النقص بالفاتورة بيحسب المحجوز (والفاتورة المحوّلة من طلب حاجز بترجّع حجزه، `orderReserve` بالـ prefill)، وشاشة «📌 الكميات المحجوزة بالطلبات» (route `reservations`) بالمخزون مع الطلبات الحاجزة لكل صنف.
 - **النسخة اليومية على جهاز المستخدم (4.52.1):** بشاشة النسخ الاحتياطي «🖥️ نسخة يومية تلقائية على جهازك»: `showDirectoryPicker` (كروم/إيدج)، مقبض المجلد بـ IndexedDB `sumou-local-backup` لكل مستخدم، `autoLocalBackup()` (مدير، مرة باليوم) بتكتب `نسخة السمو ERP YYYY-MM-DD.json` لكل الشركات وبتخلي آخر 60؛ إذا الإذن راح بعد إعادة تشغيل المتصفح بيطلع شريط «اسمح واحفظ» تحت.
 - **النوافذ فوق بعض:** `modal({ stack: true })` بتفتح نافذة فرعية فوق المفتوحة بدل ما تسكّرها (سجل الأسعار، فواتير الموردين). عنوان `modal` بيتعمله esc لحاله، فما تحط esc() بالعنوان.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36 (آخر قيد هلأ `lookups_kind_chk4` بالمرحلة 54)، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
