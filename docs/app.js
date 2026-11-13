@@ -291,40 +291,28 @@ function renderShell() {
         <div class="side-tools">
           <button type="button" data-tool="home" title="الرئيسية"><span>🏠</span><small>الرئيسية</small></button>
           <button type="button" data-tool="company" title="تبديل الشركة"><span>🏢</span><small>تبديل الشركة</small></button>
+          <button type="button" data-tool="year" title="تبديل السنة المالية"><span>📅</span><small>تبديل السنة</small></button>
           <button type="button" data-tool="user" title="تبديل المستخدم"><span>👤</span><small>تبديل المستخدم</small></button>
           <button type="button" data-tool="instance" title="مثيل جديد: نافذة جديدة بتسجيل دخول لحاله"><span>🪟</span><small>مثيل جديد</small></button>
           <button type="button" data-tool="exit" title="خروج"><span>🚪</span><small>خروج</small></button>
         </div>
       </aside>
       <div class="main">
-        <header class="topbar">
-          <button class="btn sm menu-btn" id="menu-btn">☰</button>
-          <div class="pill-select"><label>الشركة</label>
-            <select id="company-select">
-              ${S.companies.filter(c => c.is_active).map(c => `<option value="${c.id}" ${c.id === S.company?.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('') || '<option>لا يوجد شركات</option>'}
-            </select></div>
-          <div class="pill-select"><label>السنة المالية</label>
-            <select id="fy-select">
-              ${S.fiscalYears.map(y => `<option value="${y.id}" ${y.id === S.fy?.id ? 'selected' : ''}>${esc(y.name || y.code)}${y.is_closed ? ' (مغلقة)' : ''}</option>`).join('') || '<option>—</option>'}
-            </select></div>
-          <div class="spacer"></div>
-          <a class="btn sm" href="./pdf/" target="_blank" rel="noopener" title="السمو PDF — قارئ ومحرّر الملفات">📕 السمو PDF</a>
-          <div class="user-chip"><span>${esc(S.profile.full_name || S.profile.email)}</span><div class="avatar">${esc(initials)}</div></div>
-          <button class="btn sm" id="logout">خروج</button>
-        </header>
-        <div class="co-tabs" id="co-tabs">${coTabsHTML()}</div>
+        <div class="tabs-head no-print">
+          <div class="co-tabs" id="co-tabs">${coTabsHTML()}</div>
+          <div class="pg-tabs" id="pg-tabs">${pgTabsHTML()}</div>
+        </div>
         ${subBannerHTML()}
         <section class="content" id="view"></section>
         <div class="watermark" id="watermark" aria-hidden="true"></div>
       </div>
     </div>`;
   updateWatermark();
-  document.getElementById('menu-btn').onclick = () => document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('logout').onclick = async () => { await log('خروج', 'auth'); signOutHere(); };
   document.querySelector('.side-tools').addEventListener('click', async (e) => {
     const t = e.target.closest('[data-tool]')?.dataset.tool; if (!t) return;
     if (t === 'home') location.hash = '#/home';
     if (t === 'company') switchCompanyDialog();
+    if (t === 'year') switchYearDialog();
     if (t === 'instance') window.open(location.pathname + '?instance=' + Date.now() + '#/home', '_blank', 'noopener');
     if (t === 'user') { if (!(await confirmBox('تبديل المستخدم؟ رح تطلع من هالحساب وتدخل بحساب ثاني.'))) return; await log('خروج', 'auth', null, { switch: true }); await signOutHere(); }
     if (t === 'exit') {
@@ -333,17 +321,16 @@ function renderShell() {
       if (INSTANCE) window.close();   // نافذة «مثيل جديد» بتتسكّر
     }
   });
-  document.getElementById('company-select').onchange = (e) => activateCompany(e.target.value);
   document.getElementById('co-tabs').addEventListener('click', (e) => {
+    if (e.target.closest('#menu-btn')) return document.getElementById('sidebar').classList.toggle('open');
     const x = e.target.closest('[data-close-tab]'); if (x) { e.stopPropagation(); return closeCompanyTab(x.dataset.closeTab); }
     if (e.target.closest('[data-add-tab]')) return switchCompanyDialog();
     const t = e.target.closest('[data-co-tab]'); if (t && t.dataset.coTab !== S.company?.id) activateCompany(t.dataset.coTab);
   });
-  document.getElementById('fy-select').onchange = (e) => {
-    S.fy = S.fiscalYears.find(y => y.id === e.target.value) || null;
-    localStorageSet('sumou.fy.' + S.company.id, S.fy?.id);
-    updateWatermark(); route_();
-  };
+  document.getElementById('pg-tabs').addEventListener('click', (e) => {
+    const x = e.target.closest('[data-close-pg]'); if (x) { e.stopPropagation(); return closePageTab(x.dataset.closePg); }
+    const t = e.target.closest('[data-pg]'); if (t && t.dataset.pg !== location.hash) location.hash = t.dataset.pg;
+  });
   document.querySelectorAll('.nav a').forEach(a => a.addEventListener('click', () => document.getElementById('sidebar').classList.remove('open')));
   document.querySelectorAll('.nav-title').forEach(b => b.addEventListener('click', () => {
     const g = b.closest('.nav-group'); setOpenGroup(g.classList.contains('open') ? null : g.dataset.g);
@@ -366,6 +353,23 @@ function switchCompanyDialog() {
   };
 }
 
+// تبديل السنة المالية: بيدخل على نفس الشاشة بالسنة الجديدة
+function switchYearDialog() {
+  if (!S.company) return;
+  const m = modal({ title: '📅 تبديل السنة المالية', size: 'sm', body: `<div style="display:grid;gap:6px">${S.fiscalYears.map(y => `
+      <button type="button" class="btn ${y.id === S.fy?.id ? 'primary' : ''}" data-fy="${y.id}" style="justify-content:space-between">
+        <b>${esc(y.name || y.code)}</b><span class="muted" style="font-size:12px">${fmtDate(y.start_date)} ← ${fmtDate(y.end_date)}${y.is_closed ? ' · مغلقة' : ''}</span></button>`).join('')
+      || '<div class="empty">ما في سنوات مالية لهالشركة</div>'}</div>`, foot: '<button class="btn" data-close>إلغاء</button>' });
+  m.el.querySelector('.modal-body').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-fy]'); if (!b) return;
+    m.close();
+    S.fy = S.fiscalYears.find(y => y.id === b.dataset.fy) || null;
+    localStorageSet('sumou.fy.' + S.company.id, S.fy?.id);
+    updateWatermark(); route_();
+    toast('صرت على ' + (S.fy?.name || S.fy?.code || ''), 'ok');
+  });
+}
+
 // ---------------------------------------------------------------------
 //  تبويبات الشركات (مثل تبويبات كروم): كل شركة مفتوحة إلها تبويب، وكل تبويب بيتذكّر صفحته
 // ---------------------------------------------------------------------
@@ -380,9 +384,10 @@ function tabsLoad() {
 }
 function tabsSave(t) { try { (INSTANCE ? sessionStorage : localStorage).setItem(TABS_KEY, JSON.stringify(t)); } catch {} }
 function coTabsHTML() {
-  if (!S.company) return '';
+  const menu = `<button type="button" class="co-menu" id="menu-btn" title="القائمة">☰</button>`;
+  if (!S.company) return menu;
   const t = tabsLoad(); tabsSave(t);
-  return t.ids.map(id => { const c = S.companies.find(x => x.id === id); return `<div class="co-tab ${id === S.company.id ? 'active' : ''}" data-co-tab="${id}" title="${esc(c.name)}">
+  return menu + t.ids.map(id => { const c = S.companies.find(x => x.id === id); return `<div class="co-tab ${id === S.company.id ? 'active' : ''}" data-co-tab="${id}" title="${esc(c.name)}">
       <span class="co-code" dir="ltr">${esc(c.code)}</span><span class="co-name">${esc(c.name)}</span>
       ${t.ids.length > 1 ? `<button type="button" class="co-x" data-close-tab="${id}" title="سكّر التبويب">×</button>` : ''}</div>`; }).join('')
     + `<button type="button" class="co-add" data-add-tab title="فتح شركة بتبويب جديد">＋</button>`;
@@ -399,9 +404,46 @@ async function activateCompany(id) {
   const h = t.hash[id] || '#/home';
   if (location.hash !== h) location.hash = h; else route_();
 }
+// تبويبات الشاشات جوّا كل شركة: كل شاشة بتنفتح إلها تبويب
+const PG_MAX = 12;
+const curHash = () => { const h = location.hash; return !h || h === '#' || h === '#/' ? '#/home' : h; };
+function navInfo(hash) {
+  const items = NAV().flatMap(g => g.items).filter(it => it.r);
+  const exact = items.find(it => '#/' + it.r === hash);
+  const base = exact || items.find(it => ('#/' + it.r).split('?')[0] === hash.split('?')[0]);
+  return base ? { l: base.l, i: base.i } : null;
+}
+function pgTabsHTML() {
+  if (!S.company) return '';
+  const t = tabsLoad(); const list = (t.pages || {})[S.company.id] || [];
+  const cur = curHash();
+  return list.map(p => `<div class="pg-tab ${p.h === cur ? 'active' : ''}" data-pg="${esc(p.h)}" title="${esc(p.l)}">
+      <span>${esc(p.i || '📄')}</span><span class="pg-name">${esc(p.l)}</span>
+      <button type="button" class="co-x" data-close-pg="${esc(p.h)}" title="سكّر">×</button></div>`).join('');
+}
+function notePageTab() {
+  if (!S.company) return;
+  const h = curHash();
+  const t = tabsLoad(); t.pages = t.pages || {};
+  const list = t.pages[S.company.id] = t.pages[S.company.id] || [];
+  const info = navInfo(h) || { l: (document.querySelector('#view .page-head h2')?.textContent || 'شاشة').replace(/^[^\p{L}]+/u, '').trim().slice(0, 40), i: '📄' };
+  const p = list.find(x => x.h === h);
+  if (p) Object.assign(p, info); else list.push({ h, ...info });
+  while (list.length > PG_MAX) { const k = list.findIndex(x => x.h !== h); list.splice(k, 1); }
+  tabsSave(t);
+  const el = document.getElementById('pg-tabs'); if (el) el.innerHTML = pgTabsHTML();
+  el?.querySelector('.pg-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function closePageTab(h) {
+  const t = tabsLoad(); const list = (t.pages || {})[S.company.id] || [];
+  const i = list.findIndex(x => x.h === h); if (i < 0) return;
+  list.splice(i, 1); tabsSave(t);
+  if (h === curHash()) location.hash = (list[Math.max(0, i - 1)] || { h: '#/home' }).h;
+  else document.getElementById('pg-tabs').innerHTML = pgTabsHTML();
+}
 function closeCompanyTab(id) {
   const t = tabsLoad(); if (t.ids.length < 2) return;
-  const i = t.ids.indexOf(id); t.ids.splice(i, 1); delete t.hash[id]; tabsSave(t);
+  const i = t.ids.indexOf(id); t.ids.splice(i, 1); delete t.hash[id]; if (t.pages) delete t.pages[id]; tabsSave(t);
   if (id === S.company?.id) activateCompany(t.ids[Math.max(0, i - 1)]);
   else document.getElementById('co-tabs').innerHTML = coTabsHTML();
 }
@@ -432,7 +474,7 @@ async function route_() {
   if (S.company) { const t = tabsLoad(); t.hash[S.company.id] = location.hash || '#/home'; tabsSave(t); }
   const view = document.getElementById('view'); if (!view) return;
   view.innerHTML = '<div class="empty">جاري التحميل…</div>';
-  try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); try { enhanceReportTables(view, location.hash.slice(2)); } catch {} }
+  try { await (ROUTES[r] || viewHome)(view, { rerender: route_, renderShell }); try { enhanceReportTables(view, location.hash.slice(2)); } catch {} try { notePageTab(); } catch {} }
   catch (err) { view.innerHTML = `<div class="notice">${esc(arError(err))}</div>`; }
 }
 window.addEventListener('hashchange', () => { document.getElementById('modal-root').innerHTML = ''; if (S.profile?.is_active) route_(); });

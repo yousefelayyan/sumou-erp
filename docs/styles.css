@@ -138,13 +138,14 @@ table.t{width:100%;border-collapse:collapse}
   .sidebar{position:fixed;inset:0 0 0 auto;width:270px;transform:translateX(100%);transition:.2s;z-index:40}
   .sidebar.open{transform:none;box-shadow:-10px 0 30px rgba(0,0,0,.3)}
   .topbar .menu-btn{display:inline-flex}
+  .co-menu{display:inline-block}
   .grid.cols-2,.grid.cols-3,.grid.cols-4{grid-template-columns:1fr}
   .content{padding:14px}
   .user-chip span{display:none}
   .watermark{right:0;top:110px}
 }
 @media print{
-  .sidebar,.topbar,.no-print{display:none!important}
+  .sidebar,.topbar,.tabs-head,.no-print{display:none!important}
   .watermark{position:fixed;inset:0;right:0;top:0}
   .wm-inner{opacity:.08}
   .layout{display:block}.content{padding:0}.card{box-shadow:none}
@@ -192,7 +193,7 @@ table.t{width:100%;border-collapse:collapse}
 .post-item .pi-ico{font-size:16px}
 
 /* كبسات أسفل القائمة: الرئيسية، تبديل الشركة، تبديل المستخدم، مثيل جديد، خروج */
-.side-tools{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding:8px;border-top:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.15)}
+.side-tools{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:8px;border-top:1px solid rgba(255,255,255,.1);background:rgba(0,0,0,.15)}
 .side-tools button{display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;color:#e9ddf5;font:inherit;cursor:pointer;padding:6px 2px;border-radius:8px}
 .side-tools button:hover{background:rgba(255,255,255,.1);color:#fff}
 .side-tools button span{font-size:19px;line-height:1}
@@ -205,8 +206,15 @@ table.t{width:100%;border-collapse:collapse}
 .wm-user{font-size:clamp(16px,2.4vw,30px);font-weight:700;margin-top:8px}
 
 /* تبويبات الشركات */
-.co-tabs{display:flex;align-items:flex-end;gap:2px;padding:6px 14px 0;background:#ece6f3;border-bottom:1px solid var(--line,#e0d8ea);overflow-x:auto}
-.co-tabs:empty{display:none}
+.tabs-head{position:sticky;top:0;z-index:6;background:#fff}
+.co-tabs{display:flex;align-items:flex-end;gap:2px;padding:8px 14px 0;background:#e3d9f0;border-bottom:1px solid var(--line,#e0d8ea);overflow-x:auto;scrollbar-width:thin}
+.co-menu{display:none;align-self:center;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:18px;padding:3px 10px;margin:0 0 6px 6px;cursor:pointer}
+.pg-tabs{display:flex;align-items:center;gap:4px;padding:6px 14px;background:#fff;border-bottom:1px solid var(--line,#e0d8ea);overflow-x:auto;scrollbar-width:thin}
+.pg-tabs:empty{display:none}
+.pg-tab{display:flex;align-items:center;gap:5px;max-width:220px;padding:5px 10px;border-radius:8px;background:#f4f1f8;color:#4a3a60;cursor:pointer;font-size:13px;white-space:nowrap;border:1px solid transparent}
+.pg-tab:hover{background:#ece6f3}
+.pg-tab.active{background:var(--brand-soft);color:var(--brand);font-weight:700;border-color:#cdbbe4}
+.pg-tab .pg-name{overflow:hidden;text-overflow:ellipsis}
 .co-tab{display:flex;align-items:center;gap:6px;max-width:240px;padding:7px 12px;border-radius:10px 10px 0 0;background:#ddd3ea;color:#4a3a60;cursor:pointer;font-size:13.5px;white-space:nowrap;border:1px solid transparent;border-bottom:0}
 .co-tab:hover{background:#e6ddf1}
 .co-tab.active{background:#fff;color:#2a1540;font-weight:700;border-color:var(--line,#e0d8ea);margin-bottom:-1px}
