@@ -98,7 +98,7 @@ export function shrinkImage(file, max = 320) {
 export async function loadItems(force = false) {
   if (!force && S.items && S.itemsCompany === S.company.id) return S.items;
   // بدون الصورة (ثقيلة)؛ محرر الصنف بيجيبها لحاله
-  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,category_id,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
+  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,category_id,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
   if (error) throw error;
   S.items = data; S.itemsCompany = S.company.id; return data;
 }
@@ -147,12 +147,16 @@ async function viewSettings(v, ctx) {
     <div class="grid cols-2">${sel('depreciation_account_id', 'مصروف الاستهلاك (الافتراضي)')}${sel('accum_dep_account_id', 'مجمع الاستهلاك (الافتراضي)')}
       ${sel('asset_disposal_account_id', 'أرباح وخسائر بيع وشطب الأصول')}
       <div class="field"><label>&nbsp;</label>${editable && !st.asset_disposal_account_id ? '<button type="button" class="btn sm" id="mk-disp">➕ اعمل حساب «أرباح (خسائر) بيع وشطب أصول» لحاله</button>' : ''}</div></div><h3 style="margin:16px 0 6px">🏅 بطاقات الولاء</h3><div class="grid cols-2">${sel('cashback_account_id', 'مصروف الاسترداد النقدي (حساب مصاريف)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div>
+      <h3 style="margin:16px 0 6px">📦 المخزون</h3>
+      <label class="check"><input type="checkbox" name="block_negative_stock" ${st.block_negative_stock ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع والإخراج بأكثر من الكمية المتوفرة بالمستودع (البيع بالسالب)</label>
+      <p class="muted" style="font-size:12px;margin:2px 0 0">الصنف اللي مأشّر عليه «تجاهل تتبع الكمية» بنوع المستند ما بيتفحص.</p>
       <h3 style="margin:16px 0 6px">🧾 بيان قيود الشيكات</h3>
       <p class="muted" style="font-size:12px;margin:0 0 6px">اكتب البيان لكل عملية، واستعمل الكلمات: <b>[رقم الشيك]</b> <b>[الطرف]</b> <b>[البنك]</b> <b>[الاستحقاق]</b> <b>[المبلغ]</b> <b>[ملاحظات]</b>. الفاضي بياخذ البيان الافتراضي.</p>
       <div class="grid cols-2">${[['receive', 'استلام شيك وارد'], ['deposit', 'إيداع بالبنك'], ['collect_in', 'تحصيل وارد'], ['return_in', 'إرجاع وارد'], ['undeposit', 'سحب من الإيداع'], ['issue', 'إصدار شيك صادر'], ['collect_out', 'صرف صادر'], ['return_out', 'إرجاع/إلغاء صادر']]
         .map(([k, l]) => `<div class="field"><label>${l}</label><input data-ctpl="${k}" value="${esc((st.cheque_templates || {})[k] || '')}" placeholder="${k === 'deposit' ? 'إيداع شيك وارد رقم: [رقم الشيك] / [البنك] حق [الاستحقاق]' : ''}" ${editable ? '' : 'disabled'}></div>`).join('')}</div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
+    d.block_negative_stock = !!d.block_negative_stock;
     d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
     const { error } = await sb.from('company_settings').upsert(d);
@@ -220,6 +224,9 @@ async function viewItems(v, ctx) {
         <label class="btn sm">اختيار صورة<input type="file" accept="image/*" id="i-img" hidden></label>
         <button type="button" class="btn sm" id="i-img-rm" ${it.image ? '' : 'hidden'}>شيل الصورة</button></div></div>
       ${cfFieldsHTML('item', it.extra) ? `<h4 style="margin:12px 0 6px">🧩 حقول إضافية</h4>${cfFieldsHTML('item', it.extra)}` : ''}
+      <details style="margin:8px 0"><summary style="cursor:pointer;font-weight:700">📦 تجاهل تتبع الكمية</summary>
+        <p class="muted" style="font-size:12px;margin:4px 0">بالمستندات المأشّرة ما بيتفحص رصيد هالصنف (ما بيطلع تنبيه نقص ولا بيمنع البيع بالسالب). مفيد للخدمات والتركيب.</p>
+        <div style="display:flex;flex-wrap:wrap;gap:6px 16px">${[['sale', 'فواتير المبيعات'], ['sale_return', 'مردودات المبيعات'], ['pos', 'نقطة البيع'], ['sales_order', 'طلبات المبيعات'], ['purchase', 'فواتير المشتريات'], ['purchase_return', 'مردودات المشتريات'], ['stock_out', 'سندات الإخراج'], ['stock_transfer', 'سندات التحويل'], ['production', 'سندات الإنتاج']].map(([k, l]) => `<label class="check" style="margin:0"><input type="checkbox" data-qi="${k}" ${(it.qty_check_ignore || []).includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div></details>
       <label class="check"><input type="checkbox" name="is_active" ${it.is_active ? 'checked' : ''}> فعّال</label></form>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
     if (!isNew) attachAudit(m.el, it);
@@ -239,6 +246,7 @@ async function viewItems(v, ctx) {
       if (!d.code || !d.name) return toast('الرقم والاسم مطلوبين', 'err');
       { const rq = checkRequired(m.el.querySelector('#i-form'), 'item'); if (rq) return toast(rq, 'err'); }
       d.category_id = d.category_id || null;
+      d.qty_check_ignore = [...m.el.querySelectorAll('[data-qi]')].filter(x => x.checked).map(x => x.dataset.qi);
       { const ex = cfValues(m.el.querySelector('#i-form'), 'item', it.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex; }
       d.sale_price = num(d.sale_price); d.purchase_price = num(d.purchase_price); d.tax_rate = num(d.tax_rate);
       if (isNew) d.company_id = S.company.id;
@@ -446,7 +454,8 @@ async function invoiceEditor(type, inv, ctx) {
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
     // تنبيه: الكمية المطلوبة أكبر من المتوفرة بالمستودع (فاتورة البيع)
     if (type === 'sale' && !stockAck) {
-      const need = {}; out.forEach(l => { if (l.item_id) need[l.item_id] = (need[l.item_id] || 0) + l.qty; });
+      const ign = new Set(items.filter(i => (i.qty_check_ignore || []).includes('sale')).map(i => i.id));
+      const need = {}; out.forEach(l => { if (l.item_id && !ign.has(l.item_id)) need[l.item_id] = (need[l.item_id] || 0) + l.qty; });
       const ids = Object.keys(need);
       if (ids.length) {
         const { data: av } = await sb.rpc('items_available', { p_company: S.company.id, p_warehouse: h.warehouse_id || null, p_date: h.inv_date, p_items: ids });
@@ -457,9 +466,10 @@ async function invoiceEditor(type, inv, ctx) {
           box.innerHTML = `<div class="notice" style="border:2px solid #d97706;background:#fff7ed;margin-top:10px"><b>⚠️ تنبيهات فاتورة المبيعات: الكمية المطلوبة أكبر من الكمية المتوفرة</b>
             <table class="t" style="margin:6px 0"><thead><tr><th>الصنف</th><th>المطلوب</th><th>المتوفر</th><th>النقص</th></tr></thead><tbody>
             ${short.map(x => `<tr><td>${esc(x.code)} — ${esc(x.name)}</td><td class="n">${fmtNum(need[x.item_id])}</td><td class="n">${fmtNum(x.available)}</td><td class="n" style="color:#b91c1c">${fmtNum(need[x.item_id] - num(x.available))}</td></tr>`).join('')}</tbody></table>
-            <button type="button" class="btn primary" id="sw-go">متابعة الحفظ رغم النقص</button> <button type="button" class="btn" id="sw-no">رجوع للتعديل</button></div>`;
+            ${st.block_negative_stock ? '<div style="color:#b91c1c;margin:4px 0"><b>البيع بالسالب ممنوع بإعدادات الشركة:</b> بتقدر تحفظ الفاتورة مسودة، بس ترحيلها للمخزون ما بيمشي قبل ما يتوفر الرصيد.</div>' : ''}
+            <button type="button" class="btn primary" id="sw-go">${st.block_negative_stock ? 'حفظ كمسودة' : 'متابعة الحفظ رغم النقص'}</button> <button type="button" class="btn" id="sw-no">رجوع للتعديل</button></div>`;
           box.scrollIntoView({ block: 'nearest' });
-          box.querySelector('#sw-go').onclick = () => { stockAck = true; box.innerHTML = ''; save(post); };
+          box.querySelector('#sw-go').onclick = () => { stockAck = true; box.innerHTML = ''; save(st.block_negative_stock ? false : post); };
           box.querySelector('#sw-no').onclick = () => { box.innerHTML = ''; };
           return;
         }
