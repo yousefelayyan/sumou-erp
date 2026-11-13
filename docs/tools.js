@@ -39,6 +39,87 @@ export async function autoBackup() {
   if (ok) console.log(`نسخة تلقائية: ${ok} شركة`);
 }
 
+
+// ---------------------------------------------------------------------
+//  نسخة تلقائية على مجلد بجهاز المستخدم (مثلاً قرص D) — File System Access بكروم وإيدج
+//  المجلد بينحفظ مقبضه بـ IndexedDB لكل مستخدم؛ كل يوم ملف واحد لكل الشركات، وبنخلي آخر 60 ملف.
+// ---------------------------------------------------------------------
+const LB_PREFIX = 'نسخة السمو ERP ';
+export const localBackupSupported = () => typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+const idb = () => new Promise((res, rej) => { const r = indexedDB.open('sumou-local-backup', 1); r.onupgradeneeded = () => r.result.createObjectStore('h'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const idbDo = async (mode, fn) => { const db = await idb(); return new Promise((res, rej) => { const tx = db.transaction('h', mode), q = fn(tx.objectStore('h')); tx.oncomplete = () => res(q?.result); tx.onerror = () => rej(tx.error); }); };
+const lbKey = () => 'dir.' + (S.session?.user?.id || 'x');
+const getDir = () => idbDo('readonly', st => st.get(lbKey())).catch(() => null);
+const setDir = (h) => idbDo('readwrite', st => h ? st.put(h, lbKey()) : st.delete(lbKey()));
+
+async function writeLocalBackup(dir) {
+  const comps = S.companies || [], out = [];
+  for (const c of comps) out.push(await backupOne(c));
+  const day = today(), name = `${LB_PREFIX}${day}.json`;
+  const fh = await dir.getFileHandle(name, { create: true }), w = await fh.createWritable();
+  await w.write(JSON.stringify({ app: 'sumou-erp', multi: true, created_at: new Date().toISOString(), companies: out })); await w.close();
+  // آخر 60 نسخة بس
+  const names = [];
+  for await (const [n, h] of dir.entries()) if (h.kind === 'file' && n.startsWith(LB_PREFIX) && n.endsWith('.json')) names.push(n);
+  names.sort().reverse().slice(60).forEach(n => dir.removeEntry(n).catch(() => {}));
+  localStorageSet('sumou.localbackup.' + S.session.user.id, day);
+  return { name, count: out.length };
+}
+
+let lbBar = null;
+function permissionBar(dir) {
+  if (lbBar) return;
+  lbBar = document.createElement('div');
+  lbBar.style.cssText = 'position:fixed;bottom:14px;left:14px;z-index:9999;background:var(--brand);color:#fff;padding:10px 14px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.25);display:flex;gap:8px;align-items:center;font-size:14px';
+  lbBar.innerHTML = `💾 النسخة اليومية على مجلد «${esc(dir.name)}» بجهازك بدها إذن <button class="btn sm" data-ok>اسمح واحفظ</button><button class="btn sm" data-x>✕</button>`;
+  document.body.appendChild(lbBar);
+  lbBar.querySelector('[data-x]').onclick = () => { lbBar.remove(); lbBar = null; };
+  lbBar.querySelector('[data-ok]').onclick = async () => {
+    try {
+      if ((await dir.requestPermission({ mode: 'readwrite' })) !== 'granted') return toast('ما انعطى الإذن', 'err');
+      lbBar.remove(); lbBar = null;
+      const r = await writeLocalBackup(dir); toast(`✓ انحفظت النسخة على جهازك: ${r.name}`, 'ok');
+    } catch (e) { toast(arError(e), 'err'); }
+  };
+}
+
+export async function autoLocalBackup() {
+  if (!isAdmin() || !S.companies?.length || S.trial || !localBackupSupported()) return;
+  if (localStorageGet('sumou.localbackup.' + S.session.user.id) === today()) return;
+  const dir = await getDir(); if (!dir) return;
+  const perm = await dir.queryPermission({ mode: 'readwrite' });
+  if (perm === 'granted') { try { await writeLocalBackup(dir); } catch (e) { console.warn('local backup', e); } }
+  else permissionBar(dir);
+}
+
+async function localBackupCard(box) {
+  if (!localBackupSupported()) { box.innerHTML = '<div class="notice">هالخاصية بتشتغل على كروم أو إيدج على الكمبيوتر بس.</div>'; return; }
+  const dir = await getDir(), last = localStorageGet('sumou.localbackup.' + S.session.user.id);
+  const perm = dir ? await dir.queryPermission({ mode: 'readwrite' }) : null;
+  box.innerHTML = dir ? `<p style="margin-top:0">المجلد: <b>📁 ${esc(dir.name)}</b> ${perm === 'granted' ? '<span class="badge ok">مسموح</span>' : '<span class="badge warn">بدها إذن</span>'}
+      ${last ? ` · آخر نسخة: ${fmtDate(last)}` : ''}</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" data-now>💾 احفظ نسخة هلأ</button><button class="btn" data-pick>📁 غيّر المجلد</button><button class="btn danger" data-off>إيقاف</button></div>`
+    : `<p class="muted" style="margin-top:0">اختار مجلد على جهازك (مثلاً اعمل مجلد «نسخ السمو» على قرص D واختاره)، والبرنامج رح يحط فيه نسخة لكل الشركات كل يوم أول ما تفتحه، وبيخلي آخر 60 نسخة.</p>
+      <button class="btn primary" data-pick>📁 اختيار المجلد</button>`;
+  box.querySelector('[data-pick]').onclick = async () => {
+    try {
+      const h = await window.showDirectoryPicker({ id: 'sumou-backup', mode: 'readwrite', startIn: 'documents' });
+      await setDir(h); const r = await writeLocalBackup(h);
+      toast(`✓ انحفظت أول نسخة: ${r.name}`, 'ok'); localBackupCard(box);
+    } catch (e) { if (e?.name !== 'AbortError') toast(arError(e), 'err'); }
+  };
+  box.querySelector('[data-now]')?.addEventListener('click', async (e) => {
+    try {
+      if ((await dir.requestPermission({ mode: 'readwrite' })) !== 'granted') return toast('ما انعطى الإذن', 'err');
+      e.target.disabled = true; const r = await writeLocalBackup(dir); toast(`✓ انحفظت: ${r.name} (${r.count} شركة)`, 'ok'); localBackupCard(box);
+    } catch (er) { e.target.disabled = false; toast(arError(er), 'err'); }
+  });
+  box.querySelector('[data-off]')?.addEventListener('click', async () => {
+    if (!(await confirmBox('إيقاف النسخة اليومية على جهازك؟ الملفات القديمة بتضل بمكانها.'))) return;
+    await setDir(null); localBackupCard(box);
+  });
+}
+
 async function viewBackup(v, ctx) {
   if (!isAdmin()) return void (v.innerHTML = '<div class="notice">هالشاشة لمدير النظام بس.</div>');
   const comps = S.companies || [];
@@ -47,10 +128,12 @@ async function viewBackup(v, ctx) {
     <div class="card"><h3 style="margin-top:0">⬇️ تنزيل نسخة على جهازك</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="all">⬇️ نسخة لكل الشركات (${comps.length})</button>
       ${S.company ? `<button class="btn" id="one">⬇️ نسخة لـ«${esc(S.company.name)}» بس</button>` : ''}</div><div id="prog" class="muted" style="margin-top:8px"></div></div>
+    <div class="card"><h3 style="margin-top:0">🖥️ نسخة يومية تلقائية على جهازك (قرص D مثلاً)</h3><div id="local"></div></div>
     <div class="card"><h3 style="margin-top:0">☁️ النسخ التلقائية المحفوظة</h3><div id="cloud" class="muted">جاري التحميل…</div></div>
     <div class="card"><h3 style="margin-top:0">♻️ استرجاع من نسخة</h3>
       <p class="muted" style="margin-top:0">الاسترجاع بيرجّع الشركة كاملة بكل قيودها وفواتيرها وأرقامها، <b>إذا كانت مش موجودة</b> (انحذفت أو قاعدة بيانات جديدة). الشركات الموجودة ما بتتأثر.</p>
       <label class="btn">📂 اختيار ملف النسخة<input type="file" id="rf" accept=".json,application/json" hidden></label></div>`;
+  localBackupCard(v.querySelector('#local'));
   const prog = v.querySelector('#prog');
   const dl = async (list) => {
     const out = [];

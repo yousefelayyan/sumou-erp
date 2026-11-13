@@ -44,7 +44,7 @@ import { CONTRACT_ROUTES } from './contracts.js';
 import { FOLLOW_ROUTES } from './follow.js';
 import { PARTYDOC_ROUTES } from './partydocs.js';
 import { COMPARE_ROUTES } from './compare.js';
-import { TOOLS_ROUTES, autoBackup } from './tools.js';
+import { TOOLS_ROUTES, autoBackup, autoLocalBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
 
@@ -1395,6 +1395,7 @@ async function boot() {
     applyTheme(canTheme() ? (S.profile?.theme || 'purple') : 'purple');
     renderShell(); route_();
     setTimeout(() => autoBackup().catch(() => {}), 4000);
+    setTimeout(() => autoLocalBackup().catch(() => {}), 7000);
   } catch (err) {
     $app.innerHTML = `<div class="auth-wrap"><div class="auth-card"><div class="notice">${esc(arError(err))}</div>
       <button class="btn block" onclick="location.reload()">إعادة المحاولة</button></div></div>`;
