@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..75). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..76). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -50,6 +50,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   budgets.js        الموازنات التقديرية (route budgets | budgets?id= | budgets?id=&t=report): محرر 12 شهر، تعبئة من السنة السابقة، اعتماد، الموازنة مقابل الفعلي
   contracts.js      العقود والرسوم المتكررة (route contracts): قائمة، محرر بسطور، معاينة وتوليد الفواتير المستحقة، فواتير كل عقد
   collection.js     تقارير التحصيل (route collection?type=customer|supplier&t=open|coll): الفواتير غير المسددة بأعمارها، والتحصيل وأيام السداد حسب الطرف/المندوب/الفاتورة
+  commissions.js    عمولات المندوبين (route commissions?t=report|targets|plans): الحساب لكل مندوب وشهر، أهداف 12 شهر، خطط الشرائح وربطها بالمندوب
   notes.js          الإشعارات المدينة والدائنة للعملاء والموردين (route notes?type=customer|supplier)
   batches.js        الدفعات وتواريخ الانتهاء (route batches?t=balance|expiry): أرصدة كل دفعة بكل مستودع، المنتهية والقريبة، سجل الدفعة، تعديل التاريخ
   profile.js        ملف العميل/المورد الإحصائي (route party-profile?id=…): بطاقات الأرقام، رسم 12 شهر، أكثر الأصناف، آخر أسعار الأصناف، طباعة
@@ -115,7 +116,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t65 t66 t67 t68 t69 t70 t71 t72 t73 t74 t75 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t65 t66 t67 t68 t69 t70 t71 t72 t73 t74 t75 t76 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -139,7 +140,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.57.0)
+## اللي انبنى (لحد النسخة 4.58.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -249,6 +250,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **بوابة الرسائل القصيرة (المرحلة 73):** `sms_settings` (لكل شركة: url_template فيه بيانات حساب البوابة — **بدون أي سياسة قراءة ومش بالنسخة الاحتياطية**، enabled، sender، test_mode/test_phone، daily_limit، allow_intl). الإرسال من قاعدة البيانات بـ **pg_net** (`net.http_get`، الإضافة بتنعمل بالمرحلة 73؛ دوال net ملك supabase_admin فسحب الصلاحية ما بيمشي من محرر SQL، بس الـ API ما بيعرض إلا public و graphql_public — **ممنوع تضيف net للـ Exposed schemas**، اتأكدت إنه رابط rpc بيرجع PGRST106). `sms_config_get` (marketing view؛ الدومين بس بدون المستخدم/كلمة السر)، `sms_config_save` (companies edit؛ https بس، دومين عام مش IP/داخلي `sms_host_ok`، فاضي = بيضل القديم، `clear_url`)، `sms_send(company, phone, body, party, kind, ref, campaign)` (marketing add للحر؛ بدونها sales_invoices/receipt_vouchers add بس لرقم الطرف نفسه وفاتورة/كشف/دفعة؛ 962 بس إلا allow_intl؛ حد يومي بقفل advisory؛ وضع التجربة لرقم التجربة)، `sms_refresh(company)` (الحالة من net._http_response بدون نسخ نص الرد). كلمات الرابط {phone} {msg} {msg_hex} {sender}. `message_log.status/request_id/error` من النظام بس (`ab_message_log_guard`، GUC `sumou.sms`)، وسطور البوابة ما بتنحذف. التجربة المجانية ممنوعة (`sms_trial`). الواجهة: تبويب «📡 بوابة الرسائل»، «📤 إرسال للكل بالبوابة» بالحملة، وعمود الحالة بالسجل. اختبار محلي: t73 بيعمل net وهمي.
 - **البونص والعروض بالشرائح (المرحلة 74):** `invoice_lines.is_bonus` = سطر مجاني (`ab_invoice_bonus` بيصفّر السعر والخصم والضريبة والمجاميع)، بيطلع/بيدخل المخزون عادي (البيع: كلفته على كلفة المبيعات؛ الشراء: بينزّل متوسط الكلفة). `ab_sale_price_guard` انعادت تعريفها بالمرحلة 74 وبتتخطّى البونص (أي تعديل بعدها لازم يحافظ عليه). `promotions.buy_qty/free_qty/free_repeat` (اشترِ N خذ M ومضاعفاتها)، الخصم صار اختياري (`promotions_offer_chk`: خصم أو بونص). الشرائح = أكثر من عرض بأقل كمية مختلفة. الواجهة: عمود «🎁 كمية+» بالفاتورة (`r.bonus`؛ بالحفظ بيصير سطر is_bonus بعد سطره، وبالفتح بينضم لسطر نفس الصنف اللي قبله؛ كمية 0 + بونص = سطر بونص بس)، `bestBonus()` بيعبّيه من العروض إلا إذا انكتب يدوي (`manualBonus`). شاشة العروض فيها حقول البونص. ناقص: نقطة البيع وطلبات المبيعات ما فيهم بونص.
 - **قوالب العقود وطباعة العقد (المرحلة 75):** `contract_templates` (code فريد بالشركة، name، body ≤30000؛ القراءة contracts view والكتابة contracts edit) و`contracts.template_id/terms` (`ad_contract_template_check`: نفس الشركة). backup_tables (آخر تعريف بالمرحلة 75): القوالب قبل العقود. الواجهة contracts.js: route `contracts?t=templates` (محرر بكبسات الكلمات ونموذج جاهز `DEFAULT_TPL`)، وبمحرر العقد قسم «📝 نص العقد» (قالب + «تعبئة من القالب») و«🖨️ طباعة العقد» (`fillContract`: [الشركة] [العميل] [رقم العقد] [عنوان العقد] [التاريخ] [البداية] [النهاية] [الدورية] [يوم الفاتورة] [قيمة الفاتورة] [القيمة بالحروف] [القيمة السنوية] [جدول البنود] [ملاحظات]، مع تواقيع الطرفين).
+- **عمولات المندوبين والأهداف (المرحلة 76):** شاشة `rep_commissions` (قسم sales؛ `screen_module` انعادت تعريفه بالمرحلة 76، أخذتها مرة وحدة المجموعات اللي إلها reports). `commission_plans` (code، basis sales|collections، `tiers` [{min_pct, rate}]، no_target_rate، bonus_at_pct + bonus_amount) و`rep_targets` (rep_id، month أول الشهر، target؛ فريد rep+month) و`lookups.commission_plan_id` للمندوب (`ab_commission_checks`). القراءة بـ rep_commissions view (والمندوب المربوط بمستخدم بيقرأ أهدافه)، الكتابة بـ edit؛ تغيير خطة المندوب = تعديل lookups. `rep_commissions(company, from, to)` (لحد سنتين): لكل مندوب وشهر صافي المبيعات (subtotal بيع − مرتجع، مندوب المرتجع أو أصله، بيحترم الفرع)، التحصيل (التوزيعات الفعّالة على فواتيره بشهر الدفعة)، نسبة التحقيق، نسبة أعلى شريحة، العمولة + المكافأة؛ بدون خطة = `lookups.rate` ثابتة؛ اللي ما إله صلاحية بس مندوب مربوط بيشوف حاله. backup_tables (آخر تعريف بالمرحلة 76): commission_plans قبل lookups وrep_targets بعدها. ناقص: ما في قيد لصرف العمولة (بتنصرف بسند صرف عادي).
 - **النسخة اليومية على جهاز المستخدم (4.52.1):** بشاشة النسخ الاحتياطي «🖥️ نسخة يومية تلقائية على جهازك»: `showDirectoryPicker` (كروم/إيدج)، مقبض المجلد بـ IndexedDB `sumou-local-backup` لكل مستخدم، `autoLocalBackup()` (مدير، مرة باليوم) بتكتب `نسخة السمو ERP YYYY-MM-DD.json` لكل الشركات وبتخلي آخر 60؛ إذا الإذن راح بعد إعادة تشغيل المتصفح بيطلع شريط «اسمح واحفظ» تحت.
 - **النوافذ فوق بعض:** `modal({ stack: true })` بتفتح نافذة فرعية فوق المفتوحة بدل ما تسكّرها (سجل الأسعار، فواتير الموردين). عنوان `modal` بيتعمله esc لحاله، فما تحط esc() بالعنوان.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36 (آخر قيد هلأ `lookups_kind_chk4` بالمرحلة 54)، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.

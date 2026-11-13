@@ -54,6 +54,7 @@ export const SCREENS = [
   { key: 'supply_requests',  label: 'طلبات التزويد بين المستودعات', group: 'المخزون' },
   { key: 'customers',        label: 'العملاء وفئاتهم',      group: 'العملاء والذمم المدينة' },
   { key: 'sales_invoices',   label: 'فواتير ومردودات المبيعات', group: 'العملاء والذمم المدينة' },
+  { key: 'rep_commissions',  label: 'عمولات المندوبين والأهداف', group: 'العملاء والذمم المدينة' },
   { key: 'contracts',        label: 'العقود والرسوم المتكررة', group: 'العملاء والذمم المدينة' },
   { key: 'customer_notes',   label: 'إشعارات العملاء المدينة والدائنة', group: 'العملاء والذمم المدينة' },
   { key: 'customer_discounts', label: 'خصومات العملاء وتسوية الأرصدة الصغيرة (وأنواع الخصم بالتعديل)', group: 'العملاء والذمم المدينة' },
@@ -228,7 +229,7 @@ export const MODULES = [
 ];
 const SCREEN_MODULE = {
   customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales', pos: 'sales',
-  suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases', landed_costs: 'purchases', supplier_notes: 'purchases', customer_notes: 'sales', contracts: 'sales',
+  suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases', landed_costs: 'purchases', supplier_notes: 'purchases', customer_notes: 'sales', contracts: 'sales', rep_commissions: 'sales',
   inventory: 'inventory', supply_requests: 'inventory', rep_visits: 'sales', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets', asset_custody: 'assets',
   marketing: 'marketing', manufacturing: 'manufacturing', maintenance: 'maintenance', obligations: 'office',
 };
