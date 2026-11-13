@@ -246,48 +246,83 @@ async function viewPartyLedger(v) {
 // ---------------------------------------------------------------------
 async function viewAging(v) {
   if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
+  const q = new URLSearchParams(location.hash.split('?')[1] || '');
+  const type0 = q.get('type') === 'supplier' ? 'supplier' : 'customer', mode0 = q.get('mode') === 'detail' ? 'detail' : 'summary';
   const asOf0 = today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.end_date;
-  v.innerHTML = `<div class="page-head"><h2>⏳ أعمار الذمم</h2></div>
+  const [parties, , catsC, catsS] = await Promise.all([loadParties(), loadLookups(), loadPartyCats('customer'), loadPartyCats('supplier')]);
+  const cats = { customer: catsC, supplier: catsS };
+  v.innerHTML = `<div class="page-head"><h2>⏳ أعمار الذمم</h2><div class="spacer"></div>
+      <div class="tabs" style="margin:0">${[['summary', 'تجميعي'], ['detail', 'تفصيلي']].map(([k, l]) => `<a class="tab ${mode0 === k ? 'active' : ''}" href="#/rep-aging?type=${type0}&mode=${k}">${l}</a>`).join('')}</div></div>
     <div class="card no-print filters">
-      <div class="field"><label>النوع</label><select id="f-type"><option value="customer">العملاء (ذمم مدينة)</option><option value="supplier">الموردين (ذمم دائنة)</option></select></div>
-      <div class="field"><label>كما في تاريخ</label><input type="date" id="f-to" value="${asOf0}"></div>
+      <div class="field"><label>النوع</label><select id="f-type"><option value="customer" ${type0 === 'customer' ? 'selected' : ''}>العملاء (ذمم مدينة)</option><option value="supplier" ${type0 === 'supplier' ? 'selected' : ''}>الموردين (ذمم دائنة)</option></select></div>
+      <div class="field"><label>الطرف</label><input id="f-p" list="ag-plist" placeholder="الكل"><datalist id="ag-plist"></datalist></div>
+      <div class="field"><label>الفئة</label><select id="f-cat"></select></div>
+      <div class="field" id="rep-box"><label>المندوب</label><select id="f-rep"><option value="">الكل</option>${repOptions('')}</select></div>
+      <div class="field"><label>المدينة</label><input id="f-city" list="ag-cities" placeholder="الكل"><datalist id="ag-cities">${[...new Set(parties.map(p => p.city).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
+      <div class="field"><label>طول الفترة (يوم)</label><select id="f-step">${[15, 30, 45, 60, 90].map(n => `<option value="${n}" ${n === 30 ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+      <div class="field"><label>العمر اعتباراً من تاريخ</label><input type="date" id="f-to" value="${asOf0}"></div>
+      <div class="field"><label>العمر حسب</label><select id="f-basis"><option value="doc">تاريخ المستند</option><option value="due">تاريخ الاستحقاق (إن وجد)</option></select></div>
       <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" id="f-zero" checked> إخفاء الأرصدة الصفرية</label></div>
       <div class="field" style="justify-content:flex-end"><button class="btn primary" id="f-run">عرض التقرير</button></div>
       <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px"><button class="btn" id="f-print">🖨️ طباعة</button><button class="btn" id="f-csv">⬇️ Excel</button></div>
     </div><div id="out"></div>`;
-  const B = [['0-30', 0, 30], ['31-60', 31, 60], ['61-90', 61, 90], ['91-120', 91, 120], ['+120', 121, 1e9]];
+  const fillType = () => { const t = v.querySelector('#f-type').value;
+    v.querySelector('#ag-plist').innerHTML = parties.filter(p => p.party_type === t).map(p => `<option value="${esc(p.code)} — ${esc(p.name)}">`).join('');
+    v.querySelector('#f-cat').innerHTML = '<option value="">الكل</option>' + cats[t].map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+    v.querySelector('#rep-box').style.display = t === 'customer' && hasReps() ? '' : 'none'; };
+  fillType(); v.querySelector('#f-type').addEventListener('change', () => { fillType(); v.querySelector('#f-p').value = ''; });
   let last = null;
   const run = async () => {
     const type = v.querySelector('#f-type').value, to = v.querySelector('#f-to').value, P = PARTY[type], out = v.querySelector('#out');
-    const [parties, mv] = await Promise.all([loadParties(), sb.rpc('rep_party_movements', { p_company: S.company.id, p_fy: S.fy.id, p_type: type, p_to: to })]);
+    const mode = (new URLSearchParams(location.hash.split('?')[1] || '')).get('mode') === 'detail' ? 'detail' : 'summary';
+    const step = +v.querySelector('#f-step').value, basis = v.querySelector('#f-basis').value;
+    const B = [0, 1, 2, 3].map(i => [`${i * step + (i ? 1 : 0)}-${(i + 1) * step}`, i * step + (i ? 1 : 0), (i + 1) * step]).concat([[`+${4 * step}`, 4 * step + 1, 1e9]]);
+    const mv = await sb.rpc('rep_party_aging_docs', { p_company: S.company.id, p_fy: S.fy.id, p_type: type, p_to: to });
     if (mv.error) return void (out.innerHTML = `<div class="notice">${esc(arError(mv.error))}</div>`);
     const by = {}; mv.data.forEach(r => (by[r.party_id] ||= []).push(r));
     const asOf = new Date(to);
-    const rows = parties.filter(p => p.party_type === type).map(p => {
+    const pq = v.querySelector('#f-p').value.split('—')[0].trim(), cat = v.querySelector('#f-cat').value, rep = v.querySelector('#f-rep').value, city = v.querySelector('#f-city').value.trim();
+    const rows = parties.filter(p => p.party_type === type && (!pq || p.code === pq) && (!cat || p.category_id === cat) && (!rep || p.sales_rep_id === rep) && (!city || p.city === city)).map(p => {
       const ms = by[p.id] || [];
-      // الحركة اللي بتزيد الذمة (مدين للعميل، دائن للمورد) وبتسدّها الحركة الثانية
-      const inc = ms.map(m => ({ d: m.entry_date, a: P.side > 0 ? num(m.debit) : num(m.credit) })).filter(x => x.a > 0);
-      let paid = ms.reduce((s, m) => s + (P.side > 0 ? num(m.credit) : num(m.debit)), 0);
-      const buckets = [0, 0, 0, 0, 0];
+      // الحركة اللي بتزيد الذمة (مدين للعميل، دائن للمورد) وبتسدّها الحركة الثانية (الأقدم أول)
+      const inc = ms.map(m => ({ m, a: P.side > 0 ? num(m.debit) - num(m.credit) : num(m.credit) - num(m.debit) })).filter(x => x.a > 0);
+      let paid = ms.reduce((s, m) => s + Math.max(0, P.side > 0 ? num(m.credit) - num(m.debit) : num(m.debit) - num(m.credit)), 0);
+      const buckets = [0, 0, 0, 0, 0], open = [];
       for (const x of inc) { const use = Math.min(paid, x.a); paid -= use; const left = x.a - use; if (left <= 0.0005) continue;
-        const age = Math.floor((asOf - new Date(x.d)) / 86400000); buckets[B.findIndex(b => age >= b[1] && age <= b[2])] += left; }
-      const total = buckets.reduce((s, x) => s + x, 0) - paid;   // paid المتبقي = رصيد معاكس (سلفة)
-      return { p, buckets, total, advance: paid };
+        const ref = basis === 'due' && x.m.due_date ? x.m.due_date : x.m.entry_date;
+        const age = Math.max(0, Math.floor((asOf - new Date(ref)) / 86400000)), bi = B.findIndex(b => age >= b[1] && age <= b[2]);
+        buckets[bi] += left; open.push({ ...x.m, left, age, bi }); }
+      const total = buckets.reduce((s, x) => s + x, 0) - paid;   // paid المتبقي = رصيد معاكس (دفعة مقدمة)
+      return { p, buckets, total, advance: paid, open };
     }).filter(r => !v.querySelector('#f-zero').checked || Math.abs(r.total) > 0.0005);
-    const tot = [0, 0, 0, 0, 0], T = rows.reduce((s, r) => { r.buckets.forEach((x, i) => tot[i] += x); return s + r.total; }, 0);
-    const table = `<table class="t pt rep"><thead><tr><th>الرقم</th><th>${P.label}</th>${B.map(b => `<th>${b[0]} يوم</th>`).join('')}<th>دفعات مقدمة</th><th>الرصيد</th></tr></thead>
+    const tot = [0, 0, 0, 0, 0], T = rows.reduce((s, r) => { r.buckets.forEach((x, i) => tot[i] += x); return s + r.total; }, 0), adv = rows.reduce((s, r) => s + r.advance, 0);
+    const pct = (x) => T > 0.0005 ? ` <small class="muted">${Math.round(x / T * 100)}%</small>` : '';
+    let table;
+    if (mode === 'summary') {
+      table = `<table class="t pt rep"><thead><tr><th>الرقم</th><th>${P.label}</th>${B.map(b => `<th>${b[0]} يوم</th>`).join('')}<th>دفعات مقدمة</th><th>الرصيد</th></tr></thead>
       <tbody>${rows.map(r => `<tr><td>${esc(r.p.code)}</td><td>${esc(r.p.name)}</td>${r.buckets.map(x => `<td class="n">${x > 0.0005 ? fmtNum(x) : ''}</td>`).join('')}
         <td class="n">${r.advance > 0.0005 ? fmtNum(r.advance) : ''}</td><td class="n"><b>${fmtNum(r.total)}</b></td></tr>`).join('') || `<tr><td colspan="9" class="empty">ما في أرصدة</td></tr>`}</tbody>
-      <tfoot><tr class="tot"><td colspan="2">المجموع</td>${tot.map(x => `<td class="n">${fmtNum(x)}</td>`).join('')}<td class="n">${fmtNum(rows.reduce((s, r) => s + r.advance, 0))}</td><td class="n">${fmtNum(T)}</td></tr></tfoot></table>`;
+      <tfoot><tr class="tot"><td colspan="2">المجموع (${rows.length})</td>${tot.map(x => `<td class="n">${fmtNum(x)}${pct(x)}</td>`).join('')}<td class="n">${fmtNum(adv)}</td><td class="n">${fmtNum(T)}</td></tr></tfoot></table>`;
+    } else {
+      const ET = { sale: 'فاتورة', invoice: 'فاتورة', opening: 'رصيد افتتاحي', journal: 'قيد', receipt: 'سند قبض', payment: 'سند صرف', cheque: 'شيك' };
+      table = `<table class="t pt rep"><thead><tr><th>التاريخ</th><th>المستند</th><th>البيان</th><th>الاستحقاق</th><th>العمر</th>${B.map(b => `<th>${b[0]}</th>`).join('')}</tr></thead><tbody>
+      ${rows.map(r => `<tr class="grp"><td colspan="5"><b>${esc(r.p.code)} — ${esc(r.p.name)}</b>${r.p.phone || r.p.mobile ? ` <small class="muted">${esc(r.p.mobile || r.p.phone)}</small>` : ''}</td>${B.map(() => '<td></td>').join('')}</tr>
+        ${r.open.map(o => `<tr><td>${fmtDate(o.entry_date)}</td><td>${esc(ET[o.entry_type] || ENTRY_TYPES?.[o.entry_type]?.label || '')} ${esc(o.doc_no || '')}</td><td>${esc(o.description || '')}</td><td>${fmtDate(o.due_date)}</td><td class="n">${o.age}</td>
+          ${B.map((_, i) => `<td class="n">${i === o.bi ? fmtNum(o.left) : ''}</td>`).join('')}</tr>`).join('')}
+        ${r.advance > 0.0005 ? `<tr><td colspan="5" class="muted">دفعات مقدمة / رصيد معاكس</td><td class="n" colspan="${B.length}">-${fmtNum(r.advance)}</td></tr>` : ''}
+        <tr class="tot"><td colspan="5">مجموع ${esc(r.p.name)}: ${fmtNum(r.total)}</td>${r.buckets.map(x => `<td class="n">${x > 0.0005 ? fmtNum(x) : ''}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="10" class="empty">ما في أرصدة</td></tr>`}</tbody>
+      <tfoot><tr class="tot"><td colspan="5">المجموع العام: ${fmtNum(T)}${adv > 0.0005 ? ` (بعد دفعات مقدمة ${fmtNum(adv)})` : ''}</td>${tot.map(x => `<td class="n">${fmtNum(x)}${pct(x)}</td>`).join('')}</tr></tfoot></table>`;
+    }
     out.innerHTML = `<div class="card table-wrap" style="margin-top:12px">${table}</div>
-      <p class="muted" style="font-size:13px">الأعمار محسوبة من تاريخ كل حركة لغاية ${fmtDate(to)}، والدفعات بتسدّ الأقدم أول.</p>`;
-    last = { type, to, table, rows };
+      <p class="muted" style="font-size:13px">الأعمار محسوبة من ${basis === 'due' ? 'تاريخ الاستحقاق (أو تاريخ المستند إذا ما إله)' : 'تاريخ كل مستند'} لغاية ${fmtDate(to)}، والدفعات بتسدّ الأقدم أول. حركات السنة المالية الحالية (مع الرصيد الافتتاحي).</p>`;
+    last = { type, to, table, rows, B, mode };
   };
   v.querySelector('#f-run').onclick = run;
   if (!can('reports', 'print')) v.querySelector('#f-print').style.display = 'none';
-  v.querySelector('#f-print').onclick = () => last && printDoc(`أعمار ذمم ${PARTY[last.type].plural}`, last.table, { subtitle: `كما في ${fmtDate(last.to)}`, landscape: true });
-  v.querySelector('#f-csv').onclick = () => last && downloadCSV(`أعمار الذمم - ${PARTY[last.type].plural}.csv`,
-    [['الرقم', 'الاسم', ...B.map(b => b[0]), 'دفعات مقدمة', 'الرصيد']].concat(last.rows.map(r => [r.p.code, r.p.name, ...r.buckets.map(x => x.toFixed(3)), r.advance.toFixed(3), r.total.toFixed(3)])));
+  v.querySelector('#f-print').onclick = () => last && printDoc(`أعمار ذمم ${PARTY[last.type].plural} — ${last.mode === 'detail' ? 'تفصيلي' : 'تجميعي'}`, last.table, { subtitle: `كما في ${fmtDate(last.to)}`, landscape: true });
+  v.querySelector('#f-csv').onclick = () => last && downloadCSV(`أعمار الذمم - ${PARTY[last.type].plural}.csv`, last.mode === 'detail'
+    ? [['الرقم', 'الاسم', 'التاريخ', 'المستند', 'البيان', 'الاستحقاق', 'العمر', 'المبلغ', 'الفترة']].concat(last.rows.flatMap(r => r.open.map(o => [r.p.code, r.p.name, o.entry_date, o.doc_no || '', o.description || '', o.due_date || '', o.age, o.left.toFixed(3), last.B[o.bi][0]])))
+    : [['الرقم', 'الاسم', ...last.B.map(b => b[0]), 'دفعات مقدمة', 'الرصيد']].concat(last.rows.map(r => [r.p.code, r.p.name, ...r.buckets.map(x => x.toFixed(3)), r.advance.toFixed(3), r.total.toFixed(3)])));
   run();
 }
 

@@ -387,3 +387,11 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .batch-cell input.cell{font-size:12px;min-width:0;flex:1}
 .batch-cell input[type=date]{flex:0 0 140px}
 .bad-txt{color:var(--bad,#b91c1c)}
+
+/* الموازنات (المرحلة 65) */
+.bud-grid input.cell{min-width:78px}
+.bud-grid input.tot{font-weight:700;background:var(--tint,#f5f3ff)}
+.bud-grid tr.grp td,table.t tr.grp td{background:var(--tint,#f5f3ff)}
+.bud-bar{position:relative;height:18px;background:var(--tint-2,#eee);border-radius:9px;overflow:hidden;min-width:120px}
+.bud-bar span{position:absolute;inset:0 auto 0 0;border-radius:9px;opacity:.55}
+.bud-bar b{position:relative;font-size:11px;padding:0 8px;line-height:18px}

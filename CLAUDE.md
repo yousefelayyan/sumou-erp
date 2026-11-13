@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..64). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..66). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -27,7 +27,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   app.js            الهيكل، القائمة NAV، الراوتر ROUTES، الشركات، السنوات، المستخدمين، المجموعات، السجل
   finance.js        دليل الحسابات، سندات القيد/القبض/الصرف، الأرصدة الافتتاحية، ENTRY_TYPES
   reports.js        الميزان، الأستاذ، اليومية، الدخل، الميزانية
-  parties.js        العملاء والموردين، كشف حساب (+واتساب)، أعمار الذمم
+  parties.js        العملاء والموردين، كشف حساب (+واتساب)، أعمار الذمم تجميعي/تفصيلي (rep-aging?type=&mode=)
   invoices.js       الأصناف، فواتير البيع والشراء والمرتجعات، حسابات الربط، إقرار ضريبة المبيعات
   cheques.js        محفظة الشيكات
   inventory.js      المستودعات، سندات المخزون، الجرد، رصيد المخزون، بطاقة صنف
@@ -47,6 +47,8 @@ docs/               الواجهة (ES modules بدون build) + PWA
   compare.js        مقارنة الفترات (route compare?t=pl|sales): قائمة الدخل من rep_trial_balance لفترتين (كل فترة على سنتها) والمبيعات من ask_sales (حسب عميل/صنف/فئة/مندوب/فرع)، مقابل نفس الفترة من السنة الماضية أو السابقة أو يدوي، مع الفرق ونسبة النمو وجديد/توقّف — ما في SQL
   partydocs.js      وثائق العملاء والموردين (route party-docs?t=report|docs|types&party=…): المنتهية والقريبة، وثائق طرف مع مرفقات party_doc، أنواع الوثائق
   follow.js         حالات المتابعة (route doc-statuses?k=…) + attachFollow(root, table, row, kind, screen) بمحررات الفواتير/الطلبات/السندات/سندات المخزون + followMap()/followBadge() للقوائم
+  budgets.js        الموازنات التقديرية (route budgets | budgets?id= | budgets?id=&t=report): محرر 12 شهر، تعبئة من السنة السابقة، اعتماد، الموازنة مقابل الفعلي
+  notes.js          الإشعارات المدينة والدائنة للعملاء والموردين (route notes?type=customer|supplier)
   batches.js        الدفعات وتواريخ الانتهاء (route batches?t=balance|expiry): أرصدة كل دفعة بكل مستودع، المنتهية والقريبة، سجل الدفعة، تعديل التاريخ
   profile.js        ملف العميل/المورد الإحصائي (route party-profile?id=…): بطاقات الأرقام، رسم 12 شهر، أكثر الأصناف، آخر أسعار الأصناف، طباعة
   leaves.js         الإجازات (route leaves?t=requests|balances|types) + leaveForm() + myLeavesCard() ببطاقة «راتبي»
@@ -111,7 +113,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t65 t66 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -135,7 +137,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.47.0)
+## اللي انبنى (لحد النسخة 4.48.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -233,6 +235,9 @@ dev/                أدوات الفحص (شوف تحت)
 - **الخانات العشرية (المرحلة 62):** `company_settings.decimals` = {amount, qty, price} من 0 لـ 3 (قيد `company_settings_decimals_chk`؛ التخزين والحساب بيضلوا 3). core.js: `DEC` بيتعبّى بـ `loadFiscalYears()` لكل شركة، و`fmtNum` الافتراضي = DEC.amount، و`fmtQty`/`fmtPrice` للكميات والأسعار (استعمالات `fmtNum(…qty…)`/`fmtNum(…price|unit_cost…)` اتحوّلت). الإعداد من «حسابات الربط ← 🔢 الخانات العشرية».
 - **سجل أسعار الصنف للطرف (المرحلة 63):** `price_hist_rows` (داخلية، مش للمستخدم) → `party_last_prices(company, party, 'sale'|'purchase')` (آخر سعر صافي لكل صنف + التاريخ والفاتورة وعدد المرات وأقل/أعلى) و`party_price_history(company, party, item, kind, limit)`؛ الفواتير المرحّلة بس، الصافي = بعد خصم السطر وقبل الضريبة، بصلاحية view على sales_invoices/purchase_invoices، وبتحترم الفرع. الواجهة: تحت الصنف بالفاتورة سطر «🕘 آخر سعر» (`lpHint`، كلاس `.lp-hint`، المفتاح `data-lph` — `data-hist` محجوز لسجل التتبع) والكبسة بتفتح `priceHistory()` (بـ invoices.js) مع «استعمل»؛ قسم «آخر أسعار الأصناف» بملف العميل/المورد. `company_settings.use_last_price` («حسابات الربط ← المخزون»): الفاتورة بتاخذ آخر سعر لما ينختار الصنف (قائمة الأسعار أولى).
 - **الدفعات وتواريخ الانتهاء (المرحلة 64):** `items.batch_mode` = none|batch|expiry (ببطاقة الصنف؛ لازم بقائمة أعمدة `loadItems`). `invoice_lines`/`stock_doc_lines`: `batch_no` (≤60) و`expiry_date`. `item_batches` (company, item, batch_no فريد؛ بتنعمل من الدوال `batch_get`؛ المستخدم بيعدّل التواريخ والملاحظات بس بـ inventory edit، `ab_item_batch_guard`). `batch_moves` = دفتر الدفعات لكل مستودع (قراءة بـ inventory/items view، الكتابة من الدوال بس): triggers `zb_invoice_batches` (stock_posted false→true يولّد، true→false يمسح، posted→cancelled يعكس بـ invoice_cancel) و`zb_stock_doc_batches` (draft→posted / posted→draft) بينادوا `batch_sync` اللي بيقرأ السطور (الجرد: qty = الفرق بعد الترحيل). ما بيلمس stock_moves ولا الكلفة. الداخل بدون رقم = «بدون دفعة» (الواجهة بتطلب الرقم والتاريخ للإدخال والشراء ومرتجع البيع). الطالع: برقم الدفعة لازم رصيدها بالمستودع كافي، وبدون رقم `batch_out` بياخذ الأقرب انتهاء (FEFO، البيع بيتخطّى المنتهي) والزايد «بدون دفعة»؛ التحويل بينقل نفس الدفعات للمستودع الثاني. `company_settings.expiry_warn_days` (60) و`block_expired_sale` (منع بيع دفعة منتهية برقمها) من «حسابات الربط ← المخزون». `batch_balances(company, wh, item, all)` و`batch_history(batch)`. الواجهة: batches.js (route `batches?t=balance|expiry`، بالمخزون)، وحقل «🧪 الدفعة» تحت الصنف بالفاتورة وسند المخزون (datalist من الأرصدة). backup_tables: item_batches بعد items وbatch_moves بعد stock_moves. بعد المراجعة: `batch_unpost_check` بيمنع إلغاء ترحيل/إلغاء مستند داخل إذا دفعته طلع منها بعده (بتصير سالب)، `batch_get` بيرفض تاريخ انتهاء مختلف لنفس رقم الدفعة، `ab_batch_move_check`/`ab_item_batch_co_check` (الصنف والمستودع والدفعة من نفس الشركة، حتى بالاسترجاع)، وإدخال طلب التزويد بياخذ نفس دفعات سند الإخراج. الدفعة بتنطبع تحت البيان بالفاتورة (إذا مكتوبة بالسطر). ناقص: نقطة البيع والإنتاج بيمشوا FEFO / «بدون دفعة»، وفحص الرصيد ما بيعتبر التاريخ، وموظف الفرع بيشوف دفعات كل المستودعات (زي stock_moves).
+- **الموازنات التقديرية (المرحلة 65):** `budgets` (لكل سنة مالية، code فريد بالسنة، دائرة/مركز كلفة اختياري، draft/approved) و`budget_lines` (حساب فرعي + `amounts` مصفوفة 12 شهر من بداية السنة). الكتابة مباشرة بصلاحية شاشة `budgets` (قسم core، أخذتها مرة وحدة المجموعات اللي إلها journal_entries) والمعتمدة مقفولة (`ab_budget_guard`/`ab_budget_line_guard`)؛ الاعتماد/فكه `budget_set_status` (post). حفظ السطور `budget_save_lines(budget, jsonb)` دفعة وحدة. موظف الفرع بيشوف موازنات فرعه بس (`budget_dept_ok`). `budget_actual_rows` (داخلية): الفعلي المرحّل بدون الإغلاق والافتتاح، بين بداية ونهاية السنة، الإيرادات/الالتزامات/حقوق الملكية دائن−مدين، فلتر الدائرة وفروعها ومركز الكلفة وفرع المستخدم. `budget_vs_actual(budget)` (حسابات الموازنة + أي إيرادات/مصاريف إلها فعلي)، `budget_fill(budget, pct, replace)` من فعلي السنة المالية السابقة ± نسبة. المفاتيح: حذف الحساب بيمسح سطره، وحذف الدائرة/المركز بيفضّيهم (حتى بالمعتمدة)، فحذف الشركة بيمشي. الواجهة budgets.js (route `budgets`، `budgets?id=`، `budgets?id=&t=report`) بالمالية. backup_tables: بعد recurring_entries.
+- **الإشعارات المدينة والدائنة (المرحلة 66):** `party_notes` (party_type customer/supplier، note_kind debit/credit، رقم لكل شركة/سنة/نوع، طرف، فاتورة مرجعية مرحّلة اختيارية، حساب مقابل، مبلغ + نسبة ضريبة، دائرة، مركز كلفة، draft/posted/cancelled). الكتابة من الدوال بس: `note_save(jsonb)`، `note_post(id)` (قيد journal داخلي: الطرف بالمجموع، المقابل بالمبلغ، والضريبة على المخرجات للعميل/المدخلات للمورد بعكس جهة المقابل؛ اللي بينزّل الذمة بيتوزّع لحاله على فاتورته المرجعية)، `note_cancel(id, date)` (قيد عكسي بالـ GUC `sumou.note`)، `note_delete(id)` (المسودة). `ab_note_entry_guard` بيمنع عكس/إلغاء ترحيل القيد من مكان ثاني. صلاحيات `customer_notes` (sales) و`supplier_notes` (purchases) — `screen_module` انعادت تعريفه بالمرحلة 66 (أي تعديل بعده لازم يحافظ على كل الأقسام). `rep_sales_tax` صار فيه sale_dn/sale_cn/purchase_dn/purchase_cn، والإقرار بالواجهة بيضيفهم بإشارتهم. الواجهة notes.js (route `notes?type=customer|supplier`). backup_tables: بعد invoice_allocations.
+- **أعمار الذمم (4.48):** `rep_party_aging_docs(company, fy, type, to)` (reports view): حركات الأطراف لكل قيد مع رقم المستند والبيان واستحقاق الفاتورة. parties.js `viewAging`: route `rep-aging?type=customer|supplier&mode=summary|detail`، فلاتر (طرف، فئة، مندوب، مدينة)، طول الفترة (15–90)، «العمر حسب» تاريخ المستند أو الاستحقاق، الدفعات بتسدّ الأقدم أول (FIFO)، والتفصيلي بيعرض كل مستند مفتوح بعمره وفترته. بالقائمة تحت العملاء والموردين (تجميعي/تفصيلي).
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36 (آخر قيد هلأ `lookups_kind_chk4` بالمرحلة 54)، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

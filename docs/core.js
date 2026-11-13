@@ -44,6 +44,7 @@ export const SCREENS = [
   { key: 'payment_vouchers', label: 'سندات الصرف',          group: 'المالية' },
   { key: 'cheques',          label: 'محفظة الشيكات',        group: 'المالية' },
   { key: 'bank_recon',       label: 'التسوية البنكية',      group: 'المالية' },
+  { key: 'budgets',          label: 'الموازنات التقديرية (والاعتماد بالترحيل)', group: 'المالية' },
   { key: 'payroll',          label: 'الموظفين والرواتب',    group: 'الموظفين والرواتب' },
   { key: 'fixed_assets',     label: 'الأصول الثابتة والاستهلاك', group: 'الأصول الثابتة' },
   { key: 'asset_custody',    label: 'عهد الأصول الثابتة',   group: 'الأصول الثابتة' },
@@ -53,6 +54,7 @@ export const SCREENS = [
   { key: 'supply_requests',  label: 'طلبات التزويد بين المستودعات', group: 'المخزون' },
   { key: 'customers',        label: 'العملاء وفئاتهم',      group: 'العملاء والذمم المدينة' },
   { key: 'sales_invoices',   label: 'فواتير ومردودات المبيعات', group: 'العملاء والذمم المدينة' },
+  { key: 'customer_notes',   label: 'إشعارات العملاء المدينة والدائنة', group: 'العملاء والذمم المدينة' },
   { key: 'customer_discounts', label: 'خصومات العملاء وتسوية الأرصدة الصغيرة (وأنواع الخصم بالتعديل)', group: 'العملاء والذمم المدينة' },
   { key: 'price_override',   label: 'تجاوز ضوابط الأسعار (أقل سعر، أعلى خصم، البيع تحت الكلفة)', group: 'العملاء والذمم المدينة' },
   { key: 'credit_override',  label: 'تجاوز سقف الائتمان للزبون (ترحيل فاتورة آجلة فوق السقف)', group: 'العملاء والذمم المدينة' },
@@ -65,6 +67,7 @@ export const SCREENS = [
   { key: 'purchase_invoices',label: 'فواتير ومردودات المشتريات', group: 'الموردين والذمم الدائنة' },
   { key: 'purchase_orders',  label: 'طلبات التزويد', group: 'الموردين والذمم الدائنة' },
   { key: 'landed_costs',     label: 'الكلفة المحمّلة', group: 'الموردين والذمم الدائنة' },
+  { key: 'supplier_notes',   label: 'إشعارات الموردين المدينة والدائنة', group: 'الموردين والذمم الدائنة' },
   { key: 'marketing',        label: 'العروض الترويجية', group: 'التسويق' },
   { key: 'manufacturing',    label: 'الوصفات وأوامر الإنتاج', group: 'التصنيع' },
   { key: 'maintenance',      label: 'بطاقات الصيانة', group: 'الصيانة' },
@@ -221,7 +224,7 @@ export const MODULES = [
 ];
 const SCREEN_MODULE = {
   customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales', pos: 'sales',
-  suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases', landed_costs: 'purchases',
+  suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases', landed_costs: 'purchases', supplier_notes: 'purchases', customer_notes: 'sales',
   inventory: 'inventory', supply_requests: 'inventory', rep_visits: 'sales', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets', asset_custody: 'assets',
   marketing: 'marketing', manufacturing: 'manufacturing', maintenance: 'maintenance', obligations: 'office',
 };

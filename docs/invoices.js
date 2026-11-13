@@ -760,20 +760,23 @@ async function viewSalesTax(v) {
     const g = (t, pred = () => true) => data.filter(r => r.inv_type === t && pred(num(r.tax_rate))).reduce((s, r) => ({ sub: s.sub + num(r.subtotal), tax: s.tax + num(r.tax) }), { sub: 0, tax: 0 });
     const salesStd = g('sale', x => x === 16), salesOther = g('sale', x => x > 0 && x !== 16), salesZero = g('sale', x => x === 0), sRet = g('sale_return');
     const purTax = g('purchase', x => x > 0), purZero = g('purchase', x => x === 0), pRet = g('purchase_return');
-    const outTax = salesStd.tax + salesOther.tax - sRet.tax, inTax = purTax.tax - pRet.tax, net = outTax - inTax;
+    const sDn = g('sale_dn'), sCn = g('sale_cn'), pDn = g('purchase_dn'), pCn = g('purchase_cn');   // الإشعارات
+    const outTax = salesStd.tax + salesOther.tax - sRet.tax + sDn.tax - sCn.tax, inTax = purTax.tax - pRet.tax + pCn.tax - pDn.tax, net = outTax - inTax;
     const R = (l, a, b, cls = '') => `<tr class="${cls}"><td>${l}</td><td class="n">${a === null ? '' : fmtNum(a)}</td><td class="n">${b === null ? '' : fmtNum(b)}</td></tr>`;
     const table = `<table class="t pt rep statement"><thead><tr><th>البند</th><th>القيمة قبل الضريبة</th><th>الضريبة</th></tr></thead><tbody>
       <tr class="sec"><td colspan="3">المبيعات (ضريبة المخرجات)</td></tr>
       ${R('مبيعات خاضعة بالنسبة العامة 16%', salesStd.sub, salesStd.tax)}${R('مبيعات خاضعة بنسب أخرى', salesOther.sub, salesOther.tax)}
       ${R('مبيعات معفاة أو بنسبة صفر', salesZero.sub, 0)}${R('ينزل: مردودات المبيعات', -sRet.sub, -sRet.tax)}
+      ${sDn.sub ? R('يضاف: إشعارات مدينة للعملاء', sDn.sub, sDn.tax) : ''}${sCn.sub ? R('ينزل: إشعارات دائنة للعملاء', -sCn.sub, -sCn.tax) : ''}
       ${R('صافي ضريبة المخرجات', null, outTax, 'tot')}
       <tr class="sec"><td colspan="3">المشتريات (ضريبة المدخلات)</td></tr>
       ${R('مشتريات خاضعة للضريبة', purTax.sub, purTax.tax)}${R('مشتريات معفاة أو بنسبة صفر', purZero.sub, 0)}${R('ينزل: مردودات المشتريات', -pRet.sub, -pRet.tax)}
+      ${pCn.sub ? R('يضاف: إشعارات دائنة من الموردين', pCn.sub, pCn.tax) : ''}${pDn.sub ? R('ينزل: إشعارات مدينة للموردين', -pDn.sub, -pDn.tax) : ''}
       ${R('صافي ضريبة المدخلات القابلة للخصم', null, inTax, 'tot')}
       <tr class="net ${net >= 0 ? 'neg' : 'pos'}"><td>${net >= 0 ? 'الضريبة المستحقة للدفع' : 'رصيد دائن (قابل للتدوير أو الاسترداد)'}</td><td></td><td class="n">${fmtNum(Math.abs(net))}</td></tr></tbody></table>`;
     out.innerHTML = `<div class="card table-wrap" style="margin-top:12px">${table}</div>
-      <p class="muted" style="font-size:13px">من الفواتير المرحّلة من ${fmtDate(from)} إلى ${fmtDate(to)}. راجع الأرقام مع نموذج الإقرار على بوابة دائرة ضريبة الدخل والمبيعات قبل التقديم.</p>`;
-    last = { from, to, table, rows: [['مبيعات 16%', salesStd.sub, salesStd.tax], ['مبيعات بنسب أخرى', salesOther.sub, salesOther.tax], ['مبيعات معفاة/صفرية', salesZero.sub, 0], ['مردودات المبيعات', -sRet.sub, -sRet.tax], ['مشتريات خاضعة', purTax.sub, purTax.tax], ['مشتريات معفاة', purZero.sub, 0], ['مردودات المشتريات', -pRet.sub, -pRet.tax], ['الضريبة المستحقة', '', net]] };
+      <p class="muted" style="font-size:13px">من الفواتير والإشعارات المرحّلة من ${fmtDate(from)} إلى ${fmtDate(to)}. راجع الأرقام مع نموذج الإقرار على بوابة دائرة ضريبة الدخل والمبيعات قبل التقديم.</p>`;
+    last = { from, to, table, rows: [['مبيعات 16%', salesStd.sub, salesStd.tax], ['مبيعات بنسب أخرى', salesOther.sub, salesOther.tax], ['مبيعات معفاة/صفرية', salesZero.sub, 0], ['مردودات المبيعات', -sRet.sub, -sRet.tax], ['مشتريات خاضعة', purTax.sub, purTax.tax], ['مشتريات معفاة', purZero.sub, 0], ['مردودات المشتريات', -pRet.sub, -pRet.tax], ['إشعارات مدينة للعملاء', sDn.sub, sDn.tax], ['إشعارات دائنة للعملاء', -sCn.sub, -sCn.tax], ['إشعارات دائنة من الموردين', pCn.sub, pCn.tax], ['إشعارات مدينة للموردين', -pDn.sub, -pDn.tax], ['الضريبة المستحقة', '', net]] };
   };
   v.querySelector('#f-run').onclick = run;
   if (!can('reports', 'print')) v.querySelector('#f-print').style.display = 'none';
