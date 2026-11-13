@@ -7,6 +7,7 @@ import { loadParties, partyLabel, partyDatalist, resolveParty } from './parties.
 import { loadItems, openInvoiceById } from './invoices.js';
 import { deptField, deptValue } from './departments.js';
 import { repOptions } from './lookups.js';
+import { printDoc, amountToWords } from './print.js';
 
 const EVERY = { 1: 'شهري', 2: 'كل شهرين', 3: 'ربع سنوي (كل 3 شهور)', 4: 'كل 4 شهور', 6: 'نصف سنوي', 12: 'سنوي' };
 const ST = { active: ['فعّال', 'ok'], paused: ['موقوف', 'warn'], ended: ['منتهي', 'bad'] };
@@ -15,8 +16,81 @@ const r3 = (x) => Math.round(x * 1000) / 1000;
 const lineAmt = (l, inc) => { const b = num(l.qty) * num(l.unit_price) - num(l.discount); return r3(inc ? b : b * (1 + num(l.tax_rate) / 100)); };
 const endOfMonth = (d) => { const [y, m] = d.split('-').map(Number), last = new Date(y, m, 0).getDate(); return `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`; };
 
+const VARS = ['[الشركة]', '[العميل]', '[رقم العقد]', '[عنوان العقد]', '[التاريخ]', '[البداية]', '[النهاية]', '[الدورية]', '[يوم الفاتورة]', '[قيمة الفاتورة]', '[القيمة بالحروف]', '[القيمة السنوية]', '[جدول البنود]', '[ملاحظات]'];
+const DEFAULT_TPL = `عقد تقديم خدمات
+
+إنه في يوم [التاريخ] تم الاتفاق بين كل من:
+الطرف الأول: [الشركة]
+الطرف الثاني: [العميل]
+
+البند الأول: موضوع العقد
+يلتزم الطرف الأول بتقديم الخدمات التالية للطرف الثاني: [عنوان العقد].
+[جدول البنود]
+
+البند الثاني: مدة العقد
+تبدأ مدة هذا العقد من [البداية] وتنتهي في [النهاية].
+
+البند الثالث: الأتعاب وطريقة الدفع
+يدفع الطرف الثاني للطرف الأول مبلغ [قيمة الفاتورة] دينار ([القيمة بالحروف]) [الدورية]، تستحق في اليوم [يوم الفاتورة] من الشهر، بمجموع سنوي [القيمة السنوية] دينار.
+
+البند الرابع: أحكام عامة
+يلتزم الطرفان بأحكام هذا العقد، وأي نزاع ينشأ عنه تختص به محاكم عمّان.
+
+[ملاحظات]`;
+const fmtPlain = (n) => (Math.round(num(n) * 1000) / 1000).toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
+function fillContract(text, c, party, lines) {
+  const amt = (lines || []).reduce((s, l) => s + lineAmt(l, c.prices_include_tax), 0);
+  const table = (lines || []).length ? `<table class="pt" style="margin:6px 0"><thead><tr><th>#</th><th>البند</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الضريبة %</th><th>المجموع</th></tr></thead><tbody>
+    ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.description || l._name || '')}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td><td class="n">${num(l.tax_rate)}</td><td class="n">${fmtNum(lineAmt(l, c.prices_include_tax))}</td></tr>`).join('')}</tbody></table>` : '';
+  const map = { '[الشركة]': S.company?.name || '', '[العميل]': party?.name || '', '[رقم العقد]': String(c.contract_no || ''), '[عنوان العقد]': c.title || '',
+    '[التاريخ]': fmtDate(today()), '[البداية]': fmtDate(c.start_date), '[النهاية]': c.end_date ? fmtDate(c.end_date) : 'حتى يتم إنهاؤه', '[الدورية]': (EVERY[c.every_months] || '').replace(/ \(.*\)/, ''),
+    '[يوم الفاتورة]': String(c.day_of_month || ''), '[قيمة الفاتورة]': fmtPlain(amt), '[القيمة بالحروف]': amountToWords(amt), '[القيمة السنوية]': fmtPlain(amt * 12 / (c.every_months || 1)), '[ملاحظات]': c.notes || '' };
+  let h = esc(text || '');
+  for (const [k, val] of Object.entries(map)) h = h.split(esc(k)).join(esc(val));
+  return h.split(esc('[جدول البنود]')).join(table).replace(/\n/g, '<br>');
+}
+
+async function viewTemplates(v) {
+  const { data: rows, error } = await sb.from('contract_templates').select('*').eq('company_id', S.company.id).order('code');
+  if (error) return void (v.innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
+  const ed = can('contracts', 'edit');
+  v.innerHTML = `<div class="page-head"><h2>📝 قوالب العقود</h2><div class="spacer"></div><a class="btn" href="#/contracts">🔁 العقود</a>${ed ? '<button class="btn primary" data-new>➕ قالب جديد</button>' : ''}</div>
+    <p class="muted">القالب هو نص العقد، والكلمات بين القوسين بتتعبّى لحالها من بيانات كل عقد: ${VARS.join(' ')}</p>
+    <div class="card table-wrap"><table class="t"><thead><tr><th>الرمز</th><th>اسم القالب</th><th>الحالة</th><th></th></tr></thead><tbody>
+    ${(rows || []).map(r => `<tr class="click" data-open="${r.id}"><td>${esc(r.code)}</td><td><b>${esc(r.name)}</b></td><td>${r.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge">موقوف</span>'}</td><td></td></tr>`).join('') || '<tr><td colspan="4" class="empty">ما في قوالب — اعمل واحد وبيتعبّى بنموذج جاهز تعدّل عليه</td></tr>'}</tbody></table></div>`;
+  const open = (r) => {
+    const r0 = r || { code: String((rows || []).length + 1).padStart(2, '0'), name: '', body: DEFAULT_TPL, is_active: true };
+    const dis = ed ? '' : 'disabled';
+    const m = modal({ title: r ? `قالب ${r.code}` : 'قالب عقد جديد', body: `<form id="tf"><div class="grid cols-3">
+        <div class="field"><label>الرمز</label><input name="code" value="${esc(r0.code)}" ${dis}></div>
+        <div class="field" style="grid-column:span 2"><label>اسم القالب *</label><input name="name" value="${esc(r0.name)}" ${dis}></div></div>
+        <div class="field"><label>نص العقد <small class="muted">— اضغط على كلمة لتنحط مكان المؤشر</small></label>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">${VARS.map(x => `<button type="button" class="btn sm" data-var="${esc(x)}" ${dis}>${esc(x)}</button>`).join('')}</div>
+          <textarea name="body" rows="18" style="font-family:inherit;line-height:1.7" ${dis}>${esc(r0.body)}</textarea></div>
+        <label class="check"><input type="checkbox" name="is_active" ${r0.is_active ? 'checked' : ''} ${dis}> فعّال</label></form>`,
+      foot: `${ed ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${r && ed ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
+    m.el.querySelector('.modal').style.maxWidth = '900px';
+    const f = m.el.querySelector('#tf');
+    m.el.querySelectorAll('[data-var]').forEach(b => b.onclick = () => { const ta = f.body, p = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, p) + b.dataset.var + ta.value.slice(ta.selectionEnd ?? p); ta.focus(); ta.selectionStart = ta.selectionEnd = p + b.dataset.var.length; });
+    m.el.querySelector('[data-save]')?.addEventListener('click', async () => {
+      const rec = { code: f.code.value.trim(), name: f.name.value.trim(), body: f.body.value, is_active: f.is_active.checked };
+      if (!rec.code || !rec.name) return toast('الرمز والاسم مطلوبين', 'err');
+      const res = r ? await sb.from('contract_templates').update(rec).eq('id', r.id) : await sb.from('contract_templates').insert({ ...rec, company_id: S.company.id });
+      if (res.error) return toast(arError(res.error), 'err');
+      toast('انحفظ القالب', 'ok'); m.close(); viewTemplates(v);
+    });
+    m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
+      if (!(await confirmBox(`حذف القالب «${r.name}»؟ العقود اللي عليه بتضل بنصها.`))) return;
+      const { error: e2 } = await sb.from('contract_templates').delete().eq('id', r.id); if (e2) return toast(arError(e2), 'err'); m.close(); viewTemplates(v);
+    });
+  };
+  v.querySelector('[data-new]')?.addEventListener('click', () => open(null));
+  v.querySelector('tbody').addEventListener('click', (e) => { const tr = e.target.closest('[data-open]'); if (tr) open(rows.find(x => x.id === tr.dataset.open)); });
+}
+
 async function viewContracts(v, ctx) {
   if (!S.company) return void (v.innerHTML = '<div class="notice info">اختار شركة أول.</div>');
+  if (new URLSearchParams(location.hash.split('?')[1] || '').get('t') === 'templates') return viewTemplates(v);
   const [{ data: rows, error }, , parties] = await Promise.all([
     sb.from('contracts').select('*').eq('company_id', S.company.id).order('contract_no'),
     Promise.resolve({ data: null }),
@@ -28,7 +102,7 @@ async function viewContracts(v, ctx) {
   const amt = {}; (rows || []).forEach(c => { amt[c.id] = (lines || []).filter(l => l.contract_id === c.id).reduce((s, l) => s + lineAmt(l, c.prices_include_tax), 0); });
   const until0 = endOfMonth(today());
   v.innerHTML = `<div class="page-head"><h2>🔁 العقود والرسوم المتكررة</h2><div class="spacer"></div>
-      ${can('contracts', 'add') ? '<button class="btn primary" data-new>➕ عقد جديد</button>' : ''}</div>
+      <a class="btn" href="#/contracts?t=templates">📝 قوالب العقود</a>${can('contracts', 'add') ? '<button class="btn primary" data-new>➕ عقد جديد</button>' : ''}</div>
     <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:10px">
       <div class="field" style="margin:0"><label>الحالة</label><select id="f-s"><option value="">الكل</option>${Object.entries(ST).map(([k, [l]]) => `<option value="${k}" ${k === 'active' ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <div class="field" style="margin:0;flex:1;min-width:200px"><label>بحث</label><input id="f-q" placeholder="العميل أو العنوان"></div>
@@ -93,6 +167,7 @@ function genResult(r) {
 }
 
 async function contractEditor(c, ctx, done) {
+  const { data: tpls } = await sb.from('contract_templates').select('id,code,name,body,is_active').eq('company_id', S.company.id).order('code');
   const [parties, items, { data: st }, ln, inv] = await Promise.all([loadParties(), loadItems(),
     sb.from('company_settings').select('default_tax_rate').eq('company_id', S.company.id).maybeSingle(),
     c ? sb.from('contract_lines').select('*').eq('contract_id', c.id).order('line_no') : { data: [] },
@@ -129,6 +204,10 @@ async function contractEditor(c, ctx, done) {
       <div class="field"><label><input type="checkbox" name="prices_include_tax" ${c0.prices_include_tax ? 'checked' : ''} ${dis}> الأسعار شاملة الضريبة</label></div>
       ${dept}
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(c0.notes || '')}" ${dis}></div></div>
+      <details style="margin-top:8px" ${c0.terms ? 'open' : ''}><summary style="cursor:pointer;font-weight:700">📝 نص العقد (للطباعة)</summary>
+        <div style="display:flex;gap:8px;align-items:end;margin:6px 0;flex-wrap:wrap"><div class="field" style="margin:0;min-width:220px"><label>القالب</label><select name="template_id" ${dis}><option value="">—</option>${(tpls || []).filter(t => t.is_active || t.id === c0.template_id).map(t => `<option value="${t.id}" ${t.id === c0.template_id ? 'selected' : ''}>${esc(t.code)} — ${esc(t.name)}</option>`).join('')}</select></div>
+          ${ro ? '' : '<button type="button" class="btn sm" data-fill>⬇️ تعبئة من القالب</button>'}<a class="btn sm" href="#/contracts?t=templates">إدارة القوالب</a></div>
+        <textarea name="terms" rows="10" style="font-family:inherit;line-height:1.7" placeholder="اختار قالب واضغط «تعبئة من القالب»، أو اكتب نص العقد هون. الكلمات بين القوسين بتتعبّى وقت الطباعة." ${dis}>${esc(c0.terms || '')}</textarea></details>
       <datalist id="ct-items">${act.map(i => `<option value="${esc(itemLabel(i))}"></option>`).join('')}</datalist>
       <h4 style="margin:12px 0 6px">سطور الفاتورة</h4>
       <div class="table-wrap"><table class="t" id="cl"><thead><tr><th>الصنف / الخدمة</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>الضريبة %</th><th style="text-align:left">المجموع</th><th></th></tr></thead>
@@ -141,6 +220,7 @@ async function contractEditor(c, ctx, done) {
       ${(inv.data || []).map(i => `<tr class="click" data-inv="${i.id}"><td><b>${esc(i.doc_code || String(i.inv_no ?? ''))}</b></td><td>${fmtDate(i.inv_date)}</td><td>${esc(i.contract_period || '')}</td><td class="n">${fmtNum(i.total)}</td>
         <td><span class="badge ${i.status === 'posted' ? 'ok' : i.status === 'cancelled' ? 'bad' : 'warn'}">${i.status === 'posted' ? 'مرحّلة' : i.status === 'cancelled' ? 'ملغاة' : 'مسودة'}</span></td></tr>`).join('') || '<tr><td colspan="5" class="empty">لسا ما طلعت فواتير</td></tr>'}</tbody></table></div>` : ''}`,
     foot: `${!ro ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}
+      ${c && can('contracts', 'print') ? '<button class="btn" data-print>🖨️ طباعة العقد</button>' : ''}
       ${c && c.status === 'active' && can('contracts', 'add') && can('sales_invoices', 'add') ? '<button class="btn" data-gen1>⚙️ توليد المستحق لهالعقد</button>' : ''}
       ${c && can('contracts', 'delete') && !(inv.data || []).length ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
@@ -164,6 +244,23 @@ async function contractEditor(c, ctx, done) {
   });
   tb.addEventListener('click', (e) => { if (e.target.closest('[data-rm]')) { e.target.closest('tr').remove(); if (!tb.children.length) tb.insertAdjacentHTML('beforeend', rowHTML()); recalc(); } });
   m.el.querySelector('[data-add]')?.addEventListener('click', () => { tb.insertAdjacentHTML('beforeend', rowHTML()); recalc(); });
+  m.el.querySelector('[data-fill]')?.addEventListener('click', async () => {
+    const t = (tpls || []).find(x => x.id === f.template_id.value); if (!t) return toast('اختار القالب أول', 'err');
+    if (f.terms.value.trim() && !(await confirmBox('بدك تستبدل نص العقد الحالي بنص القالب؟'))) return;
+    f.terms.value = t.body; f.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  m.el.querySelector('[data-print]')?.addEventListener('click', () => {
+    const text = f.terms.value.trim() || (tpls || []).find(x => x.id === f.template_id.value)?.body || DEFAULT_TPL;
+    const lines = [...tb.querySelectorAll('tr')].map(tr => { const it = act.find(i => itemLabel(i) === val(tr, 'item').trim());
+      return { description: val(tr, 'desc').trim() || it?.name || '', qty: val(tr, 'qty'), unit_price: val(tr, 'price'), discount: val(tr, 'disc'), tax_rate: val(tr, 'rate') }; })
+      .filter(l => l.description || num(l.unit_price));
+    const cc = { ...c, every_months: +f.every_months.value, day_of_month: +f.day_of_month.value, start_date: f.start_date.value, end_date: f.end_date.value || null,
+      title: f.title.value, notes: f.notes.value, prices_include_tax: f.prices_include_tax.checked };
+    const party = resolveParty(cust, m.el.querySelector('#cp').value);
+    printDoc(`عقد رقم ${c.contract_no}`, `<div style="font-size:14px;line-height:1.9">${fillContract(text, cc, party, lines)}</div>
+      <table style="width:100%;margin-top:40px"><tr><td style="width:50%;text-align:center">الطرف الأول<br>${esc(S.company.name)}<br><br>التوقيع: ..................</td>
+        <td style="text-align:center">الطرف الثاني<br>${esc(party?.name || '')}<br><br>التوقيع: ..................</td></tr></table>`, { subtitle: cc.title });
+  });
   m.el.querySelectorAll('[data-inv]').forEach(tr => tr.addEventListener('click', () => openInvoiceById(tr.dataset.inv, ctx)));
   m.el.querySelector('[data-save]')?.addEventListener('click', async (e) => {
     const p = resolveParty(cust, m.el.querySelector('#cp').value); if (!p) return toast('اختار العميل من القائمة', 'err');
@@ -180,7 +277,8 @@ async function contractEditor(c, ctx, done) {
     if (!lines.length) return toast('ضيف سطر واحد على الأقل', 'err');
     const rec = { party_id: p.id, title: f.title.value.trim(), status: f.status.value, every_months: +f.every_months.value, day_of_month: Math.min(28, Math.max(1, +f.day_of_month.value || 1)),
       start_date: f.start_date.value, end_date: f.end_date.value || null, ...(f.next_date.value !== (c0.next_date || '') ? { next_date: f.next_date.value || null } : {}), sales_rep_id: f.sales_rep_id.value || null,
-      auto_post: f.auto_post.checked, prices_include_tax: f.prices_include_tax.checked, notes: f.notes.value || null, ...deptValue(f) };
+      auto_post: f.auto_post.checked, prices_include_tax: f.prices_include_tax.checked, notes: f.notes.value || null, ...deptValue(f),
+      template_id: f.template_id.value || null, terms: f.terms.value.trim() ? f.terms.value : null };
     if (!rec.start_date) return toast('اختار بداية العقد', 'err');
     e.target.disabled = true;
     let id = c?.id || savedId;
