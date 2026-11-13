@@ -76,7 +76,7 @@ function partyList(type) {
         <td dir="ltr" style="text-align:right">${esc(p.mobile || p.phone || '')}</td><td>${esc(p.city || '')}</td><td dir="ltr" style="text-align:right">${esc(p.tax_no || '')}</td>
         <td dir="ltr" style="text-align:left;${over ? 'color:var(--bad);font-weight:700' : ''}">${b ? fmtNum(b) : '<span class="muted">—</span>'}${over ? ' ⚠️' : ''}</td>
         <td>${p.is_active ? '<span class="badge ok">فعّال</span>' : '<span class="badge bad">موقوف</span>'}</td>
-        <td class="actions"><a class="btn sm" href="#/party-profile?id=${p.id}" title="ملف إحصائي">📊</a> <a class="btn sm" href="#/rep-party?party=${p.id}">كشف</a>
+        <td class="actions"><a class="btn sm" href="#/party-profile?id=${p.id}" title="ملف إحصائي">📊</a> <a class="btn sm" href="#/party-docs?t=docs&party=${p.id}" title="الوثائق">📄</a> <a class="btn sm" href="#/rep-party?party=${p.id}">كشف</a>
           ${can(P.screen, 'edit') ? `<button class="btn sm" data-edit="${p.id}">تعديل</button>` : ''}
           ${can(P.screen, 'delete') ? `<button class="btn sm danger" data-del="${p.id}">حذف</button>` : ''}</td></tr>`; }).join('')
         || `<tr><td colspan="9" class="empty">ما في ${P.plural}</td></tr>`;

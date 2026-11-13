@@ -38,6 +38,7 @@ import { LANDED_ROUTES } from './landed.js';
 import { LEAVE_ROUTES } from './leaves.js';
 import { PROFILE_ROUTES } from './profile.js';
 import { FOLLOW_ROUTES } from './follow.js';
+import { PARTYDOC_ROUTES } from './partydocs.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
@@ -272,6 +273,7 @@ const NAV = () => [
   { title: 'العملاء والذمم المدينة', items: [
     { r: 'customers', i: '🧑‍💼', l: 'العملاء', show: () => S.company && can('customers', 'view') },
     { r: 'party-profile', i: '📊', l: 'ملف العميل الإحصائي', show: () => S.company && can('customers', 'view') },
+    { r: 'party-docs', i: '📄', l: 'وثائق العملاء والموردين', show: () => S.company && (can('customers', 'view') || can('suppliers', 'view')) },
     { r: 'rep', i: '📱', l: 'تطبيق المندوب (زيارات ودفعات)', show: () => S.company && can('rep_visits', 'view') },
     { r: 'obligations', i: '🔔', l: 'متابعة إقرارات العملاء', show: () => S.companies.some(c => can('obligations', 'view', c.id)) },
     { r: 'party-center?type=customer', i: '📒', l: 'أستاذ مساعد العملاء', show: () => S.company && can('reports', 'view') },
@@ -596,7 +598,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...LANDED_ROUTES, ...LEAVE_ROUTES, ...PROFILE_ROUTES, ...FOLLOW_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...LANDED_ROUTES, ...LEAVE_ROUTES, ...PROFILE_ROUTES, ...FOLLOW_ROUTES, ...PARTYDOC_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

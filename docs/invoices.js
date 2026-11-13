@@ -458,9 +458,21 @@ async function invoiceEditor(type, inv, ctx) {
     const { data } = await sb.rpc('party_item_prices', { p_company: S.company.id, p_party: p.id }); (data || []).forEach(x => listPrice[x.item_id] = num(x.price)); };
   const partyInput = m.el.querySelector('#party');
   if (inv?.party_id || pre?.inv?.party_id) loadListPrices(myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)));
+  const docWarn = async (p) => {   // وثائق الطرف الناقصة أو المنتهية
+    m.el.querySelector('#pdoc-warn')?.remove(); if (!p) return;
+    const { data } = await sb.rpc('party_doc_issues', { p_company: S.company.id, p_party: p.id, p_date: f.inv_date.value || null });
+    const bad = (data || []).filter(x => x.on_missing !== 'none');
+    if (!bad.length) return;
+    const blk = bad.some(x => x.on_missing === 'block' && x.problem !== 'expiring');
+    const box = document.createElement('div'); box.id = 'pdoc-warn'; box.className = 'notice' + (blk ? '' : ' info'); box.style.margin = '0 0 10px';
+    box.innerHTML = `${blk ? '⛔' : '⚠️'} وثائق ${esc(p.name)}: ${bad.map(x => `<b>${esc(x.type_name)}</b> ${x.problem === 'missing' ? 'ناقصة' : x.problem === 'expired' ? 'منتهية ' + fmtDate(x.expiry_date) : 'بتنتهي ' + fmtDate(x.expiry_date)}`).join('، ')}${blk ? ' — الفاتورة ما رح تترحّل لحد ما تتجدد.' : ''} <a href="#/party-docs?t=docs&party=${p.id}">فتح الوثائق</a>`;
+    m.el.querySelector('#inv-form')?.before(box);
+  };
+  if ((inv?.party_id && inv.status === 'draft') || pre?.inv?.party_id) docWarn(myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)));
   partyInput.addEventListener('change', () => {
     const p = resolveParty(myParties, partyInput.value); partyInput.classList.toggle('bad', !!partyInput.value && !p);
     loadListPrices(p);
+    docWarn(p);
     if (p) { partyInput.value = partyLabel(p); if (p.payment_terms_days && !f.due_date.value) { const d = new Date(f.inv_date.value); d.setDate(d.getDate() + p.payment_terms_days); f.due_date.value = d.toISOString().slice(0, 10); } }
   });
 
