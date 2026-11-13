@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — الطباعة والتفقيط
 // =====================================================================
+import { translateDoc } from './i18n.js';
 import { S, sb, esc, fmtDateTime } from './core.js';
 
 // ---------------------------------------------------------------------
@@ -129,7 +130,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
   <style>${css(cfg, { landscape, thermal, paper: paper === 'A5' ? 'A5' : 'A4' })}${body.css || ''}</style></head><body>
   ${preview ? '' : printBarHTML()}${body.html}
   ${preview ? '' : '<script>window.onload = () => setTimeout(() => window.print(), 450);<\/script>'}</body></html>`;
-      w.document.open(); w.document.write(d0); w.document.close(); return;
+      w.document.open(); w.document.write(d0); w.document.close(); translateDoc(w.document); return;
     }
     if (typeof title === 'function') title = title(cfg);
     const sigs = kind && cfg.sig[kind] ? String(cfg.sig[kind]).split(/[،,]/).map(x => x.trim()).filter(Boolean) : [];
@@ -151,7 +152,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
   ${cfg.footer_text ? `<div class="foot-text">${esc(cfg.footer_text)}</div>` : ''}
   <div class="foot">${cfg.show_printed_by ? `<span>طُبع بواسطة: ${esc(S.profile?.full_name || S.profile?.email || '')}</span>` : '<span></span>'}<span>${fmtDateTime(new Date())}</span></div>`).join('')}
   ${preview ? '' : '<script>window.onload = () => setTimeout(() => window.print(), 450);<\/script>'}</body></html>`;
-    w.document.open(); w.document.write(doc); w.document.close();
+    w.document.open(); w.document.write(doc); w.document.close(); translateDoc(w.document);
   }).catch(e => { w.document.body.innerHTML = '<p dir="rtl">ما قدرت أحضّر الطباعة: ' + esc(e.message) + '</p>'; });
 }
 

@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — الهيكل الرئيسي وشاشات المرحلة 1
 // =====================================================================
+import { LANG, initLang, setLang } from './i18n.js';
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
@@ -59,7 +60,7 @@ function renderAuth(mode = 'login') {
   const titles = { login: 'تسجيل الدخول', signup: 'حساب جديد', reset: 'نسيت كلمة السر' };
   $app.innerHTML = `
     <div class="auth-wrap"><div class="auth-card">
-      <div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
+      <div style="text-align:end">${langBtnHTML()}</div><div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
       <p class="auth-sub">${titles[mode]}</p>
       <form id="auth-form">
         ${mode === 'signup' ? `<div class="field"><label>الاسم الكامل</label><input name="full_name" required></div>` : ''}
@@ -774,7 +775,7 @@ async function viewHome(v) {
       S.profile.theme = b.dataset.th; toast('تغيّر اللون', 'ok');
     };
   }
-  { const pb = document.createElement('div'); pb.style.marginTop = '10px'; pb.innerHTML = '<button class="btn" id="my-pw">🔑 تغيير كلمة السر</button>'; v.appendChild(pb); pb.querySelector('#my-pw').onclick = () => changePasswordDialog(); }
+  { const pb = document.createElement('div'); pb.style.marginTop = '10px'; pb.style.display = 'flex'; pb.style.gap = '8px'; pb.innerHTML = '<button class="btn" id="my-pw">🔑 تغيير كلمة السر</button>' + langBtnHTML(); v.appendChild(pb); pb.querySelector('#my-pw').onclick = () => changePasswordDialog(); }
   dashboardPanel(v.querySelector('#dash')).catch(() => {});
   if (S.companies.some(c => can('obligations', 'view', c.id))) {
     obligationsSummary().then(({ late, soon }) => { const el = v.querySelector('#ob-sum'); if (!el || (!late && !soon)) return;
@@ -1450,9 +1451,18 @@ async function viewLog(v) {
 //  التشغيل
 // ---------------------------------------------------------------------
 let booting = false;
+let langReady = null;
+export async function switchLang(l) {
+  setLang(l);
+  if (S.profile?.id) await sb.from('profiles').update({ lang: l }).eq('id', S.profile.id);
+  location.reload();
+}
+const langBtnHTML = () => `<button type="button" class="btn sm" id="lang-btn" data-noi18n>${LANG === 'en' ? '🌐 عربي' : '🌐 English'}</button>`;
+document.addEventListener('click', (e) => { if (e.target.closest('#lang-btn')) switchLang(LANG === 'en' ? 'ar' : 'en'); });
 async function boot() {
   if (booting) return; booting = true;
   try {
+    await (langReady ||= initLang());
     const { data } = await sb.auth.getSession();
     S.session = data.session;
     if (!S.session) return renderAuth('login');
@@ -1462,6 +1472,7 @@ async function boot() {
         <button class="btn danger block" onclick="window.__logout()">تسجيل خروج</button></div></div>`;
       return;
     }
+    if (S.profile.lang && S.profile.lang !== LANG) { setLang(S.profile.lang); location.reload(); return; }   // لغة المستخدم من أي جهاز
     if (!S.profile.is_active) return renderPending();
     if (S.sub?.status === 'suspended') return renderSuspended();
     if (S.trial && !S.trial.has_company && S.profile.is_admin) {

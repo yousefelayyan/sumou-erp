@@ -1,0 +1,4280 @@
+English letters or numbers
+Home
+Switch company
+Switch fiscal year
+Switch user
+New instance: a new window with its own login
+Sign out
+Back to previous screen
+Forward
+This screen's group buttons
+Search by name or code
+Menu
+Close tab
+Open a company in a new tab
+Close
+Search by name, code or tax number
+Every trial subscriber gets a copy of this company
+Opened early: users won't move to it until its start date
+Edit
+All permissions on the screen
+On login they only see the cashier screen. Give them the «Cashier» group in the company
+Doesn't see or enter other branches' transactions; reports are for their branch only
+Voucher number or name
+Sign in
+New account
+Forgot password
+Version
+Account created
+A confirmation email was sent to
+Open the email and click the confirmation link, then sign in
+If you're not the first user, your account needs the system admin's approval
+OK
+We sent a password reset link to your email
+🧪 Try the program for free
+14 days, a ready company with customers, items, invoices and entries, plus all reports. No commitment
+Your name
+Company or business name
+Mobile
+Email
+Username
+Password
+🚀 Start the trial
+I have an account, back to sign in
+Creating your account
+Choose a new password
+New password
+Save
+Password changed
+characters at least
+contains a digit
+contains an English letter
+upper and lower case
+contains a symbol
+Current password
+Repeat it
+The two new passwords don't match
+Password changed
+Sign out
+🔑 Change password
+Cancel
+🔐 Password policy
+Minimum length
+Expires every (days
+0 = never expires
+
+The policy applies to new passwords (adding a user, editing their password, and users changing their own). Expiry asks the user to change it at login
+💾 Save
+Policy saved
+Subscription
+is currently suspended. Your data is safe and will be back once the subscription is activated. Contact us
+Refresh
+Your account
+is awaiting the system admin's approval
+Once your account is activated and given access to a company, you can sign in
+screen
+This screen works on a company
+Add a company first, then the screen will open with its data
+➕ Add a new company
+Dashboard
+File
+Company details
+Fiscal years
+Departments
+Linked accounts & tax
+Import from Excel
+Companies
+Users
+Groups & permissions
+Setup
+Voucher types (journals
+Payment methods
+Banks
+Bank branches
+Commercial paper types
+Countries
+Regions
+Sales reps
+Routes
+Brands
+Document follow-up statuses
+Currencies & exchange rates
+Custom fields
+Field layout
+Finance
+Chart of accounts
+General ledger
+Opening balances
+Journal vouchers
+Receipt vouchers
+Payment vouchers
+Cheque portfolio
+Cheques dashboard
+Guarantee cheques
+Pending posting
+Recurring entries
+Budgets
+Bank reconciliation
+Cost centers & currencies
+Employees & payroll
+Employees
+Payroll & social security
+Loans & advances
+Attendance
+Leaves
+My salary (attendance, payslip, loans and leaves
+Employees subsidiary ledger
+Employees trial balance
+Fixed assets
+Fixed assets & depreciation
+Fixed asset movements
+Fixed asset custody
+Fixed assets subsidiary ledger
+Expenses
+Expense cards
+Expenses control center
+Expenses subsidiary ledger
+Expense categories
+Inventory
+Items & services
+Price lists
+Stock balance
+Quantities reserved by orders
+Batches & expiry dates
+Serial numbers
+Stock in/out vouchers
+Stock count & adjustment
+Supply requests
+Item card
+Warehouses
+Customers & receivables
+Customers
+Customer statistics profile
+Customer & supplier documents
+Sales rep app (visits & payments
+Customer filings follow-up
+Customers subsidiary ledger
+Sales orders / quotations
+Point of sale (cashier
+Daily cashier summary
+Sales invoices
+Sales returns
+Contracts & recurring fees
+Customer notes (debit/credit
+Customer aging — summary
+Customer aging
+Summary
+Customer aging — detailed
+Detailed
+Rep commissions & targets
+Unpaid customer invoices
+Invoice collection & days to pay
+Customer categories
+Customer discounts & settlements
+Suppliers & payables
+Suppliers
+Supplier statistics profile
+Suppliers subsidiary ledger
+Landed costs (freight & customs
+Purchase invoices
+Purchase returns
+Supplier notes (debit/credit
+Supplier aging — summary
+Supplier aging
+Supplier aging — detailed
+Unpaid supplier invoices
+Supplier invoice payments & days
+Supplier categories
+Manufacturing
+Bills of materials
+Production orders
+Maintenance
+Service tickets
+Marketing
+Promotions
+Messages & WhatsApp
+Loyalty cards control center
+Loyalty tiers & cashback
+Loyalty card types
+Rep sales & collections
+Reports
+Ask Sumou (reports in plain words
+Account statement
+General journal
+Trial balance
+Income statement
+Period comparison (growth
+Balance sheet
+What if? (profit study
+Customer/supplier statement
+Aging
+Sales tax return
+Cost centers report
+Currency balances
+Inventory aging
+Slow-moving inventory
+Inventory turnover
+Journals
+Coming soon
+E-invoicing (JoFotara
+Tools
+Posting
+Numbering
+Backup
+Print templates
+Activity log
+My subscription
+Subscribers management
+🚪 Sign out
+Do you want to leave the cashier
+Switch year
+New instance
+Switch user? You'll leave this account and sign in with another
+Do you want to sign out of the program
+🏢 Switch company
+No companies
+📅 Switch fiscal year
+Note
+You're now on
+When you switch, all screens of
+will use the year you choose
+Unavailable
+Closed
+No fiscal years for this company
+Now on
+Screen
+Can't close the company: there's an open unsaved voucher. Save or close it first
+Can't close the company
+There's an open unsaved voucher. Save or close it first
+Can't close
+There's an unfinished point-of-sale invoice
+items). Finish or clear it first
+Close
+and all its open screens
+Loading
+→ Back
+Welcome
+🎉 Your trial account is ready
+Your trial company is ready with sample data. Try invoices, vouchers and reports freely
+Save this information to sign in again
+Subscriber code
+Trial until
+Let's start
+Current fiscal year
+Company type
+Sales tax
+Available companies
+Start here
+🎨 Interface color
+Color changed
+🔔 Filings follow-up
+} — click for details
+Click for details
+Choose
+General
+Taxes & registration
+Address & contact
+Logo
+Notes
+Company code
+Company name
+Legal name
+Trade name
+English name (for bilingual invoice
+Business type
+Currency
+Company is active
+National establishment number
+Commercial registration number
+Tax number (income tax
+Sales tax number
+Sales tax return frequency
+Every two months
+Monthly
+Import code
+Export code
+Subject to sales tax
+City
+Address
+Phone
+Website
+Address in English
+No logo
+Logo link
+The image is too large, choose one under 300 KB
+Company code and name are required
+Add
+Saved
+Edit company
+New company
+➕ New company
+Code
+Type
+Tax number
+Status
+Delete
+Set as
+Template for the free trial? Everyone who signs up gets a copy of its current data (customers, items, invoices, entries). Don't put real customer data in it
+It's now the trial template ✅
+can't be deleted
+The company has transactions, so it can't be deleted. If you don't need it anymore
+deactivate it
+from «Edit» (it disappears from lists and its data stays saved
+The company
+has no transactions. Are you sure you want to delete it permanently? (Its chart of accounts and cards will be deleted with it
+Deleted
+Sales
+Purchases
+Receipts
+Payments
+Journals
+Cheques
+Payroll
+Assets
+Stock vouchers
+Orders
+📆 Periods
+Close
+Finance (posting
+Stock movements
+Period
+From — To
+From
+To
+Last change
+Finance»: no entry can be posted or unposted in the period. «Stock movements»: no stock movement can be added or removed
+no entry can be posted or unposted in the period. «Stock movements
+no stock movement can be added or removed
+Sections: no document of the section dated in the period can be added, edited, deleted or posted (even drafts). A reversing entry or cancellation dated in an open period is allowed
+Sections
+no document of the section dated in the period can be added, edited, deleted or posted (even drafts). A reversing entry or cancellation dated in an open period is allowed
+Locking needs «Edit» on fiscal years, and reopening needs «Unpost» or the admin
+No periods for this year
+Generate 12 monthly periods
+Period locked
+Period opened
+Done
+Name
+Open
+🔒 Close & carry forward
+🔓 Reopen
+Closing the year prevents any changes. Only the system admin can reopen it
+Unavailable» = next year opened early (contract renewals, budgets, balances); users stay on the current year until its start date
+Fiscal year
+Edit fiscal year
+New fiscal year
+Fill in the required fields
+There are days between the end of
+and the start of this year that will have no fiscal year. Continue
+End date must be after start date
+This period overlaps with
+Continue
+Reopen
+The closing entry and the balances carried to the next year (if any) will be deleted automatically. After editing you can close it again
+Year reopened
+Delete fiscal year
+and carry balances forward
+This will happen
+1) A closing entry dated
+zeroes revenues and expenses and moves the net profit or loss to retained earnings
+2) A posted opening entry in the new year with assets, liabilities, equity, customers and suppliers balances
+3) The year gets locked and only the admin can edit it
+New year
+➕ Create the fiscal year
+Automatic
+Retained earnings account
+There must be no draft vouchers or invoices in the year. If the new year has manually entered and posted opening balances, delete or reverse them first
+Closed and carried forward
+👥 Users
+➕ New user
+Login name
+Screens
+System admin
+Employee
+All
+All companies
+Company
+Active
+Suspended
+✏️ Edit user
+Username (for login
+Full name
+Account active
+System admin (all permissions
+🛒 Point-of-sale user only
+🔐 Special permissions
+Added on top of their group permissions in each company. Pick the screen from the tree and tick the actions
+🏢 Companies they work on
+Cancel forced password change
+Force password change at next login
+Enter the username
+Username must be English letters or numbers without spaces
+Password must be at least 4 characters
+Sees their department only» needs a department for the user
+User created
+signs in with the username and password
+Delete user
+permanently? (Better to deactivate the account instead of deleting
+➕ New group
+Permissions are given to the group, and every employee gets their group's permissions in each company. The system admin always has all permissions
+No groups
+Edit group
+New group
+Group name
+Description
+Copy permissions from a group
+Group name is required
+Delete group
+Its employees will have no permissions
+Groups
+Sign-ins & sign-outs
+📋 All activity
+🔑 Sign-ins & sign-outs
+⏱️ User sessions
+👥 Users summary
+➕ Additions
+✏️ Edits
+📮 Posting & unposting
+🗑️ Deletions
+📜 Activity & audit log
+Auto refresh every minute
+🔄 Refresh
+🖨️ Print
+User
+Today
+Last 7 days
+Last 30 days
+Custom period
+Search
+No./code
+Changed
+min
+hour and
+Last update
+All activity
+Sign-ins
+Sign in
+user
+Add / edit / delete
+Post
+Last sign-in
+Last sign-out
+Last activity
+Sign-in
+Sign-out
+Duration
+Still signed in / didn't sign out
+Time
+Action
+Screen
+Details
+row
+activity-log.csv
+We couldn't find your profile. Make sure the database (SQL) file ran completely, then refresh the page
+Preparing your trial company
+We're filling in customers, items, invoices and entries so you can see reports right away. Just seconds
+Your password expires in
+days — change it from the dashboard
+days
+change it from the dashboard
+Try again
+Type your question… e.g.: give me July sales grouped by customer
+January
+January
+February
+February
+March
+March
+April
+April
+April
+May
+May
+June
+June
+July
+July
+August
+August
+August
+September
+September
+October
+October
+October
+November
+November
+December
+December
+Customer
+Item
+Item category
+Customer category
+Sales rep
+Department
+Warehouse
+Month
+What are my sales this week
+Top 10 items this month
+Compare reps' sales this month with last month
+Item categories sales this month
+This year's sales monthly
+This month's sales by customer and category
+
+
+
+
+month
+for the year
+Last month
+This month
+Last week
+This week
+
+Yesterday
+year
+This year
+This month compared with last month
+Choose a company from the top first
+💬 Ask Sumou — sales
+💬 Ask Sumou
+Ask
+You can ask about
+My previous questions
+None
+Preparing
+I understood your question as
+Grouped by
+There's more than one
+whose name contains
+Choose the one you mean
+Couldn't find
+named
+Total sales
+Quantity
+and net
+Description
+Net
+Tax
+Invoices count
+Difference
+Total
+ask-sumou.csv
+You don't have permission for sales reports
+Disposal / write-off
+Write off the asset: accumulated depreciation debit, asset credit at cost, and the book value is a loss
+Write off the asset
+accumulated depreciation debit, asset credit at cost, and the book value is a loss
+Direct sale
+Sell the asset to a customer: customer debit with price and tax, and the difference from book value is a gain or loss
+Sell the asset to a customer
+customer debit with price and tax, and the difference from book value is a gain or loss
+Transfer between departments
+Changes the asset's department only, no entry
+Draft
+Posted
+Cancelled
+🔁 Fixed asset movements
+🏢 Assets
+No.
+Date
+Cost
+Accumulated
+Sale price
+No movements
+Reference
+Description / reason
+Asset
+Book value
+New
+Add at least one asset
+Total
+➕ Add asset
+book
+Movement saved. Post it now
+Movement posted
+Post the transfer? The assets' department will change
+Post the movement? The entry will be made and the assets become «disposed
+Reversing entry date (YYYY-MM-DD
+Cancel the transfer? The assets go back to their department
+Cancel draft
+Movement cancelled
+Delete draft
+Deleted
+Movement no.
+Fixed assets
+book value
+Prepared by
+Approved by
+Custody handover
+Custody transfer
+The assets listed above were transferred from the handing party to the receiver in the stated condition with accessories, and the receiver acknowledges receiving them and being responsible for them from this date
+Custody return
+The assets listed above were returned by the custodian in the stated condition with accessories, and they are released from responsibility from this date
+Pending
+Confirmed
+Work done
+Closed
+Cancelled
+Handed by
+Received by
+Location
+No documents
+Employee
+Assets in custody
+Active
+No custodians
+No custody
+Classification
+In custody since
+No assets
+🧾 Fixed asset custody
+Custody is only a record of responsibility and location, with no entry. The asset moves to the new custodian when the document becomes «Work done
+Current custody of fixed assets
+As of
+New custodian
+Custodian
+Employee (optional
+Code and name are required
+Delete custodian
+Can't be deleted: it has custody documents. Deactivate it instead
+Can't be deleted
+it has custody documents. Deactivate it instead
+Custody history
+Document
+Movement
+From date
+To date
+Condition & accessories
+Until now
+No custody movements on this asset
+New
+In custody of
+Condition at
+Accessories
+Add the assets
+Apply the document to the assets? Custodian and location will change
+Cancel document
+Undo the document? The assets go back to their previous custodian and location
+Close the document (archive)? It can't change afterwards
+Status changed
+Delete document
+Deleted
+Document no.
+Signature
+Acknowledgement
+MB
+KB
+📎 Attachments
+➕ Attach a file or image
+From a phone you can photograph the invoice or cheque directly. Max 10 MB per file
+No attachments
+Delete attachment
+Only the uploader or the admin can delete it
+is larger than 10 MB
+Uploading
+Attached
+Morning, evening, night
+This device doesn't support location
+You need to allow the program to know your location
+🕘 Today's attendance
+📍 Locating you
+Edit attendance
+➕ Manual attendance entry
+Check-in time
+Check-out time
+Clearing both times removes the day's record
+Saved
+Edit work location
+➕ New work location
+Latitude
+Longitude
+Allowed radius (meters
+📍 Use my current location
+You don't have permission on payroll
+📋 Daily
+📊 Period summary
+📍 Work locations
+🔄 Shifts
+📥 Fingerprint import
+⚙️ Work hours & penalties
+🕘 Attendance
+Present
+Absent
+Check-in
+Check-out
+Source
+Outside
+m
+Supervisor
+Fingerprint
+No employees
+Attendance sheet
+Show
+Attendance days
+Hours
+Late days
+Late minutes
+Early leave (min
+Absence
+Leaves
+Overtime (h
+Holiday overtime (h
+Late penalty
+Absence penalty
+Overtime value
+Outside location
+No check-out
+No data
+Monthly ÷ 30 ÷ daily hours
+Attendance summary
+Coordinates
+Radius
+Linked employees
+No locations — employees can check in from anywhere
+No locations
+employees can check in from anywhere
+Employees can check in only within their location's radius (from the employee card ← «Work location»), or the nearest active location if none is set
+Sunday
+Monday
+Tuesday
+Wednesday
+Thursday
+Friday
+Saturday
+Grace
+Days off
+next day
+Active
+Suspended
+No shifts — all employees are on the company's general hours (tab «Work hours & penalties
+No shifts
+all employees are on the company's general hours (tab «Work hours & penalties
+A shift is linked to the employee from their card ← «Shift / hours». If the end is before the start, it's a night shift ending the next day
+Edit shift
+New shift
+Late grace (minutes
+General hours (for employees without a shift
+Work start
+Work end
+Late grace period (minutes
+Working day hours
+Allow check-in from outside the location (marked «Outside
+Overtime & penalties
+Overtime rate on normal days
+Labor law: 125% of the hourly wage
+Labor law
+125% of the hourly wage
+Overtime rate on days off
+Labor law: 150%
+Minimum counted overtime (minutes
+Late & early leave penalty multiplier
+1 = the minutes' own wage, 0 = no penalty
+Absence penalty multiplier (days
+1 = one day's wage for each absent day
+Apply overtime and penalties to the payroll automatically
+When you «Fill» the payroll: overtime goes to «Overtime», and penalties are added to «Other deductions» — only for employees with attendance records
+When you «Fill» the payroll
+overtime goes to «Overtime», and penalties are added to «Other deductions
+only for employees with attendance records
+a
+Fingerprint import is for users with payroll edit permission
+Download the punches file from the fingerprint device and import it here
+From the device's USB drive: the file
+From the device's USB drive
+or any text file with the employee number, date and time on each line
+From the fingerprint software on the computer: export the punches as Excel or CSV
+From the fingerprint software on the computer
+export the punches as Excel or CSV
+The employee number on the device matches «Fingerprint no.» on the employee card, or the employee code if empty
+Check-in = first punch of the day, check-out = last punch. A single punch counts as check-in only
+📂 Choose fingerprint file
+Reading the file
+The file is empty
+Column
+Employee number column
+Date column (or date and time
+Time column
+The program guessed the columns, change them if wrong
+rows in the file
+Choose the employee number column and the date column
+punches for
+Also replace what the supervisor edited
+📥 Import into attendance
+Fingerprint no.
+Days
+Punches
+First day
+Last day
+Examples
+No punches match employees
+Importing
+✅ Import finished
+new days
+📊 See the period summary
+Imported
+✅ Imported
+Entry/voucher
+Invoice
+Stock voucher
+Customer/supplier
+Item
+Account
+Cheque
+Warehouse
+Asset
+Payroll
+Item category
+Category
+Cost center
+Fiscal year
+Amount
+Party
+Notes
+Entry
+Cash box
+Payment method
+Cost center
+Account
+👤 Entered by
+🕓 Audit log
+What changed
+No recorded activity
+Item or batch number
+Edit expiry date
+Type or scan the serial
+Sales invoice
+Sales return
+Purchase invoice
+Purchase return
+Stock-in voucher
+Stock-out voucher
+Transfer voucher
+Stock count
+No batch
+No date
+Expired
+Expiring soon
+Valid
+🧪 Batches & expiry dates
+Batch
+Expiry date
+left
+Expired for
+No expired or expiring batches 👍
+No balances
+Expired & expiring batches
+Batch balances
+✏️ Batch
+Production date
+Batch not found
+🧪 Batch history
+In
+Out
+Balance
+You don't have permission
+🔢 Serial numbers
+Search by serial number
+🔍 Search
+In stock of item
+All items
+Serial history
+Not in stock
+No movements for this serial
+In stock in warehouses
+Serial
+Received on
+No serials in stock
+Type an account code or name
+Annual total — change it to spread evenly
+Revenues
+Liabilities
+Equity
+Choose a company and fiscal year first
+📐 Budgets
+Budget
+Department / cost center
+Expected net profit
+Whole company
+Approved
+No budgets for this year. Create one and fill it from last year's actuals with one click
+New budget
+Department and cost center are optional: if chosen, the actual comparison is for that department (and its sub-departments) or that center only
+Department and cost center are optional
+if chosen, the actual comparison is for that department (and its sub-departments) or that center only
+💾 Save & open
+→ Budgets
+📊 Versus actual
+🔓 Unapprove
+✅ Approve
+Type the annual amount in «Total» and it spreads evenly over the months. Revenues and expenses are totaled separately below
+Add accounts or fill from the previous year
+Total revenues
+Total expenses
+The account doesn't exist or isn't a sub-account
+The account is already in the budget
+Added
+There are
+accounts in the budget. Clear them and refill? (No = only missing accounts are added
+Filled
+Unapproved
+Budget approved
+Delete budget
+Budget versus actual
+✏️ Budget
+From month
+To month
+View
+Detailed (each account
+By main account
+Accounts without a budget that have actuals
+Actual revenues
+Actual expenses
+Actual net profit
+No budget
+Actual
+Achievement %
+No figures in this period
+Month by month
+Net profit (budget
+Net profit (actual
+Code or name
+Whole fiscal year
+Current month
+Last 3 months
+Only those with a balance or movement
+🔎 Show
+Voucher
+Debit
+Credit
+Opening balance
+Total / balance
+Count
+Opening balance (start of period
+No posted movements in this period
+📋 Summary
+📄 Movements
+Calculation
+Carried balance
+Loading the statement
+Choose a company and fiscal year from the top first
+Revenues control center
+Assets control center
+Liabilities control center
+Equity control center
+Under account
+All accounts
+Level
+All levels
+Accounts count
+Total period debit
+Total period credit
+Period debit
+Period credit
+Closing balance
+▾ Statement
+No accounts for this filter
+general-ledger.csv
+📒 Subsidiary ledger
+Category
+All categories
+No category
+Debit only
+Credit only
+Above credit limit
+Total debit balances
+Total credit balances
+Net balance
+Credit = owed to suppliers
+Debit = owed by customers
+Debit = period expenses
+Above limit
+Full statement (print & WhatsApp
+Subsidiary ledger
+📒 Employees subsidiary ledger
+👷 Employees
+💵 Payroll
+Calculated from posted payrolls only. «Accumulated before period» = net salaries from the start of the year until before the period
+Section
+All sections
+Employees count
+Total salaries
+Net paid
+Employer social security
+Accumulated before period
+Employee social security
+Income tax
+Advances
+Other deductions
+Accumulated at period end
+Inactive
+No employees for this filter
+Basic
+Allowances
+Overtime
+Other additions
+Tax
+Deductions
+No posted payroll in this period
+employees-ledger.csv
+📒 Fixed assets subsidiary ledger
+🏢 Assets & depreciation
+Calculated from posted depreciation runs and the prior accumulated depreciation on the asset card
+Assets count
+Period depreciation
+Purchase date
+Accumulated depreciation at start
+Accumulated depreciation at end
+Disposed
+No assets for this filter
+Life
+months, salvage
+Months
+Depreciation
+Start of period
+assets-ledger.csv
+Accumulated at start
+Accumulated at end
+⚖️ Employees trial balance
+From entry lines with an employee: posted payroll entries (net and advances per employee) and vouchers where you chose the employee in «Customer / supplier / employee
+From entry lines with an employee
+posted payroll entries (net and advances per employee) and vouchers where you chose the employee in «Customer / supplier / employee
+Closing balance
+Opening balance
+employees-trial-balance.csv
+Cheque no., name, bank
+Return it to the portfolio
+Choose from the list
+e.g.: insufficient funds
+Cheque no., name, purpose
+If not a customer or employee
+Reason for cashing
+In portfolio
+Deposited at bank (for collection
+Collected
+Returned
+Issued (awaiting payment
+Paid
+💳 Cheque portfolio
+Incoming cheque
+Outgoing cheque
+📥 Incoming cheques (from customers
+📤 Outgoing cheques (to suppliers
+Due within 7 days (or overdue
+Returned
+Due from
+Due date
+Cheque no.
+Bank
+Overdue
+History
+No cheques
+Register incoming cheque
+Register outgoing cheque
+Branch
+Date
+Due date
+Or a counter account (if not a customer/supplier
+Name
+💾 Register
+Cheque no., amount and dates are required
+The customer/supplier isn't in the list
+Choose the customer/supplier or the counter account
+Cheque registered and its entry posted
+Drawer
+Endorser
+Return reason
+💼 Financial operations
+Entry
+History of cheque no.
+📎 Attachments
+No.
+Receipt date
+Amount of
+dinars
+Collect cheque
+Returned cheque
+Cheque paid by bank
+Cancel outgoing cheque
+Deposit cheque at bank
+Withdraw cheque from deposit
+«Cheques under collection» account at the bank
+Note
+Confirm
+Cheques list
+On
+Late
+Due today
+Ref
+Due value
+In the period and filters
+Due cheques count
+Not collected yet
+Due within 7 days
+📊 Monthly view
+Value by due month
+📅 Due date calendar
+Week
+Due on
+No cheques on this day
+📈 Dashboard
+Clear filters
+Held
+Returned
+Cashed
+🛡️ Guarantee cheques
+Received guarantee cheque
+Given guarantee cheque
+📥 Received by us (from customers, employees
+📤 Given by us (to suppliers, tenders
+A guarantee cheque has no accounting entry. If you need to use it (cash it), it becomes a normal cheque in the portfolio with its entry
+Return due within 30 days (or overdue
+Cashed
+Purpose
+Received
+Return date
+None
+No guarantee cheques
+Guarantee cheque no.
+>in the cheque portfolio
+optional
+Or an employee
+Reference (contract/tender no.
+Empty = no date
+Guarantee return date
+Return to owner
+We got it back
+Choose the party from the list
+Cheque no. and amount are required
+Return the cheque to its owner
+Get the cheque back
+Cancel guarantee cheque
+Back to held
+💰 Cash the guarantee cheque
+The cheque is registered as
+with a posted entry, then you continue on it normally (deposit, collect
+Cashing date
+💰 Cash it
+Choose the counter account
+Cashed and moved to the cheque portfolio
+Delete guarantee cheque
+Guarantee cheque
+Guarantee cheque receipt
+Guarantee cheque handover receipt
+Mr./Messrs.
+Receipt no.
+Amount in words
+Guarantee cheque (trust
+when the purpose ends
+Receiver's signature: ____________
+Receiver's signature
+Deliverer's signature: ____________
+Deliverer's signature
+Customer
+Collected
+Supplier
+Paid
+Not due
+By sales rep
+Show report
+Invoice
+Return
+Remaining
+No open invoices
+Grand total
+Oldest due date
+Unpaid invoices
+No sales rep
+First payment
+Last payment
+Average collection days
+Full payment (days
+Delay (days
+No invoices in the period
+Full payment
+Delay
+Collection %
+Min days to pay
+Max days to pay
+Fully paid
+Late · average delay
+Min days
+Max days
+Late
+Posted credit invoices from
+to
+Invoice collection
+Invoices from
+Copy the first month to all months
+e.g. 100
+Net sales (before tax
+Collection (payments allocated to their invoices
+💼 Rep commissions
+Each month
+Period total per rep
+By supervisor (team
+No target
+Basis
+Target
+Net sales
+Collection
+Commission %
+Commission
+Bonus
+Due
+Team
+Team
+Rep commissions
+rep-commissions.csv
+Targets
+Target in dinars per month (same basis as the rep's plan: sales or collections). Type a number in the first box and press «⇐ All months» to fill the year. Empty = no target
+Target in dinars per month (same basis as the rep's plan
+sales or collections). Type a number in the first box and press «⇐ All months» to fill the year. Empty = no target
+⇐ All months
+No reps — add them from «Setup ← Sales reps
+No reps
+add them from «Setup ← Sales reps
+Target can't be negative
+Targets saved
+📐 Plans
+Plan
+Tiers (achievement % ← commission
+at
+No plans — the rep gets their fixed rate
+No plans
+the rep gets their fixed rate
+🧑‍💼 Each rep's plan
+Fixed rate (no plan
+Rep's plan saved
+Plan
+New commission plan
+Plan name
+Commission on
+Tiers
+If the rep reaches «From %» of the target or more, they get «Commission %» on the whole basis. The highest tier reached applies
+From % of target
+Commission %
+Commission % when there's no target for the month
+Fixed bonus (dinars
+On reaching % or more
+Tiers: rates between 0 and 100
+rates between 0 and 100
+Set the achievement % that gives the bonus
+Plan saved
+Delete plan
+Its reps go back to their fixed rate
+📈 Income statement
+🧾 Sales
+You don't have permission for reports
+⚖️ Period comparison
+Current period from
+Compare with
+Same period last year
+Previous period (same length
+A period I choose
+Customer category
+Department/branch
+Loading
+Current
+Comparison
+No fiscal year for the current period
+Net profit / loss
+Net profit
+Current period
+Comparison period
+Growth
+was
+Rising ▲
+Falling ▼
+New / stopped
+Line
+Current qty
+Current sales
+Comparison qty
+Comparison sales
+Share
+Stopped
+No sales in both periods
+Sales are net of returns and before tax, from posted invoices
+Income statement comparison
+Sales comparison
+Sumou ERP
+Customer or title
+e.g.: monthly bookkeeping fees
+Choose a template and press «Fill from template», or write the contract text here. Words in brackets are filled when printing
+Quarterly (every 3 months
+Every 4 months
+Semi-annual
+Annual
+Ended
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Price
+Discount
+Tax %
+until terminated
+📝 Contract templates
+🔁 Contracts
+The template is the contract text; words in brackets are filled automatically from each contract's data
+Template name
+No templates — create one and it's filled with a ready sample you can edit
+No templates
+create one and it's filled with a ready sample you can edit
+Template
+New contract template
+Contract text
+Click a word to insert it at the cursor
+Template saved
+Delete template
+Contracts using it keep their text
+Choose a company first
+🔁 Contracts & recurring fees
+Contract
+Frequency
+Next due
+Invoice value
+Auto post
+Open
+No contracts
+Choose the date
+Nothing due up to this date
+Invoices due up to
+Selection is per contract: unticking a line removes all dues of the same contract
+Selection is per contract
+unticking a line removes all dues of the same contract
+⚙️ Generate invoices
+Choose at least one contract
+Created
+Nothing is due
+Invoice generation result
+These contracts didn't generate invoices and nothing changed in them
+Reason
+Contract no.
+New contract
+Contract title
+Written in the invoice notes
+Invoice day of month (1–28
+Empty = first invoice day from contract start
+Contract start
+Contract end
+Empty = open-ended
+Post invoices automatically
+Prices include tax
+📝 Contract text (for printing
+Template
+Manage templates
+Invoice lines
+Item / service
+Each invoice value (incl. tax
+No invoices yet
+Choose the template first
+Replace the current contract text with the template text
+Choose the customer from the list
+Type the contract title
+Choose the item from the list
+Quantity must be greater than zero
+Discount is larger than the line value
+Add at least one line
+Choose the contract start
+Generate this contract's due invoices up to
+Delete contract no.
+Fiscal years & periods
+Access to «unavailable» fiscal years
+Voucher types (journals): editing and bypassing their rules
+editing and bypassing their rules
+Setup lists (payment methods, banks, countries
+Chart of accounts & cost centers
+Budgets (approval via post
+Expense cards & categories
+Items & categories
+Warehouses, stock vouchers & counts
+Supply requests between warehouses
+Customers & categories
+Sales invoices & returns
+Customer debit & credit notes
+Customer discounts & small balance settlements (discount types via edit
+Override price controls (min price, max discount, selling below cost
+Override credit limit & sales stop (posting a credit invoice above the limit or for a stopped customer, and cheques from a customer with stopped cheques
+Override missing or expired customer/supplier documents (posting the invoice
+Branch reports (trial balance/income/balance sheet for the user's department
+Rep visits & mobile payments
+Sales orders & quotations
+Suppliers & categories
+Purchase invoices & returns
+Landed costs
+Supplier debit & credit notes
+Bills of materials & production orders
+Reports, general & subsidiary ledgers
+Office
+Change interface color
+Sumou purple
+JCPA green
+Emerald green
+Blue
+Maroon
+Orange
+Dark gray
+Print
+Unpost
+Sole proprietorship
+General partnership
+Limited partnership
+Limited liability company
+Private shareholding company
+Public shareholding company
+Non-profit company
+Association
+Other
+Commercial
+Industrial
+Services
+Contracting
+Educational
+Agricultural
+Tourism
+Wrong email or password
+You need to confirm your email first. Open the email you received and click the confirmation link
+This email is already registered
+Password must be 6 characters or more
+The fingerprint number is used by another employee
+The code is already used, choose another code
+You don't have permission for this action
+There's a value that isn't allowed (e.g. a negative amount or quantity, or debit and credit on the same line
+Can't be deleted because it's in use (has accounts or entries
+There's an internet connection problem
+There are unsaved changes. Close without saving
+Yes, close
+No, go back
+Yes
+Sales & customers
+Purchases & suppliers
+Warehouses & stock vouchers
+Cheques & bank reconciliation
+Customer filings follow-up (for offices
+No., description, name
+Posted
+Reversed
+General journal entries
+Opening entries journal
+Receipt vouchers journal
+Receiving accounts
+Sales invoices journal
+Sales returns journal
+Commercial papers journal / customers
+Payment vouchers journal
+Payment accounts
+Purchase invoices journal
+Purchase returns journal
+Commercial papers journal / suppliers
+Stock-in vouchers journal
+Stock-out vouchers journal
+Transfer vouchers journal
+Stock count & adjustment journal
+Not posted
+All
+Journal
+Voucher no.
+Received from
+Paid to
+Cash / bank
+Vouchers count
+Drafts
+Invoice no.
+Customer / supplier
+Payment
+Before tax
+Cash
+Credit
+From warehouse
+To warehouse
+Value
+Issued
+Issue date
+Cheques count
+Due and not paid
+Their value
+🧑‍💼 Sales reps report
+⚙️ Reps
+Sales from posted invoices (before tax, after discount). Collections = posted receipt vouchers from the rep's customers. Commission = net sales × rate
+Collections
+Commissions
+Invoices
+Returns
+sales-reps.csv
+On-hand quantity spread by age from its entry date (oldest goes out first
+Items with a balance and nothing going out for a while
+Cost of goods issued in the period ÷ average inventory value (start and end). The higher the number, the faster stock turns
+All warehouses
+Up to date
+0–30 days
+Over 180
+Items count
+Inventory value
+Qty over 90 days
+Qty over 180 days
+Days without movement
+Slow items
+Never issued
+Longest idle (days
+Never
+Start value
+End value
+Average inventory
+Cost of sales
+Turnover rate
+Days in stock
+Overall turnover rate
+times
+Average days in stock
+🔎 Search by code or name
+Default
+Description 2
+Department type
+Main department
+Sub-department
+Main department
+None (top of the tree
+Disabled
+Inventory & cost
+🛒 Branch cashier
+If you leave the numbers empty, the company's numbers are used
+Default warehouse
+🏛️ Departments
+🏛️ Main (has sub-departments) — 🏢 Sub (chosen on documents
+🏛️ Main (has sub-departments
+🏢 Sub (chosen on documents
+✏️ Edit department
+➕ New department
+✏️ Edit
+🗑️ Delete
+Choose a department from the tree
+Delete department
+The department is in use (documents, sub-departments or users), deactivate it instead of deleting
+Enter the department code
+Enter the department description
+The code is used by another department
+Saved
+Customer discounts
+Customer no. or name
+Cash discount
+Define at least one «discount type» from the «Discount types» tab
+Discount type
+On invoice (optional
+➕ Line
+💾 Save draft
+Entry: discount type account debit, customer credit. If you choose an invoice and the voucher is posted, the discount is allocated to it automatically
+discount type account debit, customer credit. If you choose an invoice and the voucher is posted, the discount is allocated to it automatically
+Line
+Customer not found
+Amount is required
+Add at least one line
+Discount voucher posted
+Discount voucher saved as draft (find it in journal vouchers
+From (absolute value
+Entry date
+Small balances settlement account
+🔍 Preview
+Settlement account saved
+No balances within the limits
+No types (e.g.: cash discount, quantity discount, settlement discount
+No types (e.g.
+cash discount, quantity discount, settlement discount
+Edit discount type
+New discount type
+Account (discount allowed expense
+Code, name and account are required
+Code is used
+You don't have permission on customer discounts
+🎁 Customer discounts & settlements
+First
+Previous
+Next
+Last
+▶ Previous
+
+
+Next ◀
+🧊 Frozen
+The document is frozen
+There are unsaved changes: save or close the window first
+There are unsaved changes
+save or close the window first
+The document is frozen, unfreeze it first
+The document is posted or you don't have edit permission. To edit, unpost it or make a reversing entry
+Save the changes first
+Unfreeze the document? It can be edited and posted again
+Freeze the document? It won't be edited, deleted or posted until unfrozen
+Unfrozen
+Document frozen
+e.g. PV
+
+Opening entries
+Stock-in vouchers
+Stock-out vouchers
+Transfer vouchers
+Stock count
+Voucher type (journal
+voucher type
+➕ New type
+Default type
+Own numbering (its own sequence
+Number prefix (with own numbering
+Print copies
+Edit/delete window (days from entry date, empty = no limit, 0 = same day
+Date must be today
+Department locked to the user's department
+e.g.
+
+The rules (date, edit window, department) don't apply to the admin or anyone with edit permission on «Voucher types
+Own numbering needs a prefix (e.g. PV-) so numbers don't repeat
+It has documents; deactivate it instead of deleting
+🗂️ Voucher types (journals
+Numbering
+Print copies
+Default
+With the type's sequence
+Today's date
+User's department
+Committee
+No types
+Every document must have a type; if you don't choose, it takes the default. The type shows in journals and statements and sets the number of print copies
+Search by amount or description
+Created
+recurring entry as draft — see it in «Pending posting
+recurring entry as draft
+see it in «Pending posting
+📊 Company figures
+Entries
+Invoices
+Inventory
+⏳ Pending posting
+Here are all drafts entered by employees and not posted yet. The accountant or admin reviews and posts them. (An employee without «Post» permission can only save drafts
+Entered by
+Entry time
+No drafts 👍
+🔁 Repeat this entry automatically
+Every how many months
+Every year
+Every
+months
+On day no.
+First time on
+Until (optional
+When it's due, the program makes a copy as a «draft» automatically, and you review and post it
+Recurring entry
+Done. You'll find it in «Recurring entries
+🔁 Recurring entries
+To add a recurring entry: open any journal, receipt or payment voucher and press «🔁 Repeat monthly». Due ones are generated automatically whenever you open the home page
+To add a recurring entry
+open any journal, receipt or payment voucher and press «🔁 Repeat monthly». Due ones are generated automatically whenever you open the home page
+Recurrence
+Next date
+Until
+Last run
+No recurring entries
+entry as draft
+Delete the recurrence? (Entries already made stay
+🎯 Cost centers
+💱 Currencies
+Cost centers
+Currencies
+US dollar
+Exchange rate must be greater than zero
+📊 Cost centers report
+No cost center
+Balance in currency
+Book balance (JOD
+At current rate
+Revaluation difference
+No foreign currency movements
+💱 Foreign currency balances
+Revaluation difference = balance in currency × current rate − book balance. To record it, make a journal voucher between the account and «Exchange differences
+Foreign currency balances
+🏦 Bank reconciliation
+Match the bank statement with the bank account in the books: tick the movements that appeared on the statement, and the program shows the difference and outstanding items (unpaid cheques, deposits in transit
+Match the bank statement with the bank account in the books
+tick the movements that appeared on the statement, and the program shows the difference and outstanding items (unpaid cheques, deposits in transit
+Statement date
+Statement balance
+Locked
+No reconciliations
+New bank reconciliation
+Bank account
+Bank statement date
+Bank statement balance (end of statement
+Continue
+Fill in the fields
+🏦 Reconcile
+↩️ Back
+Debit (deposit
+Credit (withdrawal
+Book balance
+Deposits in transit (not on statement
+− from books
+Cheques/withdrawals not on the statement
++ to books
+Expected / actual statement balance
+There's a difference of
+with the bank statement. Lock the reconciliation anyway
+Reconciliation locked
+Bank reconciliation statement
+Balance per books
+Less: deposits in transit
+Less
+Deposits in transit
+Add: cheques and withdrawals not on the statement
+Add
+Cheques and withdrawals not on the statement
+Adjusted balance
+Balance per bank statement
+Outstanding items
+Deposit
+Withdrawal
+Search by account number or name
+Search by number, description or reference
+Load balances of accounts, customers or suppliers as lines
+Filled from the first line with a customer
+Account number or name
+Delete line
+Empty = no counter line
+Assets
+Liabilities
+Debit & credit
+Cash box
+Bank
+Customer
+Supplier
+Journal voucher
+Receipt voucher
+Payment voucher
+Opening entry
+Invoice entry
+Invoice entries
+Cheque entry
+Cheque entries
+Payroll entry
+Payroll entries
+Depreciation entry
+Depreciation entries
+Stock entry
+Stock entries
+Closing entry
+Closing entries
+This company has no fiscal year
+Add a fiscal year
+first
+This company has no chart of accounts yet
+Created
+Expand all
+Collapse all
+Balances from posted entries in the fiscal year
++) debit, (−) credit
+Account no.
+Account name
+Nature
+Main
+
+No results
+Parent account
+No
+The account has sub-accounts, delete them first
+Delete account
+New account under
+New main account
+Edit account
+English name
+None (first-level account
+A sub-account takes its parent's classification automatically
+Account nature
+Debit & credit (balance shown on its side
+Account type
+Cash» and «Bank» appear first in receipt and payment vouchers
+Main account (summary, no postings, has sub-accounts
+Account is active
+Account number and name are required
+All statuses
+To account
+From account
+in this fiscal year
+There must be sub-accounts in the chart of accounts first
+Reversed with a reversing entry
+Posting is not enabled for this type (Tools ← Posting
+Reversing entry
+A posted entry can't be edited. To correct it, make a «reversing entry
+To account (cash/bank
+From account (cash/bank
+Reference / cheque no.
+Customer / supplier / employee
+Cheques total
+Customer (cheques owner
+➕ Cheque
+Each cheque is registered in the portfolio with its own receipt entry (debit cheques box, credit customer) and linked to the voucher
+More debit
+More credit
+Balanced
+📥 Load balances into the voucher
+What do you want to load
+Accounts under a main account
+Customer balances
+Supplier balances
+Employee balances
+Up to date
+Main account
+A line per customer/supplier/employee on the account (not grouped
+Category (optional
+Employees account (receivables/advances
+Lines form
+Reverse the balance (zero the accounts — for closing or transfer
+Reverse the balance (zero the accounts
+for closing or transfer
+Same balance (move the balance as is
+Counter account for the balancing line (optional
+Replace empty lines in the voucher
+📥 Load
+The counter account isn't from the list
+No balances for this selection
+lines — too many. Narrow the selection (category or a smaller account
+too many. Narrow the selection (category or a smaller account
+Zero balance
+Balance
+lines loaded
+No new cheques
+Cheque
+Cheque number is required
+Due date is required
+Choose the customer we received the cheques from
+The cheques were not registered
+Registered
+cheques in the portfolio
+Add a cheque first
+Date is required
+Date must be within the current fiscal year
+Manual numbering: enter the document number (a whole number above zero
+Manual numbering
+enter the document number (a whole number above zero
+Choose a valid account from the list
+The amount in dinars must equal the currency amount × rate
+The customer/supplier/employee isn't in the list
+Enter a debit or credit amount
+No cash amount. Register
+cheques in the portfolio without a receipt voucher
+Choose the cash box or bank account
+The cash/bank account can't be in the lines
+Commission
+The entry needs at least two lines
+The entry isn't balanced, it can't be posted
+The voucher was saved, but the cheques weren't registered. Fix it and press save again
+Saved and posted to accounting
+👷 Convert the voucher into an installment advance
+Amount = the voucher's debit lines on the «Employee advances account» (from linked accounts) for this employee. Installments are deducted automatically in payroll
+Converted (no.
+Number of installments
+First installment month
+Convert
+The advance and its installment schedule were created (Loans & advances
+The reversing entry was made and posted
+Deposited
+Received from Mr./Messrs.
+Paid to Mr./Messrs.
+You need a chart of accounts first
+Go to the chart of accounts
+Assets
+Liabilities
+Equity
+Revenues
+Expenses
+🧮 Opening balances
+Only with a balance
+From customer/supplier balances
+A customer balance is usually debit (to collect from them), a supplier balance usually credit
+Total debit
+Total credit
+Opening balance
+Enter balances for at least two accounts
+Balances aren't balanced, they can't be posted
+Saved and posted
+Saved as draft
+🧾 Allocate
+to invoices
+Remaining before payment
+From this payment
+No open credit invoices
+⚡ Automatic (oldest first
+💾 Save allocation
+Payment allocated oldest first
+Allocation saved
+Sales orders
+📌 Follow-up
+Status note (optional
+Status saved
+No changes
+📌 Follow-up statuses
+Statuses you name to track a document after it's made (e.g.: awaiting signature, sent to customer, delivered). They show on a bar above the document and in lists, and change even for posted ones
+Statuses you name to track a document after it's made (e.g.
+awaiting signature, sent to customer, delivered). They show on a bar above the document and in lists, and change even for posted ones
+Order
+Final
+Edit status
+New status
+Status name
+Color
+Final status (document is done
+Deleted (its documents now have no status
+Warehouse transfer voucher
+Stock count & adjustment
+📦 Stock balance
+As of date
+Unit
+Average cost
+No stock balances
+Total inventory value
+stock-balance.csv
+🗂️ Item card
+Choose an item from the list
+Incoming
+🏬 Warehouses
+No vouchers
+To unpost stock, unpost accounting first
+After stock posting
+Cost of goods sold
+e.g. for opening stock choose capital or opening balances
+e.g. damaged goods or gifts expense
+Unit cost
+Expires
+Choose the warehouse
+Item not found
+needs a batch number
+needs an expiry date
+Enter the actual quantity
+Quantity must be greater than zero
+Serials count
+must equal the quantity
+Add at least one item
+Manual numbering: enter the voucher number (a whole number above zero
+enter the voucher number (a whole number above zero
+Saved and posted to inventory
+Batch
+New warehouse
+Edit warehouse
+Number and name are required
+Max discount % for items without a limit
+Min margin above cost
+Serial numbers
+Pick from what's in the warehouse
+Search by name, number or barcode
+Empty = none
+Empty = by category
+Search by number, name or reference
+Posted to inventory
+Bonus: a free quantity issued from stock without a price
+Details (extra lines, optional
+Line sales rep
+This item's price history with this party
+🗂️ Item categories
+A category groups items (e.g.: drinks, stationery). From «Numbering» you can make the item code start with its category code
+A category groups items (e.g.
+drinks, stationery). From «Numbering» you can make the item code start with its category code
+Category name
+Max discount %
+Min margin %
+No categories yet
+New category
+Are you sure
+🔢 Serials
+available
+No serials in this warehouse
+🖨️ Barcode labels
+Barcode
+Number of labels
+Label size (mm
+A4 (65 labels
+Print the price
+The browser blocked the window
+Standard tax
+Tax exempt
+Zero-rated sales tax
+Export
+Unspecified
+🔗 Linked accounts & tax
+These are the accounts invoices post to automatically when posted. If the chart is ready, they're filled automatically
+Default sales tax rate %
+📦 Inventory posting method
+Perpetual inventory
+Cost of goods sold is posted automatically with each sales invoice, and purchases go to the inventory account
+If unticked (periodic inventory): purchases are posted as expense, and the year-end inventory value comes from the stock balance report. Better to choose the method at the start of the year and not change it midway
+If unticked (periodic inventory
+purchases are posted as expense, and the year-end inventory value comes from the stock balance report. Better to choose the method at the start of the year and not change it midway
+Production order
+💵 Payroll & social security
+Employee social security %
+Employer social security %
+Insurable wage ceiling (0 = none
+🏢 Fixed assets
+🏅 Loyalty cards
+Note at the bottom of the printed invoice
+📦 Inventory
+Customer credit limit (credit invoice
+Warning only
+Block posting above the limit (except users with «Override credit limit
+Block selling below cost (except users with «Override price controls
+🕘 The invoice takes the last price sold to the customer (or bought from the supplier) when you choose the item — the price list comes first
+🕘 The invoice takes the last price sold to the customer (or bought from the supplier) when you choose the item
+the price list comes first
+🧪 Warn me before a batch expires by (days
+🧪 Block selling an expired batch (automatic selling always skips expired ones
+Block selling and issuing more than the available quantity in the warehouse (negative stock
+📌 New sales orders reserve their quantities (reserved reduces the available in invoice and order warnings
+An item marked «Ignore quantity tracking» for the document type isn't checked
+🔢 Decimal places in display and print
+Affects how numbers show on screens and prints only; calculations and storage stay at three decimals
+🧾 Cheque entries descriptions
+Write the description for each operation, and use the words
+
+
+
+
+
+Empty takes the default description
+The account was created and linked
+🏷️ Items & services
+Brand
+Purchase price
+No items. Items are optional, you can write the line description in the invoice directly
+items.csv
+Model
+Service
+Goods
+Piece
+Default
+New item / service
+Min sale price (after discount
+Max discount %
+Tax rate %
+16 standard, 0 for exempt or zero-rated, or any special rate
+Sales account
+Purchase account
+🏷️ Brand & model
+Style / model
+Country of origin
+Size
+Item image (for point of sale
+Choose image
+Remove image
+🧪 Batches & expiry date
+🔢 Track by serial numbers (a serial per piece — on receiving and selling
+🔢 Track by serial numbers (a serial per piece
+on receiving and selling
+🏷️ Extra barcodes (carton, pack, supplier barcode
+equals how many
+➕ Barcode
+📦 Ignore quantity tracking
+In the ticked documents this item's balance isn't checked (no shortage warning and no negative-stock block). Useful for services and installation
+We couldn't read the image
+There's a duplicate barcode
+🧾 Sales invoices
+↩️ Sales returns
+🛒 Purchase invoices
+↩️ Purchase returns
+🛒 Purchases
+All types
+posted
+Returns
+No invoices in this fiscal year
+Return of
+A posted invoice can't be edited. To edit, unpost it, cancel it, or make a return
+Credit (on account
+Name (for cash without a card
+Item (optional
+🎁 Free qty+
+T%
+Total before tax
+Discounts
+not found
+Invoice sales rep
+🕘 Last price
+Bonus
+Discount
+Credit sales stopped
+Credit sales stopped if it has a debit balance
+Receiving cheques from it is stopped
+Documents
+missing
+expiring
+
+Open documents
+not in the list
+A credit invoice must have a
+Choose the cash box or bank
+Bonus quantity can't be negative
+Bonus needs an item
+🎁 Bonus
+Sales invoice warnings: requested quantity is more than available
+Sales invoice warnings
+Requested quantity is more than available
+Requested
+Available
+Reserved for orders
+Shortage
+Back to editing
+Manual numbering: enter the invoice number (a whole number above zero
+enter the invoice number (a whole number above zero
+Warning: the customer's balance will be
+The customer's balance will be
+which is above the credit limit
+Credit sales are stopped for this customer: the invoice will be saved as draft only
+Credit sales are stopped for this customer
+the invoice will be saved as draft only
+Saved and posted to accounting
+Saved and posted to inventory
+A reversing entry will be made with today's date
+Invoice cancelled
+Adjust the returned quantities, and delete the lines that weren't returned
+No mobile number on the customer's card
+Cancelled invoice
+Unposted draft
+Total (JOD
+Qty
+Cash
+Credit
+Customer tax number
+🏛️ Sales tax return
+Custom period
+Value before tax
+Sales (output tax
+Purchases (input tax
+From invoices and notes posted from
+Check the figures against the return form on the Income and Sales Tax Department portal before filing
+Sales 16%
+Sales at other rates
+Exempt/zero-rated sales
+Taxable purchases
+Exempt purchases
+Customer debit notes
+Customer credit notes
+Supplier credit notes
+Supplier debit notes
+Tax due
+Sales tax return sheet
+Period from
+🕘 Price history
+No posted invoices for this item with this party
+Last net price
+Min / max
+Average
+Net per unit
+Incl.
+Use
+Net = after line discount and before tax. Posted invoices only
+🏭 Supplier invoices — invoice
+🏭 Supplier invoices
+When the invoice is on more than one supplier (e.g. goods + freight + clearance): enter each other supplier's share, and the main supplier
+When the invoice is on more than one supplier (e.g. goods + freight + clearance
+enter each other supplier's share, and the main supplier
+takes the rest. The entry is split automatically when you post the invoice
+Supplier invoice no.
+Invoice total
+Other suppliers' shares
+Share
+The whole invoice is on the main supplier
+Choose a supplier from the list (other than the main one
+Duplicate supplier
+Amount must be greater than zero
+Total shares must be less than the invoice total
+Supplier shares saved
+e.g.: China shipment — freight & customs
+Search by invoice number or supplier
+Freight, customs, clearance, insurance
+🚢 Landed costs
+Spread freight, customs and clearance costs over purchase invoice items, raising the item cost in inventory. The part already sold before the document goes to cost of sales (perpetual inventory
+Allocation
+By quantity
+By value
+No documents. Press «New document
+Landed cost no.
+New landed cost
+Allocation method
+By item value in the invoice
+By quantity
+1) Purchase invoices
+posted to accounting and inventory
+2) Landed charges
+Supplier (shipping company, clearing agent
+Or account (cash, bank
+No purchase invoices posted to accounting and inventory
+3) Allocation to items
+Purchased qty
+Its share
+Extra cost per unit
+To inventory
+To cost of sales
+No stock items in the chosen invoices
+Expense
+Supplier not found
+Choose a sub-account from the list
+Choose the supplier or the account
+Choose at least one purchase invoice
+Add at least one charge
+Note
+in another landed cost document (no.
+Are you sure these charges aren't duplicated
+Post landed cost no.
+for an amount of
+An entry is made and item costs go up
+Posted
+Cancellation date (YYYY-MM-DD
+Cancelled with a reversing entry
+Delete document no.
+Purchase invoices
+Party
+Allocation to items
+per unit
+Pending
+Rejected
+Leave request
+Leave type
+Unpaid
+days per year
+Half day (for a single day
+📨 Send request
+Number of days
+Excluding Fridays
+Choose the employee
+Request sent
+🌴 My leaves
+➕ Request leave
+days used
+remaining of
+No leave types
+Half day
+Cancel leave request
+Cancelled
+🌴 Leaves
+Paid
+Days per year
+No limit
+Unpaid» is deducted automatically in payroll: (basic + allowances) ÷ 30 × leave days in the month, under «Other deductions
+Unpaid» is deducted automatically in payroll
+basic + allowances) ÷ 30 × leave days in the month, under «Other deductions
+Edit leave type
+New leave type
+Days per year (0 = no limit
+Paid leave
+Year
+Used
+Reject
+No requests
+Approved
+Rejection reason (optional
+Rejected
+Cancel leave
+Cancelled
+From a payment voucher
+Awaiting approval
+Approved
+Rejected
+Settled
+Loan
+Advance
+Value of
+Paid
+Next installment
+Request date
+installment of
+Reject request
+💬 Comments
+👤 Employee comments
+🛡️ Supervisor comments
+Breaks the loan rules
+⏸ Request installment deferral
+Send
+Deferral request sent to the supervisor
+Deferral request rejected
+Comment saved
+Approved and the installment schedule created
+Request rejected
+Request cancelled
+Installment deferred to the end of the schedule
+Installment
+Paid
+Max loan = how many times the monthly salary
+e.g. 3
+Max installment % of salary
+e.g. 25
+Max advance % of salary
+e.g. 50
+Max open loans/advances per employee
+e.g. 1
+Min service (months) before the first loan
+e.g. 6
+Max number of installments
+e.g. 24
+⚙️ Loan & advance rules
+Empty = no rule. Salary = basic + allowances. An employee's own request that breaks the rules is rejected, a supervisor's request is saved but only the admin can approve it
+Rules saved
+➕ Request loan / advance
+Loan (installments
+Advance (from next salary
+Send request
+Request sent to the supervisor
+💳 Loans & advances
+Installments
+⏸ Defer
+Due installments are deducted automatically in payroll («Advances deduction» column), and become paid when it's posted. Approving, rejecting and deferring is for users with payroll «Post»
+💼 My salary
+Your account isn't linked to an employee. Ask HR to link you from «Employees ← Program user
+Basic salary
+Overtime
+Social security
+Loan & advance installments
+No posted salaries for you yet
+💳 My loans & advances
+➕ New request
+Accounts
+Sales cash box
+💵 Cash
+payment method
+Sales cash box (Cash), Visa, CliQ… each method is linked to an account in the tree (the debit side of the entry), and you choose where it appears
+Sales invoices, purchase invoices, point of sale
+Bank names that appear as ready choices in cheques
+bank branch
+country
+region
+Country
+Cities and regions appear as ready choices in customer and supplier addresses
+type
+Cheque, bill of exchange, promissory note
+card type
+e.g.: silver, gold. «Rate» here = points per dinar of purchases
+silver, gold. «Rate» here = points per dinar of purchases
+brand
+Item brand (e.g.: Milwaukee, Bosch). Chosen on the item card and used to filter the items list
+Item brand (e.g.
+Milwaukee, Bosch). Chosen on the item card and used to filter the items list
+Routes (distribution lines
+route
+The rep's or distribution route (e.g.: Zarqa line, Irbid line). Linked to the customer card
+The rep's or distribution route (e.g.
+Zarqa line, Irbid line). Linked to the customer card
+sales rep
+The rep is linked to the customer and to the sales invoice, and has a commission rate on net sales
+⚙️ Setup
+
+Name 2
+
+Supervisor
+Sales manager
+Choose the account
+In use (has sub-items), deactivate it instead of deleting
+e.g.: year-end offer
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+No mobile number for this party
+Route
+Has a balance (debit
+In credit (credit
+Zero balance
+Min balance
+Campaign name
+Message text
+Fill-in words
+Balance reminder
+Account balance
+🔍 Prepare the list
+recipients
+without a number were not added
+Test mode
+⬇️ Download numbers and texts
+The «WhatsApp» button opens the chat ready; send from WhatsApp and come back for the next one. The line gets marked ✓ and logged
+Mobile
+No one within the filter
+message via the gateway
+Sending
+Sent
+} — final status in the messages log
+final status in the messages log
+messages.csv
+Statement/balance
+Reminder
+Campaign
+Channel
+Campaign
+Text
+✉️ Message
+💬 WhatsApp
+From the device
+No messages yet
+On the way
+Failed
+Test
+📡 SMS gateway
+The SMS company (e.g. in Jordan) gives you a send link with the account name and password. Paste it here and put in place of the number
+and in place of the text
+or
+if the gateway needs Arabic text as Unicode), and in place of the sender name
+The link is stored in the database and never shows again on any screen, and sending happens from the server, not the device
+The link must start with https:// and be on the SMS company's domain (not an IP). An employee without marketing permission can only send an invoice, statement or payment to the customer's own number
+Not saved
+Sender name (Sender ID
+Daily message limit
+Sent today
+Enable sending via the gateway
+Test mode: all messages go to the test number only
+all messages go to the test number only
+Allow numbers outside Jordan
+Test number
+Clear the link
+Editing is for users with company edit permission
+Start in test mode and make sure the test message reached your phone, then untick test mode. Each message's status (sent / failed) shows in the messages log
+Gateway settings saved
+Enter the test number and save first
+Test message from
+Test message sent — check your phone and the messages log
+Test message sent
+check your phone and the messages log
+Clear the gateway link and stop sending
+🧾 Invoice
+📄 Account statement / balance
+💵 Payment received
+⏰ Due balance reminder
+📢 Campaign / offer
+Words in brackets are filled automatically
+Texts saved
+You don't have permission on marketing
+💬 Messages & WhatsApp
+Search by number, customer, device, serial number
+Charger, bag
+🧪 Bills of materials (BOMs
+🏭 Production orders
+A BOM says: to produce a quantity of the product, you need these raw materials in these quantities, plus an extra cost (labor and running) per batch
+A BOM says
+to produce a quantity of the product, you need these raw materials in these quantities, plus an extra cost (labor and running) per batch
+BOM
+Product
+Produces
+Materials
+Extra cost
+No BOMs
+➕ New BOM
+✏️ Edit BOM
+BOM name
+Finished product
+Output quantity
+Extra cost per batch
+Raw materials per batch
+Material
+➕ Material
+Choose the product from the list
+Material not found
+The product can't be a material in its own BOM
+Add at least one material
+Delete BOM
+The BOM is used in production orders, deactivate it instead of deleting
+🧪 BOMs
+A production order makes two draft stock vouchers
+Out
+for raw materials and
+In
+Batches
+Produced qty
+Cost (after posting
+Unit cost
+Out voucher
+In voucher
+📤 Post
+No production orders
+➕ Production order
+Number of batches
+🏭 Create
+It will produce
+Number of batches must be greater than zero
+Production order and its vouchers created
+Post the production order to inventory? Materials go out and the product comes in at their cost
+Posted — production cost
+Production cost
+Delete the production order and its (draft) vouchers
+Received
+In repair
+Waiting for parts
+Ready for delivery
+Delivered
+🔧 Maintenance
+Device
+Problem
+Technician
+Estimate
+Due
+No tickets
+➕ Receive a device for maintenance
+🔧 Service ticket no.
+Customer (card
+Customer name
+Serial number
+Accessories received
+Estimated cost
+Delivery date
+Work done
+🖨️ Receipt
+The customer isn't in the list
+Enter the device
+Maintenance
+Service ticket no.
+Allow pop-up windows
+Receipt
+Device maintenance receipt no.
+
+Receiver's signature: ____________ &nbsp;&nbsp; Customer's signature: ____________
+____________ &nbsp;&nbsp; Customer's signature
+Customer card
+National ID
+Contact person
+Credit limit
+Payment term
+Supplier card
+Item card
+Tax rate
+Required
+🧱 Field layout
+For each field: you can change the label shown, hide it from the screen, or make it required (a required field can't be hidden). Name and code are always there
+For each field
+you can change the label shown, hide it from the screen, or make it required (a required field can't be hidden). Name and code are always there
+Field
+Label shown
+Hidden
+Required
+Not saved — check your permission to edit company data
+Not saved
+check your permission to edit company data
+Layout saved
+⚙️ Columns
+Show the report first
+⚙️ Columns shown
+The choice is saved on this device for this report
+Apply
+Reset all
+Credit note
+Lowers the customer's balance: later discount, price reduction, compensation
+Lowers the customer's balance
+later discount, price reduction, compensation
+Debit note
+Raises the customer's balance: price difference, extra charges, late interest
+Raises the customer's balance
+price difference, extra charges, late interest
+Lowers what we owe the supplier: discount from supplier, price reduction, short goods
+Lowers what we owe the supplier
+discount from supplier, price reduction, short goods
+Raises what we owe the supplier: price difference, extra charges
+Raises what we owe the supplier
+price difference, extra charges
+🧾 Notes
+Debit / credit
+No notes
+Reference invoice (optional
+Reference no.
+Counter account
+e.g. discount allowed / received, or the revenue/expense account
+Amount before tax
+from the list
+Choose the counter account from the list
+Saved as draft, but posting failed
+Note cancelled
+only
+🔎 Search… (invoices, customers, cheques
+e.g. C
+e.g. INV
+Sales return
+Purchase return
+Companies (for the whole office
+Master codes
+Item categories
+Cost centers
+Manual numbering
+Never restarts (continuous sequence
+Restarts every fiscal year
+Restarts every month (accounting period
+One sequence for the company
+A sequence per cost center (branch/department
+A sequence per warehouse
+🔢 Numbering
+For each document type in this company: how it's numbered, when it restarts, and how the number looks on screens and prints. Changes apply to new documents only
+For each document type in this company
+how it's numbered, when it restarts, and how the number looks on screens and prints. Changes apply to new documents only
+Manual
+Automatic
+Coding method
+One sequence for all items
+Automatic by category (category code + sequence within the category
+Add the master code (parent account code) before the account code
+If you didn't save a setting for this type, the program keeps suggesting the code the old way
+Code format
+Code digits
+Padding character
+Separator
+Prefix text
+Suffix text
+Example
+Company numbering
+Automatic (01, 02, 03…) — the code is set automatically and can't be edited
+Automatic (01, 02, 03
+the code is set automatically and can't be edited
+Manual — you type the company code yourself
+you type the company code yourself
+This setting is for all the office's companies (not just this one). In both cases no two codes can be the same
+Number of digits
+Company numbering saved
+When numbering restarts from 1
+Sequence by
+Number format
+Number digits
+Year code
+Digits» zero means the number has no padding (125). With 6 and padding character 0 it becomes 000125
+Numbering method saved
+Title, period, reference
+e.g.: March - April 2026
+Withholdings
+Registration/license renewal
+Professional license
+Audit/financial statements
+Done
+Not required
+You don't have permission on filings follow-up in any company
+🔔 Customer filings follow-up
+Overdue
+Within 7 days
+Within 30 days
+Companies count
+Open (overdue + upcoming
+Overdue only
+Done
+Obligation
+Auto-generated dates are defaults
+Income tax April 30, sales tax and withholdings within 30 days of the period end, social security by the 15th of the next month. Edit any date as needed
+No obligations for this filter 🎉
+New obligation
+Deadline
+Awaiting completion
+Completion date
+Return / receipt no.
+Title and deadline are required
+Delete this obligation
+Mark
+as done
+Return or receipt no. (optional
+Generate a full year of deadlines
+All allowed companies
+Monthly social security
+Monthly withholdings statement
+Sales tax is generated only for companies marked «Subject to sales tax» in their details, by their frequency. Existing ones aren't duplicated
+Generate
+Wrong year
+New deadline
+filings-follow-up.csv
+Search by number or name
+Spread over all lines
+Details (extra lines
+Price including tax — type it and the price before tax is calculated
+e.g. 10
+Name or card number
+Red, Blue, Green
+First tier / Silver
+Sales order
+Purchase order
+Converted to invoice
+Valid until
+Open
+Order no.
+Invoiced
+Name (without a card
+Payment method
+Order discount %
+Price incl. tax
+Total incl. tax
+Total before discount
+Discount amount
+Sell
+Buy
+Rate between 0 and 100
+Discount applied
+% on all lines
+Order closed
+Delivered
+Removed
+Quantity is more than the unreserved available
+Save the order anyway
+The order isn't open, maybe someone converted it already
+Order converted to invoice
+🗂️ Category
+🌐 All items
+📢 Promotions
+On
+Discount %
+Min qty
+Buy
+Get
+Running
+Not started yet
+No promotions
+✏️ Edit promotion
+➕ New promotion
+Promotion name
+Promotion on
+One item
+Discount % (0 = no discount
+🎁 Bonus: buy (qty
+Buy (qty
+Get free
+The bonus multiplies (20 → 2, 30 → 3
+Enter the promotion name
+The bonus needs both quantities: buy and get
+The bonus needs both quantities
+buy and get
+Discount must be between 0 and 100
+The promotion needs a discount or a bonus
+End date is before the start
+Delete promotion
+💳 Loyalty cards control center
+🏅 Tiers & cashback
+⚙️ Card types
+Card holders
+Their purchases in the period
+Points earned
+Available balance
+Card no.
+Period purchases
+Points (all time
+Redeemed
+🎁 Redeem
+No customers with cards
+loyalty-cards.csv
+Net purchases
+Points
+🎁 Redeem points
+points
+Number of points
+Invalid number
+Redemption recorded
+Items
+Text
+Choose from a list
+Yes / No
+🧩 Custom fields
+Your own fields that appear in the card of
+«Extra» tab), like: health record no., license expiry date, color, size
+«Extra» tab), like
+health record no., license expiry date, color, size
+Field name
+Options
+No custom fields
+✏️ Edit field
+➕ New field
+Field name (shown
+Internal code (lowercase English letters and numbers
+Options (for the «Choice» type) separated by commas
+Enter the field name
+The internal code must start with a lowercase English letter, followed by letters or numbers
+Delete the field? Values saved in cards stay but won't show
+🏅 Loyalty tiers & cashback
+💳 Loyalty points
+The tier is by the customer's purchases (loyalty card holders) in the last 12 months. Each posted sales invoice accumulates cashback at the tier's rate then, and the balance is paid to the customer (reducing their balance) with an entry
+debit «Cashback expense» and credit the customer's account
+No tiers. Add «First» from zero dinars, and «Second» from 1000 dinars for example
+12-month purchases
+Tier
+To next tier
+Earned
+Top tier
+💸 Pay
+No customers with loyalty cards
+Payment history
+New tier
+Min yearly purchases (dinars
+Cashback rate %
+Name is required
+💸 Pay cashback
+dinars. Paying reduces the customer's balance (posted to their account
+✅ Pay
+Invalid amount
+Cashback paid
+Cancel the payment? A reversing entry is made and the balance returns to the customer
+Payment cancelled
+📌 Quantities reserved by sales orders
+An order reserves if it's ticked «Reserve quantities», open, not closed, and not expired. «Free» = balance − reserved
+Reserved
+Free
+Orders count
+No reserved quantities
+Reserved quantities
+Orders reserving
+Search by name, number or phone
+Statistics profile
+Documents
+0 = no limit
+Number or name
+Stop credit sales
+Stop receiving cheques from them
+Stop credit sales if they have a debit balance
+Stop
+Total balances
+🗂️ Categories
+Balance from posted entries in the current fiscal year
+Statement
+Contact & address
+Description #2 (second / English name
+Account in the chart
+usually
+are grouped on this account, and each has its own statement
+Payment term / conditions (days
+Default payment method
+Jordanian dinar
+👤 Customer / supplier statement
+To date
+Choose a customer or supplier and press «Show report
+Choose a customer or supplier from the list
+Total / final balance
+Final balance
+Show the statement first
+Debit (owed by you
+Credit (owed to you
+Latest movements
+For inquiries please contact us. Thank you
+No mobile number for the party — choose the number in WhatsApp
+No mobile number for the party
+choose the number in WhatsApp
+⏳ Aging
+Customers (receivables
+Suppliers (payables
+Bucket length (days
+Age as of date
+Age by
+Document date
+Due date (if any
+Hide zero balances
+Advance payments
+Advance payments / opposite balance
+Ages are calculated from
+and payments settle the oldest first. Current fiscal year movements (with opening balance
+Aging of
+The category groups
+You choose each one's category
+from their card, and the list can be filtered by it
+Delete category
+Warning in the report only
+Warning in the invoice
+Block posting the invoice
+Expiring soon
+📄 Customer & supplier documents
+Document
+For
+Required
+If missing or expired
+Warn before
+No types. E.g.: commercial registration, professional license, tax registration certificate, authorized signatory ID
+No types. E.g.
+commercial registration, professional license, tax registration certificate, authorized signatory ID
+Edit document type
+New document type
+Document name
+Warn me before expiry by (days
+Required (a party without it counts as missing
+Choose a customer or supplier
+Expiry
+No documents for this party
+Edit document
+New document
+Document type
+Document no.
+Issue date
+After saving you can attach the document image from the 📎 button
+Delete document
+Expiring within (days
+Action
+All documents are fine 👍
+Expired & expiring customer and supplier documents
+Empty = basic + allowances
+Empty = employee code
+Devices, cars, furniture
+💵 Payroll runs
+Job title
+Social security
+Monthly tax
+On the job
+employees.csv
+Social security no.
+Hire date
+Covered by social security
+Mobile
+New employee
+End of service date
+Fixed monthly allowances
+Monthly income tax withheld
+Insurable wage (optional
+Employee account in the chart (employee receivables, advances
+Program user (for «My salary» and loan/advance requests
+Shift / hours
+Company general hours
+Work location (for attendance
+Any active location
+Fingerprint no. (on the device
+Every month: create a payroll, the program fills it from employee data and calculates social security
+create a payroll, the program fills it from employee data and calculates social security
+Adjust overtime and deductions, then post. The entry is made automatically
+No payroll runs
+New payroll run
+Create & fill
+Insurable
+💵 Payroll for
+🖨️ Payroll sheet
+🧾 Payslips
+🛡️ Social security sheet
+Refilling erases your edits on this payroll. Are you sure
+Post payroll
+Net salaries
+Payroll posted and the entry made
+Cancellation entry date (YYYY-MM-DD
+Payroll cancelled with a reversing entry
+Delete payroll run
+Payroll sheet for
+Employee name
+Income
+Total income
+Total deductions
+Net salary
+Allowances
+Other allowances
+Absence & deductions
+Advances
+Grand total
+Total income (salaries expense in the entry
+and the employer's social security share
+Social security contributions sheet
+Insurable wage
+Employee share
+Employer share
+Payslips for
+Earnings
+Employee signature
+Monthly installment
+Accumulated depreciation
+🔁 Asset movements
+🖨️ Assets register
+Straight-line depreciation monthly. Record the asset purchase with a payment voucher or an entry on the asset account, then add it here to calculate its depreciation
+Posted depreciation runs
+Fixed assets register
+📉 Calculate depreciation
+Up to the end of month
+✅ Post the entry
+No depreciation due for this date
+Depreciation entry posted
+Run cancelled
+New asset
+Asset name
+Location
+Depreciation start
+Useful life (months
+Salvage value
+Prior accumulated depreciation (for old assets
+Asset account
+Accumulated depreciation account
+Depreciation expense account
+Disposed/sold
+Better: dispose or sell from «Asset movements» so the entry is made
+Better
+dispose or sell from «Asset movements» so the entry is made
+Disposal date
+When the account is «Default»: depreciation expense
+When the account is «Default
+depreciation expense
+and accumulated depreciation
+are changed from linked accounts
+Delete asset
+Name and cost are required
+🔎 Search for a screen
+All permissions on all screens
+Remove all permissions
+View the screen and its records
+Add a new record or voucher
+Edit a record (drafts only for vouchers
+Delete a record (drafts only for vouchers
+Print and export the record and reports
+Post vouchers and make reversing entries
+Unpost and open locked periods
+✖ None
+Select all
+Deselect all
+Any permission other than «View» turns «View» on with it
+🔍 Search or scan the barcode
+Point of sale settings
+Search by name, number or phone
+Customer name (optional
+Thank you for your visit
+You don't have permission on the point of sale
+💵 Cash
+💳 Card
+🆕 New
+💵 Pay
+No items
+Tap an item to add it to the invoice
+👤 Walk-in customer
+tap to choose a customer
+🧾 End of day
+No item with this barcode
+Discount (amount
+No saved receipt
+👤 Choose customer
+Walk-in customer
+No customers with this name
+🧑‍💼 Sales rep
+The cart is empty
+٪ Invoice discount
+Amount
+or rate %
+Invoice total before discount
+No discount
+Discount is more than the invoice total
+📒 Credit
+On the customer's account
+💵 Payment
+Change for the customer
+✅ Save & print
+Back
+Paid is less than required
+⏳ Saving
+Note: the saved total
+the saved total
+an item price changed). The correct change
+Invoice saved
+Receipt
+Invoice no.
+Cashier
+Allow pop-ups so the receipt can print
+→ Back to cashier
+Default from linked accounts
+⚙️ Point of sale settings
+Warehouse sales come out of
+Cash box
+Cards account (bank
+Paper width
+80 mm roll
+58 mm roll
+Receipt header (address, phone
+Receipt footer
+Number of copies
+Item prices include tax
+Print the receipt automatically after saving
+Credit sales on the customer's account
+Open the cash drawer
+Print without a window
+Make a Chrome shortcut on the cashier device and add at its end
+so the receipt prints straight to the default printer
+Settings saved
+Expected cash in drawer
+🧾 Day summary
+There's an unfinished cart. Finish or clear it before closing
+Matches
+Enter the counted cash
+Cash box closed
+Day summary
+🧾 Daily cashier summary
+By method
+Returns
+Expected cash
+Counted
+Closed
+No point-of-sale sales on this day
+Cashier summary for
+Cash box opened
+Close cash box of
+🔒 Close
+Enter the counted amount
+Closed
+Accounting
+Not posted
+↩️ Unpost
+Are you sure you want to unpost
+The voucher goes back to draft and its
+Unposted
+📮 Posting
+Posting & unposting
+Posting settings
+To finance (accounting
+To inventory
+Only unposted movements
+📋 Vouchers list
+Tick voucher types and press «Vouchers list
+✅ Post
+⏹️ Stop
+For each voucher type
+does it post to accounting (makes an entry)? And does it post to inventory (moves quantities)? Saving any voucher only stores it; posting is by the buttons above the voucher or from here in one batch
+Voucher type
+📘 Post to accounting
+📦 Post to inventory
+Posting settings saved
+Tick at least one voucher type
+vouchers
+not posted
+No selected posted vouchers
+No selected unposted vouchers
+will go back to drafts
+In progress
+Vouchers posted
+e.g.: wholesale prices
+Search by item
+➕ New price list
+Price list
+Regular sale price
+List price
+An item with an empty price takes the regular sale price. The list is linked to the customer from their card, and the invoice takes the price automatically
+Price list saved
+🏷️ Price lists
+Customers count
+No price lists
+🛡️ Sale price controls
+On the item card: «Min sale price» and «Max discount %
+On the item card
+Min sale price» and «Max discount %
+In item categories: max discount and min profit margin above cost for items without a limit
+In item categories
+max discount and min profit margin above cost for items without a limit
+In linked accounts: «Block selling below cost
+In linked accounts
+Block selling below cost
+Override for the admin or anyone with «Override price controls
+Receiver, accountant
+Accountant, financial manager, receiver
+Accountant, financial manager, auditor
+Storekeeper, accountant
+Accountant, general manager
+Receipt voucher
+Payment voucher
+Journal voucher
+
+The browser blocked the print window. Allow pop-ups for this site
+Preparing the print
+Copy
+Phone
+Printed by
+Couldn't prepare the print
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+The receiver's signature is an acknowledgement of receiving the goods in the invoice complete and in good condition
+e.g.: tax invoice
+
+
+
+
+
+
+
+
+
+
+
+🖨️ Print templates
+These settings are for this company only and apply to all prints: invoices, vouchers, cheques, stock vouchers, statements and reports
+These settings are for this company only and apply to all prints
+invoices, vouchers, cheques, stock vouchers, statements and reports
+Style
+Template
+Main color
+Documents & reports paper
+Invoices paper
+Font size
+Invoice & sales order layout
+Invoice title in English (for bilingual
+Text below the bilingual invoice (receipt acknowledgement
+Sales invoice title (optional
+Watermark with company name and year
+Item image in the invoice (beside details
+Show tax numbers in the header
+Show «Printed by» at the bottom
+Remove
+Extra texts
+Line below the header (slogan or subtitle
+Text below all prints (e.g. bank account or terms
+Signatures on each document type
+Separate signatures with a comma. Leave empty if you don't want signatures
+Preview
+🖨️ Test print
+Tax sales invoice
+Receipt voucher no. 58
+The image can't be read
+Logo saved
+Print templates saved
+📊 Customer / supplier profile
+Hasn't bought yet
+Active
+Slipping
+Stopped
+First invoice
+📄 Statement
+Oldest
+
+
+Last 12 months
+net after returns, before tax) &nbsp
+Top 10 items
+Last time
+🕘 Latest item prices
+Net before tax — click an item for its history
+Net before tax
+click an item for its history
+Last price
+Min – max
+Min
+Max
+times
+No posted invoices
+🔎 Search by name, code or phone
+You don't have permission for the rep app
+🟢 Visit in progress
+💵 Payment
+📷 Photos
+⏹ End visit
+My customers
+My visits
+Customer payments
+Last invoice
+Customer payments
+Customers
+Bought
+Bought for the first time
+Paid
+Average invoice
+%
+By last invoice: active up to 30 days, slipping up to 60, stopped after
+By last invoice
+active up to 30 days, slipping up to 60, stopped after
+This screen is for the supervisor
+In progress
+Transport
+📍 Start location
+📍 End location
+No visits in this period
+🧾 Cheque
+Due
+➕ New payment
+Pending
+No payments recorded by you
+📱 Sales rep app
+You have an open visit, end it first
+Visit started
+Visit started (without location
+⏹ End visit
+Visit result
+Successful
+New order
+Collection
+Customer not available
+Follow up later
+Taxi fare
+Parking
+⏹ End
+Visit ended
+Visit photos
+▶ Visit
+📄 Statement
+💵 Customer payment
+💵 Cash
+🏦 Transfer
+Pay an invoice (optional
+💾 Save payment
+Delete cheque
+Remaining
+Choose the customer
+Fill in the cheque number, amount and due date for each cheque
+Enter the amount
+The payment was saved, but not linked to the invoice
+A payment was received from
+Thank you
+✅ Payment saved successfully
+dinars from
+✉️ Text message
+Payment receipt
+Cash
+Bank transfer
+Account number or name (sub or main
+Reduce %
+Excluded
+No exclusion
+Department / branch
+Whole company (consolidated
+with its sub-departments
+Excluding
+⚖️ Trial balance
+Period movement
+Closing balance
+Opening debit
+Opening credit
+Movement debit
+Movement credit
+Closing debit
+Closing credit
+📄 Account statement
+Choose an account and press «Show report
+Choose an account from the list
+Debit balance
+Credit balance
+Total / closing balance
+Period movement (debit / credit
+📚 General journal
+Voucher / account
+Line description
+Net profit (loss
+🏦 Balance sheet (statement of financial position
+Total assets
+Total liabilities
+From the income statement
+Total equity
+Total liabilities and equity
+} — as of
+Period net profit
+🔮 What if? Profit study
+Choose sales to stop or reduce by a percentage, and see what happens to profit. A study only — it doesn't change any document
+Choose sales to stop or reduce by a percentage, and see what happens to profit. A study only
+it doesn't change any document
+↺ Reset all
+Gross profit
+Margin
+Change
+Effect on profit
+⛔ Stopped
+No posted sales in the period
+What if? Profit study
+what-if.csv
+➕ Add item (code or name
+To minimum
+🔎 Search by item
+Received
+Stock-in voucher (draft
+Issued — awaiting receipt
+Issued
+Awaiting receipt
+Stock-out voucher (draft
+🚚 Supply requests
+The rep prepares and confirms the request ← the storekeeper issues and posts the stock-out voucher ← the destination warehouse issues the stock-in voucher on receipt
+Min & max levels
+New supply request
+Supply request no.
+From warehouse (source
+To warehouse (destination
+Source balance
+Destination balance
+Min / max
+Add the items or use «Fill to minimum
+The item is already in the request
+Choose both warehouses first
+Available
+Partial
+The source balance isn't enough
+Reached the minimum
+📈 Review fill to minimum
+Items to add
+Unavailable
+Already covered
+Minimum
+Suggested
+In request
+No limits defined for the destination warehouse. Define them from the «Min & max levels» tab
+Hide
+There's a zero quantity
+Request saved
+Confirm supply request
+Cancel request
+Return request to pending
+Issue the stock-out voucher from the source warehouse? (A draft is made, post it from stock vouchers
+Stock-out voucher issued
+Issue the stock-in voucher for the destination warehouse? Quantities and cost come from the stock-out voucher
+Stock-in voucher issued
+Delete request
+Requested by
+Storekeeper
+Fill to minimum» in the supply request tops up the destination warehouse balance to this level
+Maximum
+No stock items
+Maximum is less than minimum
+Limits saved
+Record payment & extend
+Delete the trial and all its data
+Search by code, name or phone
+
+Basic / advanced
+Empty = no limit
+CliQ
+Basic only
+No expiry
+Expired since
+Active — remaining
+Active
+This screen is for the platform admin only
+No subscribers
+🏷️ Subscribers management
+Trials only
+➕ New subscriber
+Free trial template
+
+To change it, open the company you want from «File ← Companies» and press «🧪 Set as trial template». Every trial subscriber gets a copy of it
+Active subscribers
+Expiring within two weeks
+Expired
+Total payments
+Subscriber
+Contact
+A subscriber's user signs in with «Subscriber code» + username + password. After the expiry date the program becomes view and print only, and a suspended one can't see anything
+Delete trial
+with its company, users and all transactions? It can't be undone
+Trial deleted
+✏️ Edit subscriber
+Subscriber code (for login
+Subscriber name
+Plan
+Expiry date (last day
+Max users
+Max companies
+Contact person name
+This is your main subscriber: all modules open and no expiry
+This is your main subscriber
+all modules open and no expiry
+Enter the subscriber name
+Subscriber code: lowercase English letters, numbers and dash, 2 to 20
+lowercase English letters, numbers and dash, 2 to 20
+Enter an admin username (English letters or numbers
+The admin password must be at least 4 characters
+The subscriber was created but the admin wasn't
+✅ Subscriber created
+Send the subscriber the login details
+Link
+After signing in they create their company from «Switch company», and add their employees from «Users
+💳 Payments & extension
+Current expiry
+The extension starts from the subscription's last day, or from today if expired
+Amount (dinars
+Extension
+No extension
+Two months
+Reference / transfer no.
+💾 Record payment
+Method
+Expiry is now
+No payments
+Enter the amount or choose an extension period
+Payment recorded — subscription valid until
+Payment recorded
+subscription valid until
+Delete the payment? If it was the last payment, the expiry date goes back to before it
+👥 Users
+Login code
+From here you can change a user's password (e.g. if their admin forgot it), suspend them, or add another admin
+Admin
+Suspend
+Activate
+No users
+➕ New admin for this subscriber
+Add admin
+New password (at least 4 characters
+Admin added
+We couldn't get the subscription details
+🎫 My subscription
+Active users
+Open modules
+Payment date
+Subscription until
+No recorded payments
+To renew, add users or open new modules: pay by CliQ or bank transfer and contact us, and we'll activate you right away
+To renew, add users or open new modules
+pay by CliQ or bank transfer and contact us, and we'll activate you right away
+Trial version
+💬 Subscribe now
+⛔ Your subscription ended on
+The program is now
+view and print only
+and your data is safe. To renew contact us
+⏳ Your subscription ends in
+Renew before then so data entry doesn't stop
+Automatic backup
+Sumou ERP backup
+💾 The daily backup to folder
+on your device needs permission
+Allow & save
+Permission not granted
+Backup saved on your device
+This feature works on Chrome or Edge on a computer only
+Folder
+💾 Save a backup now
+📁 Change folder
+Choose a folder on your device (e.g. make a «Sumou backups» folder on drive D and choose it), and the program will put a backup of all companies there every day when you open it, keeping the last 60
+📁 Choose folder
+First backup saved
+Stop the daily backup on your device? Old files stay where they are
+This screen is for the system admin only
+💾 Backup & restore
+The program takes
+an automatic backup every day
+of all companies when you open it (as admin), and keeps the last 30 days in storage. You can also download a backup to your device anytime
+Best at least once a week, and keep it on an external drive
+⬇️ Download a backup to your device
+⬇️ Backup of all companies
+🖥️ Automatic daily backup on your device (drive D for example
+☁️ Saved automatic backups
+♻️ Restore from a backup
+Restore brings back the whole company with all its entries, invoices and numbers
+if it doesn't exist
+deleted or a new database). Existing companies aren't affected
+📂 Choose the backup file
+Backing up
+Sumou ERP backup all companies
+Backup downloaded
+Backup
+Size
+No automatic backups yet — made automatically today
+No automatic backups yet
+made automatically today
+The file can't be read
+The file isn't a Sumou ERP backup
+All companies in the backup already exist — nothing to restore
+All companies in the backup already exist
+nothing to restore
+Restore
+Restored
+Couldn't load the Excel library. Check the internet
+Yes
+Payment term (days
+
+
+
+
+
+
+Type (goods/service
+Goods
+Carton
+Parent account number
+Main account? (yes/no
+
+Customer/supplier no.
+Cash balance
+Hire date (YYYY-MM-DD
+Covered by social security (yes/no
+
+
+
+📥 Import from Excel
+Download the template, fill it in Excel (each row = a record), and upload it. The program shows a preview before saving. Fields marked * are required
+What do you want to import
+⬇️ Download template
+📂 Upload the Excel file
+If the number already exists, update its data (instead of skipping it
+Data
+Import template
+Couldn't read the file
+Name is empty
+No account
+in the chart
+Account number, name and parent account are required
+exists
+doesn't exist
+No amount
+Debit and credit on the same line
+Customer/supplier
+Preview
+Not balanced (you can save it as draft and complete it
+as a draft opening entry
+Importing
+Choose a fiscal year
+Opening balances (imported from Excel
+A draft opening entry was made with
+lines. Review and post it from «Opening balances
+Imported
+records
+Import
+The fiscal year is closed, only the system admin can edit or reopen it
+There are entries that will fall outside the fiscal year if you change the dates
+The parent account doesn't exist in the same company
+You can't add an account under a sub-account. Make the parent account «Main» first
+An account can't be under one of its own sub-accounts
+The account has sub-accounts, it can't become a sub-account
+The account has movements, it can't become a main account
+The entry is posted, it can't be deleted. Make a reversing entry
+The entry is posted, it can't be edited. Make a reversing entry
+Posting is only by the «Post» button (it checks the entry is balanced
+Invoice entries are made from the invoice itself
+The fiscal year isn't for this company
+The fiscal year is closed, you can't add or edit entries in it
+The cash/bank account must be a sub-account in the same company
+The entry is posted, you can't edit its lines
+The account isn't for this company
+Entry not found
+You don't have posting permission
+The entry is already posted
+The fiscal year is closed
+The entry has no amounts
+Only posted entries can be reversed
+An opening entry can't be reversed. Adjust balances with a journal entry
+An invoice entry is cancelled from the invoice itself (Cancel invoice button
+A closing entry is cancelled by reopening the year
+The company already has a chart of accounts
+You don't have permission for reports
+The party's account must be a sub-account
+The customer/supplier isn't for this company
+The stock entry is linked to the stock voucher and can't be reversed on its own
+The invoice is posted, it can't be deleted. Cancel it instead
+The invoice is posted, it can't be edited
+Posting is only by the «Post
+The invoice date must be within the fiscal year
+A sales invoice must be for a customer
+A purchase invoice must be for a supplier
+The invoice is posted, its lines can't be edited
+Invoice not found
+You don't have permission to post invoices
+The invoice is already posted
+The return's original invoice isn't valid (it must be posted and for the same customer/supplier
+Choose the cash/bank account for the cash invoice
+The invoice has no amounts
+There's an item in the return that isn't in the original invoice
+Set the sales tax account in «Linked accounts
+Only posted invoices can be cancelled
+The invoice entry isn't posted or was already reversed
+The closing entry is made by the «Close year» button only
+The stock entry is made from the stock voucher only
+This entry is made from its own screen (payroll or assets) only
+Closing the year is for the system admin only
+Choose the new year for the same company
+The year is already closed
+The new year is closed
+The new year must start after the end of the year being closed
+The retained earnings account must be a sub-account of equity
+The new year has posted opening balances (entered manually). Delete or reverse them before carrying forward
+The carried balances aren't balanced. Review the year's trial balance
+Reopening the year is for the system admin only
+Year not found
+The cheque is registered from the cheques screen
+A registered cheque can't be deleted. Cancel or return it
+The amount, party or status can't be edited directly
+Set the cheques and bank accounts in «Linked accounts
+Wrong cheque type
+Amount must be greater than zero
+Cheque not found
+You don't have permission for cheque operations
+Wrong bank account
+Choose the bank the cheque was collected into
+Choose the bank the cheque was paid from
+This operation isn't allowed for the cheque's current status
+The voucher is posted, it can't be deleted
+The voucher is posted, it can't be edited
+Posting is by the «Post» button only
+The warehouse isn't for this company
+Choose the transfer warehouse (other than the source warehouse
+The voucher is posted
+The item isn't for this company
+Voucher not found
+You don't have permission to post stock vouchers
+The voucher is already posted
+The voucher has no items
+You don't have permission on inventory
+Only the system admin can add users
+Username must be English letters or numbers (no spaces
+Only the system admin can edit users
+User not found
+Only the system admin can delete users
+You can't delete yourself
+Perpetual inventory is on: set the inventory account and cost of goods sold account in «Linked accounts
+Set the inventory account and the counter account in «Linked accounts
+No open fiscal year on the voucher date
+The cost center isn't for this company
+A foreign currency line must have a currency and exchange rate
+A payroll entry is cancelled from the payroll screen
+A depreciation entry is cancelled from the fixed assets screen
+The entry isn't posted or was already reversed
+The source entry must be a journal, receipt or payment voucher of the same company
+The payroll is posted, it can't be deleted
+The payroll is posted, it can't be edited
+The month must be in year-month format
+The payroll is posted
+The employee isn't for this company
+Payroll not found
+You don't have permission to post payroll
+The payroll is already posted
+Set the payroll accounts in «Linked accounts
+The payroll is empty
+Set the income tax payable account
+Set the employee receivables/advances account
+No open fiscal year on the payroll date
+The payroll entry isn't balanced
+Only a posted payroll can be cancelled
+The asset has posted depreciation, it can't be deleted. Mark it «Disposed» instead
+Salvage value must be less than cost
+The asset has posted depreciation: you can't change the cost, life or start date
+You don't have permission on assets
+You don't have permission to post depreciation
+The run is already cancelled
+Cancel the newer depreciation runs first
+The reconciliation is locked
+The movement isn't on this bank account
+Backup is for the system admin only
+Company not found
+Restore is for the system admin only
+The subscription has ended. The program is view and print only
+The document number must be between 1 and 999999999
+The invoice number must be between 1 and 999999999
+No fiscal year on the voucher date, and numbering restarts every year/month
+The voucher number must be between 1 and 999999999
+The category isn't for this company
+Category code and name are required
+The category isn't for this company or not of the same type
+The invoice is posted to inventory, it can't be deleted. Unpost it first
+The invoice is posted to inventory, it can't be edited. Unpost it first
+The line can't move to another invoice
+The invoice is posted to inventory, its lines can't be edited
+This invoice type doesn't post to accounting (from «Tools ← Posting
+This invoice type doesn't post to inventory (from «Tools ← Posting
+The invoice is already posted to inventory
+The invoice is cancelled
+The invoice has no lines
+The return's original invoice must be posted to inventory and for the same customer/supplier
+This voucher type doesn't post to inventory (from «Tools ← Posting
+This voucher type doesn't post to accounting (from «Tools ← Posting
+Post the voucher to inventory first so its value is calculated
+The voucher is already posted to accounting
+A warehouse transfer voucher has no accounting entry
+Stock vouchers post to accounting only when «Perpetual inventory» is on (from «Linked accounts
+The voucher value is zero, no entry
+The entry was already reversed, it can't be unposted
+Some lines of the entry are marked in a bank reconciliation, unmark them first
+The entry is linked to a cheque in the portfolio, it can't be unposted
+This entry is made from its own screen (invoice, cheque, payroll…), unpost it from there
+You don't have permission to unpost
+The entry isn't posted
+This is a reversing entry, it can't be unposted
+The invoice is cancelled, it can't be unposted
+The invoice isn't posted to accounting
+There's a posted return on this invoice, unpost it first
+The invoice entry isn't valid
+The invoice isn't posted to inventory
+This invoice's cost of goods is inside its accounting entry: unpost accounting first
+There's a return posted to inventory on this invoice, unpost it first
+The cost entry isn't valid
+Wrong unpost type
+The voucher isn't posted to accounting
+The voucher entry isn't valid
+The voucher isn't posted to inventory
+The voucher is posted to accounting: unpost accounting first
+An expense card must be on an expense account
+Department code is required
+Department description is required
+A department can't be its own parent
+The main department isn't for this company
+The parent department must be a main department
+A department can't be under one of its own sub-departments
+The department has sub-departments, it can't become a sub-department
+The department must be a sub-department of the same company
+The department must be an active sub-department of the same company
+You don't have access to this company
+Periods are generated automatically with the fiscal year
+Opening a locked period needs «Unpost» permission on fiscal years
+There are locked periods in this year, open them before changing the dates
+Code is required
+The parent isn't suitable (a bank branch under a bank, a region under a country
+The account must be a sub-account of the same company
+The sales rep doesn't exist or isn't active in this company
+The party isn't suitable for this order
+The sales rep isn't for this company
+The invoice isn't suitable for this order
+The line can't move to another order
+The order isn't open, it can't be edited
+Order not found
+The invoice must be the one you just made
+The order isn't open (maybe it was already converted
+The loyalty card type isn't for this company
+Redeemed points can't be negative
+The product must be a goods item of the same company
+The line can't move to another BOM
+The material must be a goods item of the same company
+This voucher belongs to a production order, delete the production order from the manufacturing screen
+Production order vouchers are posted from the production orders screen (for costing
+Production order voucher lines can't be edited
+The BOM doesn't exist or is inactive
+The date must be within an open fiscal year
+The warehouse isn't for this company or is inactive
+The BOM has no materials
+There's a material in the BOM that's inactive or not goods
+The production order vouchers are incomplete
+The production order is already posted
+There's a posted voucher for the production order; unpost it first
+The customer isn't for this company
+The invoice isn't suitable
+Set the inventory account first in «Linked accounts
+Couldn't find a free code for the account, create it manually from the chart of accounts
+Signing up with this email isn't allowed
+Subscriber not found
+A company not of the same subscriber
+You can't edit the platform admin's account
+The platform admin can't be deleted
+This operation is for the platform admin only
+The subscriber code must be lowercase English letters or numbers (2 to 20
+You can't suspend your main subscriber
+You can't suspend yourself
+The number of months doesn't make sense
+Amount must be positive
+The warehouse isn't of the same company
+The sale data isn't valid
+You don't have permission to sell from the point of sale
+The cart is too big
+You need to be on the open fiscal year that contains today's date
+The discount isn't valid
+You don't have permission to give a discount
+The sales rep isn't valid
+Sales rep not found
+The customer isn't valid
+For a credit sale you must choose the customer
+Credit sales are disabled in the point-of-sale settings
+The payment method isn't valid
+The payment method isn't available at the point of sale
+The payment method isn't valid
+Set the point-of-sale cash box from «Point of sale settings
+The cash/cards account in point-of-sale settings must be a cash or bank sub-account of the same company
+The point-of-sale warehouse isn't of the same company
+The employee account must be a sub-account of the same company
+Today's date is within this fiscal year: it can't be «unavailable» (users would be left without a year
+Set the sales account first in «Linked accounts
+The asset is disposed by a posted asset movement. Cancel the movement instead of changing its status
+The asset has an asset movement not yet posted
+Movement not found
+The movement is posted or cancelled, it can't be edited
+You don't have permission to edit asset movements
+You don't have permission to add asset movements
+The movement type isn't valid
+Enter the movement date
+A sale must have a customer of the same company
+The tax rate doesn't make sense
+Set the department the asset moves to
+The source and destination departments must differ
+The department isn't of the same company
+You don't have permission to post asset movements
+The movement is posted or cancelled
+No assets in the movement
+No open fiscal year on the movement date
+Set the «Gains & losses on sale and write-off of assets» account in linked accounts
+The customer has no account
+Set the sales tax account in linked accounts
+The movement entry isn't balanced, review the assets data (cost and prior accumulated depreciation
+The movement is already cancelled
+The movement is posted, cancel it instead of deleting
+A cancelled movement stays in the record, it can't be deleted
+You can't change the custodian's company
+Custodian code and name are required
+The employee isn't of the same company
+The custodian is recorded by a «Custody handover» document
+The custodian changes only through asset custody documents
+Document not found
+You don't have permission to edit custody documents
+The document isn't «Pending», return it to pending first to edit it
+You don't have permission to add custody documents
+Enter the date
+Set the handing custodian
+Set the receiving custodian
+The handing and receiving custodians must differ
+The custodian isn't of the same company or is inactive
+Invalid status
+You don't have permission to change the document status
+The document is cancelled
+The document is closed (archive
+Only a finished document can be closed
+Return the document to pending first
+No assets in the document
+Only a «Pending» or cancelled document can be deleted
+The item or warehouse isn't of the same company
+Supply request stock-in lines can't be edited (they come from the stock-out voucher
+The supply request voucher's warehouse can't change
+The supply request's stock-in voucher was issued; delete it first to unpost the stock-out
+You don't have permission to edit supply requests
+The request is confirmed or has a voucher issued, it can't be edited
+You don't have permission to add supply requests
+Choose the source and destination warehouses (different
+The warehouse isn't of the same company or is inactive
+The request is too big
+You don't have permission to change the request status
+A stock-out voucher was issued for the request; delete the voucher (if not posted) first
+The request is rejected or cancelled
+You don't have permission to issue stock vouchers
+Confirm the request first
+The stock-out voucher was already issued
+The stock-in voucher was already issued
+Issue the stock-out voucher first
+The stock-out voucher isn't posted to inventory yet
+The stock-out voucher doesn't belong to this request
+The request has stock vouchers, it can't be deleted
+The request is confirmed, return it to pending or cancel it
+The route isn't of the same company
+The payment method isn't of the same company
+Unknown grouping type
+The item isn't of the same company
+The document is frozen, unfreeze it first to delete it
+Freezing is only by the «Freeze» button
+The document is frozen, it can't be edited or posted. Unfreeze it first
+The document is frozen, its lines can't be edited
+Unknown document type
+You don't have permission to freeze this document
+You don't have permission to pay cashback
+There's a payment with a later date; choose a date after it
+Set the «Cashback expense» account in linked accounts
+The cashback account must be an active expense sub-account of the same company
+No open fiscal year on the date
+The cashback entry is cancelled from the loyalty cards screen
+You don't have permission to record visits
+The location isn't valid
+Visit not found
+The visit has ended
+The expenses don't make sense
+The subscription has ended
+The visit isn't for this customer
+You need an open visit for the same customer to record a payment
+You don't have permission on receipt vouchers
+The customer has no account
+Add at least one cheque
+Too many cheques
+Cheque number and due date are required
+The payment type isn't valid
+This report is for the supervisor
+Linking a payment to a visit is from the rep app only
+Company numbering is for the system admin only
+Invalid setting
+The company code is automatic and can't be edited (change numbering to manual first
+Company code is required (manual numbering
+The template must be a trial company: name it e.g. «Demo company» or «Trial company
+The free trial isn't available right now
+Enter your name
+Enter the company or business name
+The mobile number isn't valid
+The email isn't valid
+Username must be English letters or numbers (3 to 30
+Password must be at least 6 characters
+This number already had a trial. Contact us to extend it or subscribe
+Too many trials from the same device today. Contact us
+Signups are busy right now, try again shortly
+Try again
+This operation is for the free trial only
+Only the account admin
+Restore isn't available in the free trial
+Only trial accounts can be deleted from here
+This subscriber has payments, it can't be deleted
+This document is for another branch
+The cashier settings aren't valid
+The cashier warehouse isn't of the same company
+The cashier account must be a cash box or bank of the same company
+The receipt text is too long
+The user isn't of the same subscriber
+The route days aren't valid
+This sales rep isn't yours
+The deposit account changes only through cheque operations
+Choose the «Cheques under collection» account at the bank
+The deposit account must differ from the cheques box account
+Your account isn't linked to an employee
+You don't have permission to record loans for employees
+Employee not found
+Number of installments from 1 to 120
+The amount is small for the number of installments
+The payroll module isn't in your subscription
+The first installment month isn't valid
+Approval is for the supervisor (payroll post
+The request isn't pending
+You can't approve your own request
+The employee isn't on the job
+Installment not found
+Deferral is for the supervisor
+The installment is paid or the loan isn't active
+You can't defer your own installment
+The request is finished
+Some installments were deducted; it can't be cancelled
+Wrong check-in type
+You need to allow the program to know your location to check in
+Check in first
+Editing attendance is for the supervisor
+The employee isn't from the company
+The date isn't valid
+Check-out time must be after check-in
+The voucher type isn't for this company or this kind
+You can't change the type of a posted voucher
+The default type can't be deactivated; make another type default first
+You can't change the document type
+The commission account must be a sub-account of the same company
+Voucher not found
+This entry type can't be allocated to invoices
+Allocation is only for a posted voucher (not reversed, and its cheque not returned
+The voucher is frozen
+You don't have permission on this branch
+The voucher has no payment for this party
+The invoice isn't open for this party
+The price list isn't of the same company
+The discount type account must be a sub-account of the same company
+No open fiscal year on this date
+Discount type not found
+All amounts are zero
+Wrong type
+Limits must be between 0 and 100
+Set the «Small balances settlement account» in linked accounts
+The brand isn't of the same company
+The country of origin isn't of the same company
+The model, color or size is too long
+Linking the cheque to the receipt voucher is by the system only
+You don't have permission on receipt vouchers
+You don't have permission to register cheques
+More than 50 cheques at once
+The voucher isn't a receipt voucher of this company
+The voucher is reversed or frozen
+The voucher isn't from your branch
+The cheques' owner must be the same customer on the voucher lines
+Document not found
+The invoice isn't a purchase invoice of this company
+Landed costs are for the whole company, not for a branch employee
+You don't have permission to add
+The document is posted, it can't be edited
+You don't have permission to edit
+Too many
+The document is already posted
+No charges
+No open fiscal year on the document date
+Set the inventory/purchases account in «Linked accounts
+The purchase invoices have no stock items
+The allocation doesn't equal the total
+Set the cost of sales account in «Linked accounts
+Only a posted document can be cancelled
+These items were sold or issued after the document was posted, so it can't be cancelled. Make another landed cost document for the difference or an adjustment entry
+The document's entry is frozen, unfreeze it first
+The cancellation date must be after the document date
+No open fiscal year on the cancellation date
+You don't have permission to delete
+A posted one can't be deleted, cancel it
+This entry belongs to a landed cost document, cancel it from the landed costs screen
+You don't have permission to record leaves for employees
+Choose the leave type
+Start date is required
+The leave is longer than a year
+Split the leave over two years (a request per year
+A half day is for a single day
+The whole period is Fridays
+There's another leave for this employee in the same period
+The payroll of the leave month is posted, the deduction won't apply. Cancel the payroll or deduct it manually
+An approved leave is cancelled by the supervisor
+The payroll of the leave month is posted
+Shift start and end are the same time
+Days off from 0 (Sunday) to 6 (Saturday
+At least one working day is required
+The shift isn't of the same company
+Party not found
+The document doesn't exist or has no follow-up statuses
+You don't have permission to change the follow-up status
+The document isn't from your branch
+The status isn't for this document type
+Unknown type
+A batch movement not of the same company
+The budget is approved — unapprove it first
+The fiscal year isn't of the same company
+The cost center isn't of the same company
+Wrong lines
+Budget not found
+You don't have permission to approve budgets
+Unknown status
+The rate must be between -100 and 1000
+No previous fiscal year
+Note not found
+The note is posted — it can't be edited
+You don't have permission to edit notes
+Unknown note type
+You don't have permission to add notes
+The party has no account
+Wrong tax rate
+The counter account must be an active sub-account of the same company (not a receivables account
+The counter account can't be the party's own account
+The reference invoice must be posted and for the same party
+The note date must stay in the same fiscal year
+You don't have permission to post notes
+The note is already posted
+The note entry isn't balanced
+The note isn't posted
+The entry is frozen
+The note entry has a bank reconciliation — undo it first
+Only a draft can be deleted; a posted one is cancelled
+The note entry is cancelled from the notes screen
+The order is frozen
+A line has either a customer/supplier or an employee, not both
+The invoice is posted — supplier shares can't be edited
+Supplier shares are only for a credit purchase invoice
+The supplier isn't of the same company or has no account
+The main supplier takes the rest automatically — choose another supplier
+Couldn't find the main supplier's line in the invoice entry
+The invoice entry isn't balanced after splitting suppliers
+The contract must be for a customer of the same company
+The department must be a sub-department of the same company
+The sales rep isn't of the same company
+The next due date must be after the last invoice from the contract
+You don't have permission to generate contract invoices
+The contract has no lines
+The customer is suspended
+Receiving cheques from this customer is stopped. It needs «Override credit limit & sales stop» permission
+You don't have permission to edit company settings
+The SMS gateway isn't available in the trial version
+The gateway link must start with https
+The gateway domain must be a public address of the SMS company (not an IP or internal address
+The link must contain {phone}
+The link must contain {msg} or {msg_hex}
+You don't have permission to send messages
+The party isn't from this company
+Free sending needs marketing permission; you can only send an invoice, statement or payment to the party's own number
+The SMS gateway isn't enabled for this company
+The gateway domain isn't accepted, edit the link
+The message text is empty
+Sending to numbers outside Jordan is disabled (from the gateway settings
+The pg_net extension isn't enabled in the database
+Couldn't send to the gateway, check the link
+The contract template isn't of the same company
+Plan tiers must have an achievement % (0 or more) and a commission % (0–100
+The commission plan must be for a sales rep of the same company
+The period isn't valid (up to two years
+A rep can't be their own supervisor
+The supervisor must be a sales rep of the same company
+The rep hierarchy has a loop (the supervisor reports to the rep
+The line sales rep doesn't exist or isn't active in this company
+You can only request deferral of your own installments
+There's a pending deferral request for this installment
+It needs permission to add and approve loans
+It needs a posted payment voucher or entry
+The voucher is reversed
+The first installment month has passed
+Set the employee advances account in linked accounts
+The voucher has no debit amount on the employee advances account for this employee
+The voucher was already converted into an advance
+The voucher is linked to an employee advance; cancel the advance first (from Loans & advances
+The fingerprint number is too long
+Fingerprint import is for the supervisor (payroll edit
+The data isn't valid
+The file is too big: max 50000 punches at once
+A guarantee cheque can't be deleted after it's returned or cashed
+The employee isn't from this company
+The department isn't from this company
+After a guarantee cheque is returned or cashed only its notes can be edited
+Cheque not found
+The status isn't valid
+The cheque was cashed and moved to the cheque portfolio
+The cheque isn't held
+You don't have permission on journal vouchers
+The year isn't for this company
+Choose the accounts
+Choose the employees account
+Wrong party type
+Wrong load type
+Closing another cashier's cash box is for the supervisor (point of sale edit
+The counted amount isn't valid
+The cash box is closed for this day
+Closing not found
+Opening the cash box is for the supervisor (point of sale edit
+You closed today's cash box. Ask the supervisor to open it if you need to sell
+The password is too long
+The password must contain a digit
+The password must contain an English letter
+The password must contain upper and lower case letters
+The password must contain a symbol (like @ #
+The password policy is for the system admin
+The user isn't active
+The current password isn't correct
+The new password must differ from the old one
+More than 500 serials in a line
+The serial number is too long (max 60 characters
+Employee balances need payroll view permission
+You don't have permission to view parties
+Account balances need reports permission
