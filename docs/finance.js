@@ -293,8 +293,14 @@ function voucherList(type) {
 // ---------------------------------------------------------------------
 async function voucherEditor(type, entry, ctx) {
   const T = ENTRY_TYPES[type];
-  const [accs, parties, ccR, curR] = await Promise.all([loadAccounts(), loadParties(),
-    sb.from('cost_centers').select('*').eq('company_id', S.company.id).order('code'), sb.from('currencies').select('*').eq('company_id', S.company.id).order('code')]);
+  const [accs, parties, ccR, curR, empR] = await Promise.all([loadAccounts(), loadParties(),
+    sb.from('cost_centers').select('*').eq('company_id', S.company.id).order('code'), sb.from('currencies').select('*').eq('company_id', S.company.id).order('code'),
+    sb.from('employees').select('id,code,name,is_active').eq('company_id', S.company.id).order('code')]);
+  // الموظف بخانة الطرف (المرحلة 68): «👷 رمز — اسم»
+  const emps = empR.data || [], empById = Object.fromEntries(emps.map(x => [x.id, x]));
+  const empLabel = (x) => x ? `👷 ${x.code} — ${x.name}` : '';
+  const resolveEmp = (t) => { t = (t || '').replace('👷', '').trim(); if (!t) return null; const c = t.split('—')[0].trim(); return emps.find(x => x.code === c) || emps.find(x => x.name === t) || null; };
+  const sideLabel = (l) => l.employee_id ? empLabel(empById[l.employee_id]) : partyLabel(pById[l.party_id]);
   if (!leafAccounts(accs).length) return toast('لازم يكون في حسابات فرعية بدليل الحسابات أول', 'err');
   const ccs = ccR.data || [], curs = (curR.data || []).filter(c => c.is_active);
   const pById = Object.fromEntries(parties.map(p => [p.id, p]));
@@ -318,9 +324,9 @@ async function voucherEditor(type, entry, ctx) {
   let rows;
   if (isCash) {
     rows = lines.filter(l => !(l.line_no === 1 && l.account_id === e.cash_account_id) && !(type === 'receipt' && num(l.debit) > 0))
-      .map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', amount: num(type === 'receipt' ? l.credit : l.debit), cc: l.cost_center_id || '', cur: l.currency || '', fxa: l.fx_amount ?? '', fxr: l.fx_rate ?? '' }));
+      .map(l => ({ acc: accLabel(byId[l.account_id]), party: sideLabel(l), desc: l.description || '', amount: num(type === 'receipt' ? l.credit : l.debit), cc: l.cost_center_id || '', cur: l.currency || '', fxa: l.fx_amount ?? '', fxr: l.fx_rate ?? '' }));
   } else {
-    rows = lines.map(l => ({ acc: accLabel(byId[l.account_id]), party: partyLabel(pById[l.party_id]), desc: l.description || '', debit: num(l.debit), credit: num(l.credit), cc: l.cost_center_id || '', cur: l.currency || '', fxa: l.fx_amount ?? '', fxr: l.fx_rate ?? '' }));
+    rows = lines.map(l => ({ acc: accLabel(byId[l.account_id]), party: sideLabel(l), desc: l.description || '', debit: num(l.debit), credit: num(l.credit), cc: l.cost_center_id || '', cur: l.currency || '', fxa: l.fx_amount ?? '', fxr: l.fx_rate ?? '' }));
   }
   while (rows.length < (isCash ? 1 : 2)) rows.push(isCash ? { acc: '', desc: '', amount: 0 } : { acc: '', desc: '', debit: 0, credit: 0 });
 
@@ -346,9 +352,9 @@ async function voucherEditor(type, entry, ctx) {
       ${dept}${dtf}
       <div class="field" style="grid-column:span 2"><label>البيان</label><input name="description" value="${esc(e.description)}" ${ro}></div>
     </div></form>
-    ${accountDatalist(accs)}${partyDatalist(parties)}
+    ${accountDatalist(accs)}${partyDatalist(parties).replace('</datalist>', emps.filter(x => x.is_active).map(x => `<option value="${esc(empLabel(x))}">موظف</option>`).join('') + '</datalist>')}
     <div class="table-wrap"><table class="t lines" id="lines">
-      <thead><tr><th style="width:36px">#</th><th style="min-width:230px">الحساب</th><th style="min-width:170px">العميل / المورد</th><th style="min-width:140px">البيان</th>
+      <thead><tr><th style="width:36px">#</th><th style="min-width:230px">الحساب</th><th style="min-width:170px">العميل / المورد / الموظف</th><th style="min-width:140px">البيان</th>
         ${ccs.length ? '<th style="width:140px">مركز الكلفة</th>' : ''}${curs.length ? '<th style="min-width:90px">العملة</th><th style="min-width:100px">بالعملة</th><th style="min-width:80px">السعر</th>' : ''}
         ${isCash ? '<th style="width:150px">المبلغ</th>' : '<th style="width:140px">مدين</th><th style="width:140px">دائن</th>'}<th style="width:40px"></th></tr></thead>
       <tbody></tbody>
@@ -531,15 +537,16 @@ async function voucherEditor(type, entry, ctx) {
       const a = resolveAccount(accs, r.acc);
       if (!a) return toast(`السطر ${i + 1}: اختار حساب صحيح من القائمة`, 'err');
       if (fxBad(r)) return toast(`السطر ${i + 1}: المبلغ بالدينار لازم يساوي المبلغ بالعملة × السعر`, 'err');
-      const pt = resolveParty(parties, r.party);
-      if (r.party && !pt) return toast(`السطر ${i + 1}: العميل/المورد مش موجود بالقائمة`, 'err');
-      const party_id = pt?.id || null;
+      const em = (r.party || '').includes('👷') ? resolveEmp(r.party) : null;
+      const pt = em ? null : resolveParty(parties, r.party);
+      if (r.party && !pt && !em) return toast(`السطر ${i + 1}: العميل/المورد/الموظف مش موجود بالقائمة`, 'err');
+      const party_id = pt?.id || null, employee_id = em?.id || null;
       if (isCash) {
         if (!num(r.amount)) return toast(`السطر ${i + 1}: المبلغ مطلوب`, 'err');
-        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: type === 'payment' ? num(r.amount) : 0, credit: type === 'receipt' ? num(r.amount) : 0, ...extra(r) });
+        out.push({ account_id: a.id, party_id, employee_id, description: r.desc || null, debit: type === 'payment' ? num(r.amount) : 0, credit: type === 'receipt' ? num(r.amount) : 0, ...extra(r) });
       } else {
         if (!num(r.debit) && !num(r.credit)) return toast(`السطر ${i + 1}: اكتب مبلغ مدين أو دائن`, 'err');
-        out.push({ account_id: a.id, party_id, description: r.desc || null, debit: num(r.debit), credit: num(r.credit), ...extra(r) });
+        out.push({ account_id: a.id, party_id, employee_id, description: r.desc || null, debit: num(r.debit), credit: num(r.credit), ...extra(r) });
       }
     }
     const ckv = type === 'receipt' && chqTb ? chqCheck() : { rows: [] };
@@ -616,11 +623,11 @@ async function voucherEditor(type, entry, ctx) {
     if (error) return toast(arError(error), 'err');
     toast('تم عمل القيد العكسي وترحيله', 'ok'); m.close(); ctx.rerender();
   });
-  m.el.querySelector('[data-print]')?.addEventListener('click', () => printVoucher(type, entry, lines, byId, linkedChq));
+  m.el.querySelector('[data-print]')?.addEventListener('click', () => printVoucher(type, entry, lines, byId, linkedChq, Object.fromEntries(emps.map(x => [x.id, x.name]))));
 }
 
 const CHQ_ST = { portfolio: 'بالمحفظة', deposited: 'مودع', collected: 'محصّل', returned: 'راجع', cancelled: 'ملغى', issued: 'صادر', paid: 'مصروف' };
-function printVoucher(type, e, lines, byId, chq = []) {
+function printVoucher(type, e, lines, byId, chq = [], empNames = {}) {
   const T = ENTRY_TYPES[type];
   const isCash = type === 'receipt' || type === 'payment';
   const body = isCash ? lines.filter(l => l.line_no !== 1 && !(type === 'receipt' && num(l.debit) > 0)) : lines;
@@ -631,7 +638,7 @@ function printVoucher(type, e, lines, byId, chq = []) {
       <tr><td colspan="3"><b>البيان:</b> ${esc(e.description || '')}</td></tr></table>
     ${isCash ? `<div class="amount-box">مبلغ وقدره: <b>${fmtNum(total)}</b> دينار<br><span>${amountToWords(total)}</span></div>` : ''}
     <table class="pt"><thead><tr><th>#</th><th>رقم الحساب</th><th>اسم الحساب</th><th>البيان</th>${isCash ? '<th>المبلغ</th>' : '<th>مدين</th><th>دائن</th>'}</tr></thead><tbody>
-      ${body.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(byId[l.account_id]?.code)}</td><td>${esc(byId[l.account_id]?.name)}${l.party_id && S.parties ? ' — ' + esc(S.parties.find(p => p.id === l.party_id)?.name || '') : ''}</td><td>${esc(l.description || '')}</td>
+      ${body.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(byId[l.account_id]?.code)}</td><td>${esc(byId[l.account_id]?.name)}${l.party_id && S.parties ? ' — ' + esc(S.parties.find(p => p.id === l.party_id)?.name || '') : ''}${l.employee_id && empNames[l.employee_id] ? ' — 👷 ' + esc(empNames[l.employee_id]) : ''}</td><td>${esc(l.description || '')}</td>
         ${isCash ? `<td class="n">${fmtNum(num(l.debit) + num(l.credit))}</td>` : `<td class="n">${num(l.debit) ? fmtNum(l.debit) : ''}</td><td class="n">${num(l.credit) ? fmtNum(l.credit) : ''}</td>`}</tr>`).join('')}
       </tbody><tfoot><tr><td colspan="4"><b>المجموع</b> — ${amountToWords(total)}</td>${isCash ? `<td class="n"><b>${fmtNum(total)}</b></td>` : `<td class="n"><b>${fmtNum(total)}</b></td><td class="n"><b>${fmtNum(lines.reduce((s, l) => s + num(l.credit), 0))}</b></td>`}</tr></tfoot></table>
     ${chq.length ? `<h4 style="margin:12px 0 6px">الشيكات المستلمة</h4><table class="pt"><thead><tr><th>#</th><th>رقم الشيك</th><th>البنك</th><th>الاستحقاق</th><th>المبلغ</th></tr></thead><tbody>

@@ -348,4 +348,52 @@ async function viewAssetCenter(v) {
   run();
 }
 
-export const CENTER_ROUTES = { 'account-center': viewAccountCenter, 'party-center': viewPartyCenter, 'employee-center': viewEmployeeCenter, 'asset-center': viewAssetCenter };
+
+// ---------------------------------------------------------------------
+//  ميزان مراجعة الموظفين (المرحلة 68): رصيد كل موظف على حساب (سلف، رواتب مستحقة…) من سطور القيود
+// ---------------------------------------------------------------------
+async function viewEmployeeTB(v) {
+  if (!S.company || !S.fy) return void (v.innerHTML = `<div class="notice info">اختار شركة وسنة مالية من فوق أول.</div>`);
+  const [accs, eR] = await Promise.all([loadAccounts(), sb.from('employees').select('id,code,name,department,is_active').eq('company_id', S.company.id).order('code')]);
+  if (eR.error) return toast(arError(eR.error), 'err');
+  const emps = eR.data || [], eById = Object.fromEntries(emps.map(e => [e.id, e])), byId = Object.fromEntries(accs.map(a => [a.id, a]));
+  const leaf = accs.filter(a => !a.is_group).sort((x, y) => (y.account_type === 'employee') - (x.account_type === 'employee') || String(x.code).localeCompare(String(y.code), 'en', { numeric: true }));
+  v.innerHTML = `<div class="page-head"><h2>⚖️ ميزان مراجعة الموظفين</h2><div class="spacer"></div><span class="muted">${esc(S.company.name)} — ${esc(S.fy.name || S.fy.code)}</span></div>
+    ${periodBar()}<div class="grid cols-4" id="kp" style="margin:12px 0"></div><div class="card table-wrap"><table class="t rep" id="tb"></table></div>
+    <p class="muted" style="font-size:12px">من سطور القيود اللي عليها موظف: قيود الرواتب المرحّلة (الصافي والسلف لكل موظف) والسندات اللي اخترت فيها الموظف بخانة «العميل / المورد / الموظف».</p>`;
+  v.querySelector('[data-slot]').outerHTML = `<div class="field"><label>الحساب</label><select data-f="acc"><option value="">كل الحسابات</option>${leaf.map(a => `<option value="${a.id}">${esc(a.code)} — ${esc(a.name)}${a.account_type === 'employee' ? ' 👷' : ''}</option>`).join('')}</select></div>`;
+  const f = wirePeriod(v.querySelector('#pc'), () => run());
+  f('acc').onchange = () => run(); f('moving').onchange = () => run();
+  let out = [], rowsCache = [];
+  async function run() {
+    const from = f('from').value, to = f('to').value, acc = f('acc').value || null;
+    const { data, error } = await sb.rpc('rep_employee_tb', { p_company: S.company.id, p_fy: S.fy.id, p_account: acc, p_from: from, p_to: to });
+    if (error) return toast(arError(error), 'err');
+    const q = f('q').value.trim().toLowerCase(), moving = f('moving').checked;
+    const rows = (data || []).map(r => ({ ...r, e: eById[r.employee_id], a: byId[r.account_id], o: num(r.open_debit) - num(r.open_credit), d: num(r.period_debit), c: num(r.period_credit) }))
+      .filter(r => r.e && (!q || [r.e.code, r.e.name].some(x => (x || '').toLowerCase().includes(q))) && (!moving || Math.abs(r.o) > 0.0005 || r.d || r.c))
+      .sort((x, y) => String(x.a?.code).localeCompare(String(y.a?.code)) || String(x.e.code).localeCompare(String(y.e.code), 'en', { numeric: true }));
+    rowsCache = rows;
+    const sum = (k) => rows.reduce((s, r) => s + r[k], 0), close = (r) => r.o + r.d - r.c;
+    const kp = (l, x) => `<div class="card stat"><span class="k">${l}</span><span class="v" style="font-size:20px">${x}</span></div>`;
+    v.querySelector('#kp').innerHTML = kp('عدد الموظفين', new Set(rows.map(r => r.employee_id)).size) + kp('مدين الفترة', fmtNum(sum('d'))) + kp('دائن الفترة', fmtNum(sum('c'))) + kp('الرصيد الختامي', bal(rows.reduce((s, r) => s + close(r), 0)));
+    out = rows.map(r => [r.e.code, r.e.name, `${r.a?.code || ''} ${r.a?.name || ''}`, balTxt(r.o), amt(r.d), amt(r.c), balTxt(close(r))]);
+    v.querySelector('#tb').innerHTML = `<thead><tr><th>الرقم</th><th>الموظف</th>${acc ? '' : '<th>الحساب</th>'}<th>الرصيد الافتتاحي</th><th>مدين</th><th>دائن</th><th>الرصيد الختامي</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr class="clickable" data-r="${i}"><td>${esc(r.e.code)}</td><td>${esc(r.e.name)} <span class="muted" style="font-size:11px">▾ كشف</span></td>${acc ? '' : `<td>${esc(r.a?.code || '')} — ${esc(r.a?.name || '')}</td>`}
+        <td class="n">${bal(r.o)}</td><td class="n">${amt(r.d)}</td><td class="n">${amt(r.c)}</td><td class="n"><b>${bal(close(r))}</b></td></tr>`).join('') || `<tr><td colspan="7" class="empty">ما في حركات على موظفين بهالفترة</td></tr>`}</tbody>
+      ${rows.length ? `<tfoot><tr class="tot"><td colspan="${acc ? 2 : 3}">المجموع</td><td class="n">${bal(sum('o'))}</td><td class="n">${fmtNum(sum('d'))}</td><td class="n">${fmtNum(sum('c'))}</td><td class="n">${bal(rows.reduce((s, r) => s + close(r), 0))}</td></tr></tfoot>` : ''}`;
+  }
+  v.querySelector('#tb').addEventListener('click', (e) => {
+    const tr = e.target.closest('tr.clickable[data-r]'); if (!tr) return;
+    const r = rowsCache[+tr.dataset.r], from = f('from').value, to = f('to').value;
+    toggleStatement(tr, 7, async () => {
+      const { data, error } = await sb.rpc('rep_employee_ledger', { p_company: S.company.id, p_fy: S.fy.id, p_account: r.account_id, p_employee: r.employee_id, p_from: from, p_to: to });
+      if (error) throw error;
+      return `<div class="stmt-head"><b>كشف حساب: ${esc(r.e.name)} — ${esc(r.a?.name || '')}</b></div>` + tabbed(r.o, data || [], from, to);
+    });
+  });
+  f('csv').onclick = () => downloadCSV('ميزان مراجعة الموظفين.csv', [['الرقم', 'الموظف', 'الحساب', 'الرصيد الافتتاحي', 'مدين', 'دائن', 'الرصيد الختامي']].concat(out));
+  run();
+}
+
+export const CENTER_ROUTES = { 'employee-tb': viewEmployeeTB, 'account-center': viewAccountCenter, 'party-center': viewPartyCenter, 'employee-center': viewEmployeeCenter, 'asset-center': viewAssetCenter };

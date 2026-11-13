@@ -252,6 +252,7 @@ const NAV = () => [
     { r: 'leaves', i: '🌴', l: 'الإجازات', show: () => S.company && can('payroll', 'view') },
     { r: 'me', i: '💼', l: 'راتبي (حضوري وقسيمتي وقروضي وإجازاتي)', show: () => !!S.company },
     { r: 'employee-center', i: '📒', l: 'أستاذ مساعد الموظفين', show: () => S.company && can('payroll', 'view') },
+    { r: 'employee-tb', i: '⚖️', l: 'ميزان مراجعة الموظفين', show: () => S.company && (can('payroll', 'view') || can('reports', 'view')) },
   ]},
   { title: 'الأصول الثابتة', items: [
     { r: 'assets', i: '🏢', l: 'الأصول الثابتة والاستهلاك', show: () => S.company && can('fixed_assets', 'view') },
