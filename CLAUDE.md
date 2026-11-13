@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..59). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..60). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -44,6 +44,7 @@ docs/               الواجهة (ES modules بدون build) + PWA
   rep.js            «تطبيق المندوب» (route rep?t=customers|visits|payments|team): زيارة جارية بعدّاد، بداية/نهاية بالموقع، صور، دفعات نقد/تحويل/شيكات (mobile_payment)، وفريق المشرف (visits_report)
   ask.js            «اسأل السمو» (route ask، بالتجميع بمستويين: مجمّع/جدول محوري/قائمة): سؤال بالعربي → parseQuestion() (فترة، تجميع، أعلى N، «للمندوب/للعميل فلان»، قارن بالشهر الماضي) → ask_sales
   docnav.js         شريط المستند الموحّد (جديد/الأول/السابق/التالي/الأخير/تعديل/حذف/تجميد): القائمة بتعمل setNavList(key, rows) والمحرر attachDocNav(m, row, {...})
+  follow.js         حالات المتابعة (route doc-statuses?k=…) + attachFollow(root, table, row, kind, screen) بمحررات الفواتير/الطلبات/السندات/سندات المخزون + followMap()/followBadge() للقوائم
   profile.js        ملف العميل/المورد الإحصائي (route party-profile?id=…): بطاقات الأرقام، رسم 12 شهر، أكثر الأصناف، طباعة
   leaves.js         الإجازات (route leaves?t=requests|balances|types) + leaveForm() + myLeavesCard() ببطاقة «راتبي»
   landed.js         الكلفة المحمّلة (route landed-costs): فواتير شراء + مصاريف (مورد أو حساب) + معاينة التوزيع، ترحيل/إلغاء/حذف/طباعة
@@ -107,7 +108,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -131,7 +132,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.41.0)
+## اللي انبنى (لحد النسخة 4.42.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -224,6 +225,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **الإجازات (المرحلة 57):** `leave_types` (code، name، paid، annual_days 0 = بدون حد؛ كتابة بـ payroll edit؛ `ensure_leave_types(company)` بيعمل سنوية 14/مرضية 14/بدون راتب/طارئة 3) و`leave_requests` (req_no، الموظف، النوع، من/إلى، days بدون الجمعة `leave_workdays`، half_day، pending/approved/rejected/cancelled؛ كتابة من الدوال بس). `leave_request(jsonb)` (الموظف لحاله عن طريق `my_employee`، أو payroll add لغيره؛ ما في تداخل، والطلب جوّا سنة وحدة)، `leave_decide(id, approve, note)` (payroll post، مش طلبه إلا المدير، بيفحص الرصيد السنوي إلا المدير، والبدون راتب ممنوعة إذا مسيّر الشهر مرحّل)، `leave_cancel(id)` (صاحبها وهي بالانتظار، أو المشرف)، `leave_balance(company, employee, year)`. `leave_days_in(...)` داخلية. trigger `pa_payroll_leave` (قبل `payroll_lines_guard`) بيخصم البدون راتب على other_ded: (الأساسي + العلاوات) ÷ 30 × الأيام. `attendance_summary` صار فيه `leave_days` والإجازة ما بتنحسب غياب (المرحلة 47 بتعمل drop قبل ما تعيد التعريف). الواجهة: شاشة «🌴 الإجازات» بالموظفين والرواتب، وبطاقة «إجازاتي» بـ«راتبي». backup_tables: بعد attendance.
 - **المناوبات والإضافي والجزاءات (المرحلة 58):** `work_shifts` (start/end، end ≤ start = ليلية لتاني يوم، grace_min، days_off int[] 0 أحد…6 سبت؛ كتابة بـ payroll edit) و`employees.shift_id` (`ad_employee_shift_check`؛ الفاضي = الدوام العام). `company_settings.attendance` صار فيه hours_per_day (8)، ot_rate (1.25)، ot_offday_rate (1.5)، ot_min (30)، late_mult (1)، absent_mult (1)، apply_payroll (false) — الحفظ من الواجهة بيحافظ على باقي المفاتيح. `att_calc(company, from, to, employee)` داخلية: التأخير بعد البداية + السماح، الخروج المبكر، الإضافي بعد النهاية (≥ ot_min)، شغل يوم العطلة كله إضافي عطلة، الغياب = أيام العمل (حسب المناوبة وتاريخ التعيين/الانتهاء، لحد اليوم) − الحضور − الإجازات، والمبالغ: الشهري (أساسي + علاوات) ÷ 30 ÷ ساعات اليوم. `attendance_summary` = غلاف بصلاحية payroll view (شكل النتيجة اتغيّر: drop بالمراحل 47 و57 و58). trigger `pa_payroll_zatt` (بعد `pa_payroll_leave` وقبل `payroll_lines_guard`): إذا apply_payroll والموظف إله حضور، بيعبّي overtime (إذا صفر) وبيزيد other_ded بالجزاءات (لحد الراتب). الواجهة: تبويب «🔄 المناوبات» و«⚙️ الدوام والجزاءات»، وأعمدة الإضافي والجزاءات بالملخص، و«المناوبة / الدوام» ببطاقة الموظف. backup_tables: work_shifts قبل employees.
 - **ملف العميل الإحصائي (المرحلة 59):** `party_profile(company, party)` → jsonb (قراءة بس، بصلاحية view على `party_screen(type)`؛ موظف الفرع: الفواتير والدفعات من فرعه بس والرصيد null): الرصيد التراكمي، سقف الائتمان، المفتوح والمتأخر وفوق 30 يوم وأقدم فاتورة (من `party_open_invoices`، بس إذا إله صلاحية السندات/الفواتير)، المبيعات/المشتريات هالسنة والسابقة وكل الوقت (صافي قبل الضريبة)، المرتجعات، عدد ومتوسط الفاتورة، أول وآخر فاتورة، آخر دفعة ومحصّل السنة، متوسط أيام السداد (من invoice_allocations)، 12 شهر (فواتير ودفعات)، أكثر 10 أصناف، الشيكات بالمحفظة والراجعة، الطلبات المفتوحة، زيارات 90 يوم، الرسائل. الواجهة: «📊 ملف العميل/المورد الإحصائي» بالقائمة، وزر 📊 بقائمة العملاء والموردين.
+- **حالات المتابعة (المرحلة 60):** `doc_statuses` (kind: sale/sale_return/purchase/purchase_return/sales_order/purchase_order/receipt/payment/journal/stock، code، name، color hex، sort، is_final، is_active؛ القراءة has_company والكتابة بـ doc_types edit). `doc_follow` (doc_id = id المستند، doc_table، screen، kind، status_id، note) و`doc_follow_log`؛ القراءة بـ view على `screen`، والكتابة بس من `set_doc_follow(table, id, status, note)` (edit أو post على شاشة المستند، فرع المستخدم، الحالة لنفس الـ kind) — ما بتلمس المستند فبتنفع للمرحّل. `doc_follow_target` داخلية. حذف المستند بيمسحها (`zw_doc_follow_cleanup`). الواجهة: «إعداد ← حالات المتابعة»، شريط «📌 المتابعة» تحت شريط التتبع بكل محرر (بيبيّن بس إذا في حالات للنوع)، وبقائمة الفواتير شارة الحالة وفلتر. backup_tables: doc_statuses بعد doc_types، وdoc_follow/log قبل attachments.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36 (آخر قيد هلأ `lookups_kind_chk4` بالمرحلة 54)، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

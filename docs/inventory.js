@@ -1,3 +1,4 @@
+import { attachFollow } from './follow.js';
 // =====================================================================
 //  السمو ERP — المخزون والجرد
 // =====================================================================
@@ -174,7 +175,7 @@ async function docEditor(type, doc, whs, ctx) {
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '900px';
   const tb = m.el.querySelector('#sdl tbody');
-  if (doc) attachAudit(m.el, doc);
+  if (doc) { attachAudit(m.el, doc); attachFollow(m.el, 'stock_docs', doc, 'stock', 'inventory'); }
   attachDocNav(m, doc, { key: 'sd:' + type, open: (r) => docEditor(type, r, whs, ctx), onNew: can('inventory', 'add') ? () => docEditor(type, null, whs, ctx) : null, table: 'stock_docs', canFreeze: can('inventory', 'edit'), editable: !readOnly });
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>

@@ -14,6 +14,7 @@ import { recurringDialog } from './extras.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { deptField, deptValue } from './departments.js';
 import { loadLookups, pmOptions } from './lookups.js';
+import { attachFollow } from './follow.js';
 
 export const CATEGORIES = { assets: 'الموجودات', liabilities: 'المطلوبات', equity: 'حقوق الملكية', revenue: 'الإيرادات', expenses: 'المصاريف' };
 export const NATURES = { debit: 'مدين', credit: 'دائن', both: 'مدين ودائن' };
@@ -381,7 +382,7 @@ async function voucherEditor(type, entry, ctx) {
     const op = pm && m.el.querySelector(`[name=cash_account_id] option[data-pm="${pm.id}"]`); if (op) op.selected = true;
   }
   m.el.querySelector('.modal').style.maxWidth = ccs.length || curs.length ? '1320px' : '1000px';
-  if (entry) attachAudit(m.el, entry);
+  if (entry) { attachAudit(m.el, entry); attachFollow(m.el, 'journal_entries', entry, type, T.screen); }
   attachDocNav(m, entry, { key: 'je:' + type, open: (r) => voucherEditor(type, r, ctx), onNew: can(T.screen, 'add') ? () => voucherEditor(type, null, ctx) : null, table: 'journal_entries', canFreeze: can(T.screen, 'edit'), editable: !readOnly });
   const tb = m.el.querySelector('#lines tbody');
 

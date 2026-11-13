@@ -16,6 +16,7 @@ import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js'
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords, loadPrintSettings } from './print.js';
 import { msgTemplates, fillTpl, sendWhatsApp } from './messages.js';
+import { attachFollow, followMap, followBadge, loadStatuses } from './follow.js';
 import { openAttachments } from './attach.js';
 
 export const INV = {
@@ -299,6 +300,7 @@ function invoiceList(group) {
       loadParties()]);
     if (error) throw error;
     const pName = Object.fromEntries(parties.map(p => [p.id, p.name]));
+    const fmap = await followMap(data.map(i => i.id)), fsts = (await loadStatuses()).filter(s => types.includes(s.kind));
     const preT = new URLSearchParams(location.hash.split('?')[1] || '').get('t');
     const only = types.includes(preT) ? preT : '';
     const posted = data.filter(i => i.status === 'posted');
@@ -307,6 +309,7 @@ function invoiceList(group) {
     v.innerHTML = `<div class="page-head"><h2>${heading}</h2><span class="badge brand">${data.length}</span><div class="spacer"></div>
         <select class="search" id="ft" style="min-width:140px"><option value="">كل الأنواع</option>${types.map(t => `<option value="${t}" ${t === only ? 'selected' : ''}>${INV[t].label}</option>`).join('')}</select>
         <select class="search" id="fs" style="min-width:120px"><option value="">كل الحالات</option><option value="draft">مسودة</option><option value="posted">مرحّلة</option><option value="cancelled">ملغاة</option></select>
+        ${fsts.length ? `<select class="search" id="ff" style="min-width:130px"><option value="">كل المتابعات</option>${fsts.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}<option value="-">بدون متابعة</option></select>` : ''}
         <input class="search" id="q" placeholder="بحث بالرقم أو الاسم أو المرجع…">
         ${can(screen, 'add') ? types.filter(t => !only || t === only).map(t => `<button class="btn ${t.endsWith('return') ? '' : 'primary'}" data-new="${t}">➕ ${INV[t].label}</button>`).join('') : ''}</div>
       <div class="grid cols-3" style="margin-bottom:14px">
@@ -315,15 +318,15 @@ function invoiceList(group) {
         <div class="card stat"><span class="k">الصافي</span><span class="v" dir="ltr">${fmtNum(sum(types[0]) - sum(types[1]))}</span></div></div>
       <div class="card table-wrap"><table class="t"><thead><tr><th>النوع</th><th>الرقم</th><th>التاريخ</th><th>${INV[types[0]].partyLabel}</th><th>الدفع</th><th>المرجع</th><th style="text-align:left">قبل الضريبة</th><th style="text-align:left">الضريبة</th><th style="text-align:left">الإجمالي</th><th>الحالة</th></tr></thead><tbody id="rows"></tbody></table></div>`;
     const draw = () => {
-      const q = v.querySelector('#q').value.trim().toLowerCase(), ft = v.querySelector('#ft').value, fs = v.querySelector('#fs').value;
-      v.querySelector('#rows').innerHTML = data.filter(i => (!ft || i.inv_type === ft) && (!fs || i.status === fs) && (!q || [docNo(i), String(i.inv_no), pName[i.party_id], i.party_name, i.reference].some(x => (x || '').toLowerCase().includes(q))))
+      const q = v.querySelector('#q').value.trim().toLowerCase(), ft = v.querySelector('#ft').value, fs = v.querySelector('#fs').value, ff = v.querySelector('#ff')?.value || '';
+      v.querySelector('#rows').innerHTML = data.filter(i => (!ft || i.inv_type === ft) && (!fs || i.status === fs) && (!ff || (ff === '-' ? !fmap[i.id] : fmap[i.id]?.id === ff)) && (!q || [docNo(i), String(i.inv_no), pName[i.party_id], i.party_name, i.reference].some(x => (x || '').toLowerCase().includes(q))))
         .map(i => `<tr class="click" data-open="${i.id}"><td>${i.inv_type.endsWith('return') ? `<span class="badge warn">${INV[i.inv_type].label}</span>` : INV[i.inv_type].label}</td><td><b dir="ltr">${esc(docNo(i))}</b></td><td>${fmtDate(i.inv_date)}</td>
           <td>${esc(pName[i.party_id] || i.party_name || '')}</td><td>${i.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td><td>${esc(i.reference || '')}</td>
           <td dir="ltr" style="text-align:left">${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.subtotal)}</td><td dir="ltr" style="text-align:left">${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.tax_total)}</td>
-          <td dir="ltr" style="text-align:left"><b>${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.total)}</b></td><td>${badge(i.status)}${i.stock_posted ? ' <span class="badge ok" title="مرحّلة للمخزون">📦</span>' : ''}</td></tr>`).join('')
+          <td dir="ltr" style="text-align:left"><b>${i.status === 'draft' && !i.stock_posted ? '—' : fmtNum(i.total)}</b></td><td>${badge(i.status)}${i.stock_posted ? ' <span class="badge ok" title="مرحّلة للمخزون">📦</span>' : ''} ${followBadge(fmap[i.id])}</td></tr>`).join('')
         || '<tr><td colspan="10" class="empty">ما في فواتير بهالسنة المالية</td></tr>';
     };
-    draw(); ['#q', '#ft', '#fs'].forEach(s => v.querySelector(s).addEventListener('input', draw));
+    draw(); ['#q', '#ft', '#fs', '#ff'].forEach(s => v.querySelector(s)?.addEventListener('input', draw));
     v.querySelectorAll('[data-new]').forEach(b => b.onclick = () => invoiceEditor(b.dataset.new, null, ctx));
     v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { setNavList('inv', [...v.querySelectorAll('#rows [data-open]')].map(tr => data.find(x => x.id === tr.dataset.open)).filter(Boolean)); const i = data.find(x => x.id === r.dataset.open); invoiceEditor(i.inv_type, i, ctx); } };
   };
@@ -397,7 +400,7 @@ async function invoiceEditor(type, inv, ctx) {
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '1100px';
   attachDocNav(m, inv, { key: 'inv', open: (r) => invoiceEditor(r.inv_type, r, ctx), onNew: can(T.screen, 'add') ? () => invoiceEditor(type, null, ctx) : null, table: 'invoices', canFreeze: can(T.screen, 'edit'), editable: !readOnly });
-  if (inv) attachAudit(m.el, inv);
+  if (inv) { attachAudit(m.el, inv); attachFollow(m.el, 'invoices', inv, inv.inv_type, T.screen); }
   const f = m.el.querySelector('#inv-form'), tb = m.el.querySelector('#il tbody');
   const incl = () => f.prices_include_tax.checked;
   const calc = (r) => { const g = r3(num(r.qty) * num(r.price) - num(r.disc)); const rate = num(r.rate);

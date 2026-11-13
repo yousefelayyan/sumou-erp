@@ -1,3 +1,4 @@
+import { attachFollow } from './follow.js';
 // =====================================================================
 //  السمو ERP — طلبات المبيعات والتزويد، العروض الترويجية، بطاقات الولاء، الحقول الإضافية
 // =====================================================================
@@ -115,7 +116,7 @@ async function orderEditor(type, ord, ctx) {
     if (it) { r.item = itemLabel(it); r.desc = r.desc || it.name; r.price = num(type === 'sales_order' ? it.sale_price : it.purchase_price) || r.price; r.rate = num(it.tax_rate); draw(); } });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
   m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
-  if (ord) attachAudit(m.el, ord);
+  if (ord) { attachAudit(m.el, ord); attachFollow(m.el, 'orders', ord, type, O.screen); }
   attachDocNav(m, ord, { key: 'ord:' + type, open: (r) => orderEditor(type, r, ctx), onNew: can(O.screen, 'add') ? () => orderEditor(type, null, ctx) : null, table: 'orders', canFreeze: can(O.screen, 'edit'), editable: !ro });
   m.el.querySelector('[data-print]')?.addEventListener('click', () => printOrder(type, ord, lines, pById[ord.party_id], items));
   const collect = () => {
