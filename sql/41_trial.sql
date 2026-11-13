@@ -213,11 +213,12 @@ begin
   select * into t from public.tenants where id = p_tenant for update;
   if t.id is null or not t.is_trial or t.is_default then raise exception 'بس حسابات التجربة بتنحذف من هون'; end if;
   if exists (select 1 from public.tenant_payments where tenant_id = t.id) then raise exception 'هالمشترك إله دفعات، ما بينحذف'; end if;
-  -- حذف كامل بدون triggers (بيانات تجربة): كل جدول لحاله بالترتيب العكسي، وبعدين أي جدول فيه company_id
-  begin
-    perform set_config('session_replication_role', 'replica', true);
-  exception when others then raise exception 'الحذف الكامل مش متاح على السيرفر';
-  end;
+  -- حذف كامل لبيانات التجربة: بنوقف triggers المستخدم على جداول الشركات جوّا هالعملية بس (بترجع بالآخر، وبأي خطأ بيرجع كل شي)،
+  -- وبنحذف كل جدول لحاله بالترتيب العكسي، وبعدين أي جدول فيه company_id. قيود المفاتيح (cascade) بتضل شغّالة.
+  for r in select distinct c.relname from pg_trigger g join pg_class c on c.oid = g.tgrelid join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and not g.tgisinternal loop
+    execute format('alter table public.%I disable trigger user', r.relname);
+  end loop;
   for cid in select id from public.companies where tenant_id = t.id loop
     for r in select * from public.backup_tables() where tbl <> 'companies' order by ord desc loop
       execute format('delete from public.%I where %s', r.tbl, r.cond) using cid;
@@ -228,7 +229,10 @@ begin
     end loop;
     delete from public.companies where id = cid;
   end loop;
-  perform set_config('session_replication_role', 'origin', true);
+  for r in select distinct c.relname from pg_trigger g join pg_class c on c.oid = g.tgrelid join pg_namespace n on n.oid = c.relnamespace
+            where n.nspname = 'public' and not g.tgisinternal loop
+    execute format('alter table public.%I enable trigger user', r.relname);
+  end loop;
   delete from public.user_companies where user_id in (select id from public.profiles where tenant_id = t.id);
   delete from public.user_groups where tenant_id = t.id;
   delete from public.activity_log where tenant_id = t.id;
