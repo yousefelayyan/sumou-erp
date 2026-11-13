@@ -39,10 +39,11 @@ export const deptName = (id) => { const d = S._depts?.rows?.find(x => x.id === i
 // ---------------------------------------------------------------------
 async function viewDepartments(v) {
   if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
-  const [rows, , whR, ccR] = await Promise.all([loadDepartments(true), loadNumbering?.(),
+  const [rows, , whR, ccR, acR] = await Promise.all([loadDepartments(true), loadNumbering?.(),
     sb.from('warehouses').select('id,code,name').eq('company_id', S.company.id).order('code'),
-    sb.from('cost_centers').select('id,code,name').eq('company_id', S.company.id).order('code')]);
-  const whs = whR.data || [], ccs = ccR.data || [];
+    sb.from('cost_centers').select('id,code,name').eq('company_id', S.company.id).order('code'),
+    sb.from('accounts').select('id,code,name,account_type').eq('company_id', S.company.id).eq('is_group', false).in('account_type', ['cash', 'bank']).order('code')]);
+  const whs = whR.data || [], ccs = ccR.data || [], cash = acR.data || [];
   const byId = Object.fromEntries(rows.map(d => [d.id, d]));
   let sel = rows.find(d => d.id === S._deptSel) || rows[0] || null;
   let editing = null;   // null = عرض، {} = جديد، row = تعديل
@@ -72,7 +73,7 @@ async function viewDepartments(v) {
         <div class="field"><label>&nbsp;</label><label class="check"><input type="checkbox" name="inactive" ${d.is_active === false ? 'checked' : ''} ${ro ? 'disabled' : ''}> غير مفعّل</label></div>
       </div>
       <div class="tabs">
-        <div class="tab active" data-tab="g">عام</div><div class="tab" data-tab="a">العنوان</div><div class="tab" data-tab="s">المخزون والكلفة</div><div class="tab" data-tab="n">ملاحظات</div>
+        <div class="tab active" data-tab="g">عام</div><div class="tab" data-tab="a">العنوان</div><div class="tab" data-tab="s">المخزون والكلفة</div><div class="tab" data-tab="p">🛒 كاشير الفرع</div><div class="tab" data-tab="n">ملاحظات</div>
       </div>
       <div class="tab-panel active" data-tab="g"><div class="grid cols-3">
         <div class="field"><label>اسم الشركة</label><div class="ro-val">${esc(S.company.name)}</div></div>
@@ -87,6 +88,14 @@ async function viewDepartments(v) {
         <div class="field"><label>المستودع الافتراضي</label>${ro ? `<div class="ro-val">${show(whs.find(w => w.id === d.warehouse_id)?.name)}</div>` : `<select name="warehouse_id"><option value="">—</option>${whs.map(w => `<option value="${w.id}" ${w.id === d.warehouse_id ? 'selected' : ''}>${esc(w.code)} — ${esc(w.name)}</option>`).join('')}</select>`}</div>
         <div class="field"><label>مركز الكلفة</label>${ro ? `<div class="ro-val">${show(ccs.find(c => c.id === d.cost_center_id)?.name)}</div>` : `<select name="cost_center_id"><option value="">—</option>${ccs.map(c => `<option value="${c.id}" ${c.id === d.cost_center_id ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select>`}</div>
       </div></div>
+      <div class="tab-panel" data-tab="p">${(() => { const P = d.pos || {}; const opt = (list, sel) => `<option value="">— إعداد الشركة —</option>${list.map(x => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(x.code)} — ${esc(x.name)}</option>`).join('')}`;
+        return `<p class="muted" style="font-size:12px;margin-top:0">الكاشير اللي دائرته الافتراضية هالفرع بيبيع من مستودعه وبيقبض على صندوقه، ووصله بيطلع بترويسته. الفاضي بياخذ إعداد نقطة البيع العام.</p>
+        <div class="grid cols-3">
+          <div class="field"><label>مستودع البيع</label><select name="pos_warehouse_id" ${ro ? 'disabled' : ''}>${opt(whs, P.warehouse_id)}</select></div>
+          <div class="field"><label>صندوق الكاش</label><select name="pos_cash_account_id" ${ro ? 'disabled' : ''}>${opt(cash, P.cash_account_id)}</select></div>
+          <div class="field"><label>حساب البطاقة</label><select name="pos_card_account_id" ${ro ? 'disabled' : ''}>${opt(cash, P.card_account_id)}</select></div></div>
+        <div class="grid cols-2"><div class="field"><label>رأس الوصل</label><textarea name="pos_header" rows="2" ${ro ? 'disabled' : ''}>${esc(P.header || '')}</textarea></div>
+          <div class="field"><label>ذيل الوصل</label><textarea name="pos_footer" rows="2" ${ro ? 'disabled' : ''}>${esc(P.footer || '')}</textarea></div></div>`; })()}</div>
       <div class="tab-panel" data-tab="n"><div class="field">${ro ? `<div class="ro-val" style="min-height:80px;white-space:pre-wrap">${show(d.notes)}</div>` : `<textarea name="notes" rows="5">${val(d.notes)}</textarea>`}</div></div>
     </form>`;
   }
@@ -132,7 +141,8 @@ async function viewDepartments(v) {
       const rec = { code: (d.code || '').trim(), name: (d.name || '').trim(), name2: d.name2 || null, kind: d.kind, parent_id: d.parent_id || null,
         is_active: !d.inactive, sales_tax_no: d.sales_tax_no || null, income_tax_no: d.income_tax_no || null, national_no: d.national_no || null,
         currency: d.currency || null, city: d.city || null, address: d.address || null, phone: d.phone || null, mobile: d.mobile || null, email: d.email || null,
-        warehouse_id: d.warehouse_id || null, cost_center_id: d.cost_center_id || null, notes: d.notes || null };
+        warehouse_id: d.warehouse_id || null, cost_center_id: d.cost_center_id || null, notes: d.notes || null,
+        pos: Object.fromEntries([['warehouse_id', d.pos_warehouse_id], ['cash_account_id', d.pos_cash_account_id], ['card_account_id', d.pos_card_account_id], ['header', (d.pos_header || '').trim()], ['footer', (d.pos_footer || '').trim()]].filter(([, x]) => x)) };
       if (!rec.code) return toast('اكتب رمز الدائرة', 'err');
       if (!rec.name) return toast('اكتب وصف الدائرة', 'err');
       e.target.disabled = true;

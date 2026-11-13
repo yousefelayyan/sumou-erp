@@ -2,7 +2,7 @@
 //  السمو ERP — المرحلة 3: التقارير المالية
 // =====================================================================
 import { docNo } from './numbering.js';
-import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, can } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, toast, arError, can, isBranchOnly } from './core.js';
 import { loadAccounts, accLabel, CATEGORIES, ENTRY_TYPES, downloadCSV } from './finance.js';
 import { printDoc } from './print.js';
 
@@ -17,8 +17,26 @@ function guard(v) {
   return true;
 }
 
-function rangeBar(extra = '') {
+// الفروع (الدوائر): كل الشركة، أو دائرة رئيسية بفروعها، أو فرع، مع استثناء فروع
+let DEPTS = [];
+document.addEventListener('change', (e) => { if (e.target.matches?.('[data-ex]')) { const n = document.querySelectorAll('[data-ex]:checked').length; const sm = document.getElementById('ex-sum'); if (sm) sm.textContent = n ? `مستثنى ${n}` : 'بدون استثناء'; } });
+async function prepDepts() {
+  if (!S.company) return;
+  DEPTS = ((await sb.from('departments').select('id,code,name,kind,parent_id,is_active').eq('company_id', S.company.id).order('code')).data || []);
+  if (isBranchOnly()) { const mine = S.memberships.find(x => x.company_id === S.company.id)?.department_id; DEPTS = mine ? DEPTS.filter(d => subtree(mine).includes(d.id)) : []; }
+}
+const subtree = (id) => { const out = [id]; for (let i = 0; i < out.length; i++) DEPTS.filter(d => d.parent_id === out[i]).forEach(d => out.push(d.id)); return out; };
+function deptBar() {
+  if (!DEPTS.length) return '';
+  const subs = DEPTS.filter(d => d.kind === 'sub');
+  return `<div class="field"><label>الدائرة / الفرع</label><select id="f-dept"><option value="">كل الشركة (مجمّع)</option>
+      ${DEPTS.map(d => `<option value="${d.id}">${d.kind === 'main' ? '🏢 ' : '　└ '}${esc(d.code)} — ${esc(d.name)}${d.kind === 'main' ? ' (مع فروعها)' : ''}</option>`).join('')}</select></div>
+    ${subs.length ? `<div class="field"><label>استثناء فروع</label><details class="dd"><summary id="ex-sum">بدون استثناء</summary><div style="max-height:220px;overflow:auto;padding:6px">
+      ${subs.map(d => `<label class="check" style="margin:2px 0"><input type="checkbox" data-ex="${d.id}"> ${esc(d.code)} — ${esc(d.name)}</label>`).join('')}</div></details></div>` : ''}`;
+}
+function rangeBar(extra = '', withDept = false) {
   const p = hashParams();
+  extra = extra + (withDept ? deptBar() : '');
   return `<div class="card no-print filters">
     <div class="field"><label>من تاريخ</label><input type="date" id="f-from" value="${esc(p.get('from') || S.fy.start_date)}" min="${S.fy.start_date}" max="${S.fy.end_date}"></div>
     <div class="field"><label>إلى تاريخ</label><input type="date" id="f-to" value="${esc(p.get('to') || S.fy.end_date)}" min="${S.fy.start_date}" max="${S.fy.end_date}"></div>
@@ -28,8 +46,15 @@ function rangeBar(extra = '') {
       <button class="btn" id="f-print">🖨️ طباعة</button><button class="btn" id="f-csv">⬇️ Excel</button></div>
   </div>`;
 }
-const getRange = (v) => ({ from: v.querySelector('#f-from').value || S.fy.start_date, to: v.querySelector('#f-to').value || S.fy.end_date });
-const subtitleRange = (r) => `من ${fmtDate(r.from)} إلى ${fmtDate(r.to)} — ${fyLabel()}`;
+const getRange = (v) => {
+  const r = { from: v.querySelector('#f-from').value || S.fy.start_date, to: v.querySelector('#f-to').value || S.fy.end_date, depts: null, exclude: null, dlabel: '' };
+  const sel = v.querySelector('#f-dept')?.value;
+  const ex = [...v.querySelectorAll('[data-ex]')].filter(x => x.checked).map(x => x.dataset.ex);
+  if (sel) { r.depts = subtree(sel).filter(id => !ex.includes(id)); const d = DEPTS.find(x => x.id === sel); r.dlabel = d ? `${d.code} — ${d.name}` : ''; }
+  if (ex.length) { r.exclude = ex; r.dlabel = (r.dlabel || 'كل الشركة') + ' — باستثناء: ' + ex.map(id => DEPTS.find(x => x.id === id)?.name || '').join('، '); }
+  return r;
+};
+const subtitleRange = (r) => `من ${fmtDate(r.from)} إلى ${fmtDate(r.to)} — ${fyLabel()}${r.dlabel ? ' — ' + r.dlabel : ''}`;
 
 function wireOutput(v, getPrint, getCSV) {
   const pb = v.querySelector('#f-print'), cb = v.querySelector('#f-csv');
@@ -41,9 +66,9 @@ function wireOutput(v, getPrint, getCSV) {
 // ---------------------------------------------------------------------
 //  ميزان المراجعة (أساس قائمة الدخل والميزانية)
 // ---------------------------------------------------------------------
-async function trialData(from, to) {
+async function trialData(from, to, r = {}) {
   const [accs, res] = await Promise.all([loadAccounts(),
-    sb.rpc('rep_trial_balance', { p_company: S.company.id, p_fy: S.fy.id, p_from: from, p_to: to })]);
+    sb.rpc('rep_trial_balance', { p_company: S.company.id, p_fy: S.fy.id, p_from: from, p_to: to, p_depts: r.depts || null, p_exclude: r.exclude || null })]);
   if (res.error) throw res.error;
   const raw = Object.fromEntries((res.data || []).map(r => [r.account_id, r]));
   const kids = {}; accs.forEach(a => (kids[a.parent_id || 'root'] ||= []).push(a));
@@ -62,16 +87,17 @@ async function trialData(from, to) {
 
 async function viewTrial(v) {
   if (!guard(v)) return;
+  await prepDepts();
   v.innerHTML = `<div class="page-head"><h2>⚖️ ميزان المراجعة</h2></div>
     ${rangeBar(`<div class="field"><label>المستوى</label><select id="f-lvl"><option value="99">كل الحسابات الفرعية</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
-      <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" id="f-zero" checked> إخفاء الأصفار</label></div>`)}
+      <div class="field" style="justify-content:flex-end"><label class="check" style="margin:0 0 10px"><input type="checkbox" id="f-zero" checked> إخفاء الأصفار</label></div>`, true)}
     <div id="out"></div>`;
   let last = null;
   const run = async () => {
     const r = getRange(v), lvl = +v.querySelector('#f-lvl').value, hideZero = v.querySelector('#f-zero').checked;
     const out = v.querySelector('#out'); out.innerHTML = '<div class="empty">جاري التحميل…</div>';
     try {
-      const { kids, T } = await trialData(r.from, r.to);
+      const { kids, T } = await trialData(r.from, r.to, r);
       const rows = [];
       const isZero = (t) => !t.od && !t.oc && !t.pd && !t.pc;
       const walk = (list) => list.forEach(a => {
@@ -203,14 +229,15 @@ function statementRows(kids, T, roots, sign, maxLvl, valueOf) {
 
 async function viewIncome(v) {
   if (!guard(v)) return;
+  await prepDepts();
   v.innerHTML = `<div class="page-head"><h2>📈 قائمة الدخل</h2></div>
-    ${rangeBar(`<div class="field"><label>التفصيل لغاية المستوى</label><select id="f-lvl"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="9">الكل</option></select></div>`)}<div id="out"></div>`;
+    ${rangeBar(`<div class="field"><label>التفصيل لغاية المستوى</label><select id="f-lvl"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="9">الكل</option></select></div>`, true)}<div id="out"></div>`;
   let last = null;
   const run = async () => {
     const r = getRange(v), lvl = +v.querySelector('#f-lvl').value, out = v.querySelector('#out');
     out.innerHTML = '<div class="empty">جاري التحميل…</div>';
     try {
-      const { kids, T } = await trialData(r.from, r.to);
+      const { kids, T } = await trialData(r.from, r.to, r);
       const period = (t) => t.pd - t.pc;    // حركة الفترة بس (الإيرادات والمصاريف)
       const rev = (kids.root || []).filter(a => a.category === 'revenue'), exp = (kids.root || []).filter(a => a.category === 'expenses');
       const tRev = -rev.reduce((s, a) => s + period(T[a.id]), 0), tExp = exp.reduce((s, a) => s + period(T[a.id]), 0), net = tRev - tExp;
@@ -236,15 +263,16 @@ async function viewIncome(v) {
 
 async function viewBalanceSheet(v) {
   if (!guard(v)) return;
+  await prepDepts();
   v.innerHTML = `<div class="page-head"><h2>🏦 الميزانية العمومية (قائمة المركز المالي)</h2></div>
-    ${rangeBar(`<div class="field"><label>التفصيل لغاية المستوى</label><select id="f-lvl"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="9">الكل</option></select></div>`)}<div id="out"></div>`;
+    ${rangeBar(`<div class="field"><label>التفصيل لغاية المستوى</label><select id="f-lvl"><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="9">الكل</option></select></div>`, true)}<div id="out"></div>`;
   v.querySelector('#f-from').closest('.field').style.display = 'none';
   let last = null;
   const run = async () => {
     const r = { from: S.fy.start_date, to: getRange(v).to }, lvl = +v.querySelector('#f-lvl').value, out = v.querySelector('#out');
     out.innerHTML = '<div class="empty">جاري التحميل…</div>';
     try {
-      const { kids, T } = await trialData(r.from, r.to);
+      const { kids, T } = await trialData(r.from, r.to, r);
       const close = (t) => t.close;
       const roots = kids.root || [];
       const by = (c) => roots.filter(a => a.category === c);
@@ -272,7 +300,65 @@ async function viewBalanceSheet(v) {
   run();
 }
 
+// ---------------------------------------------------------------------
+//  ماذا لو؟ دراسة أثر وقف/تخفيض مبيعات معيّنة على الربح (بدون ما ينلمس أي مستند)
+// ---------------------------------------------------------------------
+async function viewWhatIf(v) {
+  if (!guard(v)) return;
+  await prepDepts();
+  const DIMS = { category: 'فئة الصنف', item: 'الصنف', party: 'العميل', dept: 'الفرع' };
+  let dim = 'category', rows = [], names = {}, adj = {}, base = null;
+  v.innerHTML = `<div class="page-head"><h2>🔮 ماذا لو؟ دراسة الأرباح</h2></div>
+    <p class="muted" style="margin-top:-6px">اختار مبيعات توقّفها أو تنقّصها بنسبة، وشوف شو بيصير بالربح. دراسة بس — ما بتغيّر ولا مستند.</p>
+    ${rangeBar('', true)}<div id="out"></div>`;
+  const out = v.querySelector('#out');
+  const key = (r) => dim === 'category' ? (r.category_id || '-') : dim === 'item' ? (r.item_id || '-') : dim === 'party' ? (r.party_id || 'cash:' + r.party_name) : (r.department_id || '-');
+  const draw = () => {
+    const g = {};
+    rows.forEach(r => { const k = key(r); const x = g[k] ||= { k, label: dim === 'party' ? (r.party_name || '') : (names[dim]?.[k] || (k === '-' ? 'بدون' : '')), net: 0, cost: 0, qty: 0 }; x.net += num(r.net); x.cost += num(r.cost); x.qty += num(r.qty); });
+    const list = Object.values(g).sort((a, b) => b.net - a.net);
+    const tNet = list.reduce((s, x) => s + x.net, 0), tCost = list.reduce((s, x) => s + x.cost, 0), gp = tNet - tCost;
+    const lost = list.reduce((s, x) => s + (adj[x.k] || 0) / 100 * x.net, 0), lostGp = list.reduce((s, x) => s + (adj[x.k] || 0) / 100 * (x.net - x.cost), 0);
+    const net0 = base?.net ?? null, net1 = net0 == null ? null : net0 - lostGp;
+    const card = (k, val, col) => `<div class="card stat"><span class="k">${k}</span><span class="v" dir="ltr" ${col ? `style="color:${col}"` : ''}>${val}</span></div>`;
+    out.innerHTML = `<div class="tabs" id="dm" style="margin:10px 0">${Object.entries(DIMS).filter(([k]) => k !== 'dept' || DEPTS.length).map(([k, l]) => `<div class="tab ${k === dim ? 'active' : ''}" data-d="${k}">حسب ${l}</div>`).join('')}</div>
+      <div class="grid cols-4" style="margin-bottom:12px">
+        ${card('المبيعات (الصافي)', fmtNum(tNet))}${card('مجمل الربح الحالي', fmtNum(gp))}
+        ${card('مجمل الربح بعد التغيير', fmtNum(gp - lostGp), gp - lostGp < gp ? 'var(--bad)' : null)}
+        ${card('الفرق بالربح', (lostGp > 0 ? '-' : lostGp < 0 ? '+' : '') + fmtNum(Math.abs(lostGp)), lostGp > 0 ? 'var(--bad)' : 'var(--ok)')}</div>
+      ${net0 != null ? `<div class="notice info">صافي الربح الحالي (من قائمة الدخل): <b>${fmtNum(net0)}</b> ← بعد التغيير: <b>${fmtNum(net1)}</b> (${net0 ? fmtNum((net1 - net0) / Math.abs(net0) * 100) : '0'}٪). المبيعات اللي بتروح: <b>${fmtNum(lost)}</b>. الافتراض: كلفة البضاعة المباعة بتروح معها، والمصاريف الثانية بتضل زي ما هي.</div>` : ''}
+      <div style="display:flex;gap:6px;margin:8px 0"><button class="btn sm" id="clr">↺ رجّع الكل</button></div>
+      <div class="card table-wrap"><table class="t rep"><thead><tr><th>${DIMS[dim]}</th><th>الكمية</th><th>المبيعات</th><th>الكلفة</th><th>مجمل الربح</th><th>الهامش</th><th style="min-width:170px">التغيير</th><th>أثره على الربح</th></tr></thead><tbody>
+      ${list.map(x => { const p = adj[x.k] || 0, m = x.net ? (x.net - x.cost) / x.net * 100 : 0;
+        return `<tr ${p ? 'style="background:var(--tint)"' : ''}><td>${esc(x.label)}</td><td class="n">${fmtNum(x.qty)}</td><td class="n">${fmtNum(x.net)}</td><td class="n">${fmtNum(x.cost)}</td><td class="n">${fmtNum(x.net - x.cost)}</td><td class="n" style="color:${m < 0 ? 'var(--bad)' : ''}">${fmtNum(m)}٪</td>
+          <td><div style="display:flex;gap:4px;align-items:center"><button class="btn sm ${p === 100 ? 'danger' : ''}" data-stop="${esc(x.k)}">${p === 100 ? '⛔ موقوف' : 'وقف'}</button><input data-pct="${esc(x.k)}" value="${p && p !== 100 ? p : ''}" placeholder="تنقيص ٪" inputmode="decimal" style="width:80px"></div></td>
+          <td class="n" style="color:${p ? 'var(--bad)' : ''}">${p ? '-' + fmtNum(p / 100 * (x.net - x.cost)) : ''}</td></tr>`; }).join('') || '<tr><td colspan="8" class="empty">ما في مبيعات مرحّلة بالفترة</td></tr>'}</tbody></table></div>`;
+    out.querySelector('#dm').onclick = (e) => { const t = e.target.closest('[data-d]'); if (!t) return; dim = t.dataset.d; adj = {}; draw(); };
+    out.querySelector('#clr').onclick = () => { adj = {}; draw(); };
+    out.querySelectorAll('[data-stop]').forEach(b => b.onclick = () => { const k = b.dataset.stop; adj[k] = adj[k] === 100 ? 0 : 100; draw(); });
+    out.querySelectorAll('[data-pct]').forEach(i => i.onchange = () => { const k = i.dataset.pct; adj[k] = Math.min(100, Math.max(0, num(i.value))); draw(); });
+  };
+  const run = async () => {
+    const r = getRange(v); out.innerHTML = '<div class="empty">جاري التحميل…</div>';
+    const [w, it, ct, tb] = await Promise.all([
+      sb.rpc('whatif_sales', { p_company: S.company.id, p_from: r.from, p_to: r.to }),
+      sb.from('items').select('id,code,name').eq('company_id', S.company.id),
+      sb.from('item_categories').select('id,code,name').eq('company_id', S.company.id),
+      trialData(r.from, r.to, r).catch(() => null)]);
+    if (w.error) return void (out.innerHTML = `<div class="notice">${esc(arError(w.error))}</div>`);
+    rows = (w.data || []).filter(x => (!r.depts || r.depts.includes(x.department_id)) && (!r.exclude || !r.exclude.includes(x.department_id)));
+    names = { item: Object.fromEntries((it.data || []).map(x => [x.id, `${x.code} — ${x.name}`])), category: Object.fromEntries((ct.data || []).map(x => [x.id, x.name])), dept: Object.fromEntries(DEPTS.map(d => [d.id, d.name])) };
+    if (tb) { const { kids, T } = tb; const pr = (t) => t.pd - t.pc; const rv = -(kids.root || []).filter(a => a.category === 'revenue').reduce((s, a) => s + pr(T[a.id]), 0), ex = (kids.root || []).filter(a => a.category === 'expenses').reduce((s, a) => s + pr(T[a.id]), 0); base = { net: rv - ex }; }
+    adj = {}; draw();
+  };
+  v.querySelector('#f-run').onclick = run;
+  wireOutput(v, () => ({ title: 'ماذا لو؟ دراسة الأرباح', html: out.querySelector('table')?.outerHTML || '', opts: { subtitle: subtitleRange(getRange(v)) } }),
+    () => ({ name: 'ماذا-لو.csv', rows: [...out.querySelectorAll('table tr')].map(tr => [...tr.children].slice(0, 6).map(td => td.textContent.trim())) }));
+  run();
+}
+
 export const REPORT_ROUTES = {
+  'whatif': viewWhatIf,
   'rep-trial': viewTrial, 'rep-ledger': viewLedger, 'rep-journal': viewJournalReport,
   'rep-income': viewIncome, 'rep-balance': viewBalanceSheet,
 };

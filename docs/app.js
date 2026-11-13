@@ -4,7 +4,7 @@
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
-import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, canHiddenYears, THEMES, applyTheme, canTheme, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, canHiddenYears, THEMES, applyTheme, canTheme, canBranchReports, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
@@ -289,9 +289,10 @@ const NAV = () => [
     { r: 'ask', i: '💬', l: 'اسأل السمو (تقارير بالكلام)', show: () => S.company && (can('sales_invoices', 'view') || can('reports', 'view')) },
     { r: 'rep-ledger', i: '📄', l: 'كشف حساب', show: () => S.company && can('reports', 'view') },
     { r: 'rep-journal', i: '📚', l: 'اليومية العامة', show: () => S.company && can('reports', 'view') },
-    { r: 'rep-trial', i: '⚖️', l: 'ميزان المراجعة', show: () => S.company && can('reports', 'view') },
-    { r: 'rep-income', i: '📈', l: 'قائمة الدخل', show: () => S.company && can('reports', 'view') },
-    { r: 'rep-balance', i: '🏦', l: 'الميزانية العمومية', show: () => S.company && can('reports', 'view') },
+    { r: 'rep-trial', i: '⚖️', l: 'ميزان المراجعة', show: () => S.company && canBranchReports() },
+    { r: 'rep-income', i: '📈', l: 'قائمة الدخل', show: () => S.company && canBranchReports() },
+    { r: 'rep-balance', i: '🏦', l: 'الميزانية العمومية', show: () => S.company && canBranchReports() },
+    { r: 'whatif', i: '🔮', l: 'ماذا لو؟ (دراسة الأرباح)', show: () => S.company && canBranchReports() },
     { r: 'rep-party', i: '👤', l: 'كشف حساب عميل/مورد', show: () => S.company && can('reports', 'view') },
     { r: 'rep-aging', i: '⏳', l: 'أعمار الذمم', show: () => S.company && can('reports', 'view') },
     { r: 'rep-salestax', i: '🏛️', l: 'إقرار ضريبة المبيعات', show: () => S.company && can('reports', 'view') },
@@ -1094,7 +1095,8 @@ function userEditor(u, links, comps, depts = []) {
       return row(`data-c="${c.id}"`, `${esc(c.name)} <span class="muted">(${esc(c.code)})</span>`, myComps.has(c.id))
         + (ds.length ? `<div class="uc-dept" data-ucd="${c.id}" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:6px 12px 10px 42px;border-bottom:1px solid var(--line);font-size:13px">
           <span class="muted">الدائرة:</span><select data-dep style="max-width:260px"><option value="">— بدون —</option>${ds.map(d => `<option value="${d.id}" ${d.id === l.department_id ? 'selected' : ''}>${esc(d.code)} — ${esc(d.name)}${d.is_active ? '' : ' (غير مفعّل)'}</option>`).join('')}</select>
-          <label class="check" style="margin:0"><input type="checkbox" data-hide ${l.hide_departments ? 'checked' : ''}> إخفاء الدوائر (ما بيغيّر الدائرة بالمستندات)</label></div>` : ''); }).join('') || '<p class="muted" style="padding:10px">ما في شركات</p>'}</div>
+          <label class="check" style="margin:0"><input type="checkbox" data-hide ${l.hide_departments ? 'checked' : ''}> إخفاء الدوائر (ما بيغيّر الدائرة بالمستندات)</label>
+          <label class="check" style="margin:0" title="ما بيشوف ولا بيدخل حركات فروع ثانية، وتقاريره لفرعه بس"><input type="checkbox" data-bo ${l.branch_only ? 'checked' : ''}> 🔒 بيشوف دائرته بس</label></div>` : ''); }).join('') || '<p class="muted" style="padding:10px">ما في شركات</p>'}</div>
     </div>`,
     foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>
       ${!isNew && !self ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف المستخدم</button>` : ''}` });
@@ -1124,10 +1126,11 @@ function userEditor(u, links, comps, depts = []) {
     }
     for (const box of m.el.querySelectorAll('[data-ucd]')) {
       const cid = box.dataset.ucd; if (!companies.includes(cid) || !uid) continue;
-      const dep = box.querySelector('[data-dep]').value || null, hide = box.querySelector('[data-hide]').checked, l = link(cid);
-      if (!isNew && (l.department_id || null) === dep && !!l.hide_departments === hide) continue;
-      if (!dep && !hide && isNew) continue;
-      const x = await sb.from('user_companies').update({ department_id: dep, hide_departments: hide }).eq('user_id', uid).eq('company_id', cid);
+      const dep = box.querySelector('[data-dep]').value || null, hide = box.querySelector('[data-hide]').checked, bo = box.querySelector('[data-bo]').checked, l = link(cid);
+      if (bo && !dep) { toast('«بيشوف دائرته بس» بدها دائرة للمستخدم', 'err'); continue; }
+      if (!isNew && (l.department_id || null) === dep && !!l.hide_departments === hide && !!l.branch_only === bo) continue;
+      if (!dep && !hide && !bo && isNew) continue;
+      const x = await sb.from('user_companies').update({ department_id: dep, hide_departments: hide, branch_only: bo }).eq('user_id', uid).eq('company_id', cid);
       if (x.error) toast(arError(x.error), 'err');
     }
     toast(isNew ? `تم إنشاء المستخدم «${username}» — بيدخل باسم المستخدم وكلمة السر` : 'تم الحفظ', 'ok');

@@ -146,9 +146,14 @@ async function viewSettings(v, ctx) {
     <h3 style="margin:16px 0 6px">🏢 الأصول الثابتة</h3>
     <div class="grid cols-2">${sel('depreciation_account_id', 'مصروف الاستهلاك (الافتراضي)')}${sel('accum_dep_account_id', 'مجمع الاستهلاك (الافتراضي)')}
       ${sel('asset_disposal_account_id', 'أرباح وخسائر بيع وشطب الأصول')}
-      <div class="field"><label>&nbsp;</label>${editable && !st.asset_disposal_account_id ? '<button type="button" class="btn sm" id="mk-disp">➕ اعمل حساب «أرباح (خسائر) بيع وشطب أصول» لحاله</button>' : ''}</div></div><h3 style="margin:16px 0 6px">🏅 بطاقات الولاء</h3><div class="grid cols-2">${sel('cashback_account_id', 'مصروف الاسترداد النقدي (حساب مصاريف)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
+      <div class="field"><label>&nbsp;</label>${editable && !st.asset_disposal_account_id ? '<button type="button" class="btn sm" id="mk-disp">➕ اعمل حساب «أرباح (خسائر) بيع وشطب أصول» لحاله</button>' : ''}</div></div><h3 style="margin:16px 0 6px">🏅 بطاقات الولاء</h3><div class="grid cols-2">${sel('cashback_account_id', 'مصروف الاسترداد النقدي (حساب مصاريف)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div>
+      <h3 style="margin:16px 0 6px">🧾 بيان قيود الشيكات</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 6px">اكتب البيان لكل عملية، واستعمل الكلمات: <b>[رقم الشيك]</b> <b>[الطرف]</b> <b>[البنك]</b> <b>[الاستحقاق]</b> <b>[المبلغ]</b> <b>[ملاحظات]</b>. الفاضي بياخذ البيان الافتراضي.</p>
+      <div class="grid cols-2">${[['receive', 'استلام شيك وارد'], ['deposit', 'إيداع بالبنك'], ['collect_in', 'تحصيل وارد'], ['return_in', 'إرجاع وارد'], ['undeposit', 'سحب من الإيداع'], ['issue', 'إصدار شيك صادر'], ['collect_out', 'صرف صادر'], ['return_out', 'إرجاع/إلغاء صادر']]
+        .map(([k, l]) => `<div class="field"><label>${l}</label><input data-ctpl="${k}" value="${esc((st.cheque_templates || {})[k] || '')}" placeholder="${k === 'deposit' ? 'إيداع شيك وارد رقم: [رقم الشيك] / [البنك] حق [الاستحقاق]' : ''}" ${editable ? '' : 'disabled'}></div>`).join('')}</div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
+    d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
     const { error } = await sb.from('company_settings').upsert(d);
     if (error) return toast(arError(error), 'err');
@@ -558,7 +563,7 @@ function printInvoice(type, inv, lines, party, st) {
       cfg, titleAr: arTitle(cfg), titleEn: cfg.invoice_title_en || (type === 'sale_return' ? 'Sales Return' : 'Sales Invoice'),
       no: docNo(inv), date: inv.inv_date, pay: inv.payment_type === 'cash' ? 'نقدي / Cash' : 'آجل / Credit', orderNo, project: inv.project,
       party, partyName: party?.name || inv.party_name, lines, sub: inv.subtotal, disc: inv.discount_total, tax: inv.tax_total, total: inv.total, notes: inv.notes, stamp,
-      footer: st.invoice_footer }) : full(), { kind: 'invoice' });
+      footer: st.invoice_footer }) : full(), { kind: 'invoice', branch: inv.department_id ? sb.from('departments').select('name,address,city,phone,income_tax_no,sales_tax_no').eq('id', inv.department_id).maybeSingle().then(r => r.data || null) : null });
   if (isSaleType(type)) sb.from('orders').select('order_no').eq('invoice_id', inv.id).limit(1).then(({ data }) => go(data?.[0]?.order_no || '')); else go('');
 }
 const isSaleType = (t) => t === 'sale' || t === 'sale_return';

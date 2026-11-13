@@ -53,6 +53,7 @@ export const SCREENS = [
   { key: 'customers',        label: 'العملاء وفئاتهم',      group: 'العملاء والذمم المدينة' },
   { key: 'sales_invoices',   label: 'فواتير ومردودات المبيعات', group: 'العملاء والذمم المدينة' },
   { key: 'pos',              label: 'نقطة البيع (الكاشير)', group: 'العملاء والذمم المدينة' },
+  { key: 'branch_reports',   label: 'تقارير الفرع (ميزان/دخل/ميزانية لدائرة المستخدم)', group: 'التقارير' },
   { key: 'rep_visits',       label: 'زيارات المندوبين ودفعات الجوال', group: 'العملاء والذمم المدينة' },
   { key: 'sales_orders',     label: 'طلبات المبيعات وعروض الأسعار', group: 'العملاء والذمم المدينة' },
   { key: 'suppliers',        label: 'الموردين وفئاتهم',     group: 'الموردين والذمم الدائنة' },
@@ -220,11 +221,14 @@ export function moduleOn(mod) {
   return mod === 'core' || !Array.isArray(mods) || mods.includes(mod);
 }
 export const subWritable = () => S.sub?.writable !== false;
+export const isBranchOnly = (companyId = S.company?.id) => !isAdmin() && !!S.memberships.find(x => x.company_id === companyId)?.branch_only;
+export const canBranchReports = () => can('reports', 'view') || (isBranchOnly() && can('branch_reports', 'view'));
 export function can(screen, act, companyId = S.company?.id) {
   if (!moduleOn(screenModule(screen))) return false;
   if (!subWritable() && !['view', 'print'].includes(act)) return false;
   if (isAdmin()) return true;
   const m = S.memberships.find(x => x.company_id === companyId);
+  if (screen === 'reports' && m?.branch_only) return false;   // موظف الفرع: «تقارير الفرع» بس
   const up = S.profile?.permissions?.[screen];
   if (m && (up === true || up?.[act])) return true;
   const g = m && S.groups.find(x => x.id === m.group_id);

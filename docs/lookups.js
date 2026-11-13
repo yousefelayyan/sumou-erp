@@ -58,6 +58,7 @@ async function viewLookups(v) {
   const K = LK[kind], byId = Object.fromEntries(rows.map(r => [r.id, r]));
   const list = rows.filter(r => r.kind === kind);
   const cashAccs = leafAccounts(accs).filter(a => a.category === 'assets');
+  const users = kind === 'sales_rep' ? ((await sb.from('profiles').select('id,username,full_name').eq('is_active', true).order('username')).data || []) : [];
   v.innerHTML = `<div class="page-head"><h2>⚙️ الإعداد</h2><div class="spacer"></div>
       ${can('lookups', 'add') ? `<button class="btn primary" id="add">➕ ${esc(K.one)} جديد${kind === 'payment_method' || kind === 'country' || kind === 'region' ? 'ة' : ''}</button>` : ''}</div>
     <div class="tabs lk-tabs">${Object.entries(LK).map(([k, x]) => `<a class="tab ${k === kind ? 'active' : ''}" href="#/setup?k=${k}">${x.icon} ${esc(x.label)} <span class="muted" style="font-size:11px">${rows.filter(r => r.kind === k).length}</span></a>`).join('')}</div>
@@ -85,7 +86,9 @@ async function viewLookups(v) {
       ${K.parent ? `<div class="field"><label>${esc(K.parentLabel)}</label><select name="parent_id"><option value="">—</option>${parents.map(p => `<option value="${p.id}" ${p.id === r.parent_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>` : ''}
       ${kind === 'payment_method' ? `<div class="field"><label>الحساب المرتبط من الشجرة (الطرف المدين) *</label><select name="account_id"><option value="">— اختار —</option>${cashAccs.map(a => `<option value="${a.id}" ${a.id === r.account_id ? 'selected' : ''}>${esc(accLabel(a))}${['cash', 'bank'].includes(a.account_type) ? ' ★' : ''}</option>`).join('')}</select></div>` : ''}
       ${kind === 'loyalty_type' ? `<div class="field"><label>نقاط لكل دينار</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? 1}"></div>` : ''}
-      ${kind === 'sales_rep' ? `<div class="field"><label>نسبة العمولة %</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? ''}"></div>` : ''}
+      ${kind === 'sales_rep' ? `<div class="field"><label>نسبة العمولة %</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? ''}"></div>
+        <div class="field"><label>مستخدم البرنامج (لتطبيق المندوب و«زبائني»)</label><select name="user_id"><option value="">—</option>${(users || []).map(u => `<option value="${u.id}" ${u.id === r.user_id ? 'selected' : ''}>${esc(u.full_name || u.username || '')}</option>`).join('')}</select></div>` : ''}
+      ${kind === 'route' ? `<div class="field"><label>أيام المسار</label><div style="display:flex;gap:10px;flex-wrap:wrap">${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].map((dn, i) => `<label class="check"><input type="checkbox" name="wd${i}" ${(r.weekdays || []).includes(i) ? 'checked' : ''}> ${dn}</label>`).join('')}</div></div>` : ''}
       <div class="field"><label>ملاحظات</label><input name="notes" value="${esc(r.notes || '')}"></div>
       <label class="check"><input type="checkbox" name="inactive" ${r.is_active ? '' : 'checked'}> غير مفعّل</label></form>`,
       foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
@@ -94,6 +97,7 @@ async function viewLookups(v) {
       if (!d.code?.trim() || !d.name?.trim()) return toast('الرمز والاسم مطلوبين', 'err');
       if (kind === 'payment_method' && !d.account_id) return toast('اختار الحساب', 'err');
       const rec = { code: d.code.trim(), name: d.name.trim(), name2: d.name2 || null, parent_id: d.parent_id || null, account_id: d.account_id || null, notes: d.notes || null, is_active: !d.inactive, ...(kind === 'sales_rep' || kind === 'loyalty_type' ? { rate: d.rate === '' || d.rate == null ? null : Number(d.rate) } : {}),
+        ...(kind === 'sales_rep' ? { user_id: d.user_id || null } : {}), ...(kind === 'route' ? { weekdays: [0, 1, 2, 3, 4, 5, 6].filter(i => d['wd' + i]) } : {}),
         ...(kind === 'payment_method' ? { pos_label: (d.pos_label || '').trim() || null, use_sales: !!d.use_sales, use_purchases: !!d.use_purchases, use_pos: !!d.use_pos } : {}) };
       e.target.disabled = true;
       const res = isNew ? await sb.from('lookups').insert({ ...rec, company_id: S.company.id, kind }) : await sb.from('lookups').update(rec).eq('id', r.id);

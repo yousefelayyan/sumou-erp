@@ -41,12 +41,42 @@ async function viewRep(v, ctx) {
   let body = '';
   if (tab === 'home') {
     body = `<div class="tiles">
+      <a class="tile" href="#/rep?t=mine"><i>📊</i>زبائني</a>
       <a class="tile" href="#/rep?t=customers"><i>👥</i>العملاء</a>
       <a class="tile" href="#/rep?t=visits"><i>📍</i>زياراتي</a>
       <a class="tile" href="#/rep?t=payments"><i>💵</i>دفعات العملاء</a>
       ${can('sales_orders', 'view') ? '<a class="tile" href="#/orders?t=sales_order"><i>📝</i>طلبات المبيعات</a>' : ''}
       ${can('reports', 'view') || can('customers', 'view') ? '<a class="tile" href="#/party-ledger?type=customer"><i>📄</i>كشف حساب</a>' : ''}
       ${sup ? '<a class="tile" href="#/rep?t=team"><i>🧭</i>فريقي (المشرف)</a>' : ''}</div>`;
+  } else if (tab === 'mine') {
+    // «زبائني»: حركات وأرقام وحالة زبائن المندوب، مع فلتر يوم المسار
+    const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+    const isD = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x || '');
+    const from = isD(q('from')) ? q('from') : today().slice(0, 8) + '01', to = isD(q('to')) ? q('to') : today();
+    const day = /^[0-6]$/.test(q('day') || '') ? +q('day') : null, rep = /^[0-9a-f-]{36}$/.test(q('rep') || '') ? q('rep') : null, all = q('all') === '1';
+    const r = await sb.rpc('rep_customers_dash', { p_company: S.company.id, p_from: from, p_to: to, p_rep: rep, p_day: day, p_all: all });
+    if (r.error) return void (v.innerHTML = head + `<div class="rep"><div class="notice">${esc(arError(r.error))}</div></div>`);
+    const D = r.data || {};
+    const link = (o) => { const p = new URLSearchParams({ t: 'mine', from, to, ...(day != null ? { day } : {}), ...(rep ? { rep } : {}), ...(all ? { all: 1 } : {}), ...o }); [...p.keys()].forEach(k => { if (p.get(k) === '') p.delete(k); }); return '#/rep?' + p.toString(); };
+    const st = (n) => D.customers ? Math.round(n / D.customers * 100) : 0;
+    const box = (ico, n, l, col) => `<div class="tile" style="cursor:default"><i>${ico}</i><b style="font-size:20px;${col ? 'color:' + col : ''}">${n}</b><div class="muted" style="font-size:12px">${l}</div></div>`;
+    const sec = (id, title, inner, open) => `<details class="cc" ${open ? 'open' : ''}><summary style="font-weight:700;cursor:pointer">${title}</summary><div style="margin-top:10px">${inner}</div></details>`;
+    const list = (rows, col) => `<table class="t"><thead><tr><th>#</th><th>الزبون</th><th>فواتير المبيعات</th></tr></thead><tbody>${(rows || []).map((x, i) => `<tr><td>${i + 1}</td><td>${esc(x.name)}${x.last_date ? `<div class="muted" style="font-size:11px">آخر فاتورة ${fmtDate(x.last_date)}</div>` : ''}</td><td class="n" style="color:${col}">${fmtNum(x.amount)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">ما في</td></tr>'}</tbody></table>`;
+    body = `<a class="btn sm back" href="#/rep">→ رجوع</a>
+      ${!D.has_rep && !D.supervisor ? '<div class="notice">ما في مندوب مربوط بحسابك. خلّي المدير يربطك من «إعداد ← مندوبي المبيعات».</div>' : ''}
+      <div class="card" style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;padding:10px">
+        <div class="field"><label>من</label><input type="date" id="fr" value="${from}"></div><div class="field"><label>إلى</label><input type="date" id="to" value="${to}"></div>
+        ${D.supervisor ? `<div class="field"><label>المندوب</label><select id="rp"><option value="">مندوبي أنا</option><option value="all" ${all ? 'selected' : ''}>كل المندوبين</option>${(D.reps || []).map(x => `<option value="${x.id}" ${x.id === rep ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>` : ''}
+        <button class="btn primary" id="go">عرض</button></div>
+      <div class="tabs" style="margin:6px 0 10px;overflow:auto"><a class="tab ${day == null ? 'active' : ''}" href="${link({ day: '' })}">الجميع</a>${DAYS.map((d, i) => `<a class="tab ${day === i ? 'active' : ''}" href="${link({ day: i })}">${d}</a>`).join('')}</div>
+      ${sec('m', '📦 الحركات', `<div class="tiles">${box('💵', fmtNum(D.payments), `دفعات الزبائن (${D.payments_n || 0})`)}${box('🧾', fmtNum(D.invoices), `فواتير المبيعات (${D.invoices_n || 0})`)}${box('📝', fmtNum(D.orders), `طلبات المبيعات (${D.orders_n || 0})`)}</div>`, true)}
+      ${sec('c', '👥 زبائني', `<div class="tiles">${box('👥', D.customers || 0, 'الزبائن')}${box('🛒', D.buyers || 0, 'اشتروا')}${box('🆕', D.first_time || 0, 'اشتروا لأول مرة')}
+        ${box('💵', D.payers || 0, 'دفعوا')}${box('🧾', fmtNum(D.avg_invoice), 'متوسط الفاتورة')}${box('📈', (D.invoices ? Math.round(num(D.payments) / num(D.invoices) * 100) : 0) + '٪', 'نسبة التحصيل')}</div>`)}
+      ${sec('s', '📶 حالة الزبائن <span class="muted" style="font-weight:400;font-size:12px">حسب آخر فاتورة: نشط لحد 30 يوم، متراجع لحد 60، متوقف بعدها</span>', `<table class="t"><tbody>
+        <tr><td>🟢 نشط</td><td class="n">${D.active || 0}</td><td class="n">${st(D.active)}٪</td></tr><tr><td>🟡 متراجع</td><td class="n">${D.slipping || 0}</td><td class="n">${st(D.slipping)}٪</td></tr>
+        <tr><td>🔴 متوقف</td><td class="n">${D.stopped || 0}</td><td class="n">${st(D.stopped)}٪</td></tr><tr><td>⚪ لم يشترِ</td><td class="n">${D.never || 0}</td><td class="n">${st(D.never)}٪</td></tr></tbody></table>`)}
+      ${sec('t', '🏆 أكثر الزبائن شراء', list(D.top, 'var(--ok)'))}
+      ${sec('b', '📉 أقل الزبائن شراء', list(D.bottom, 'var(--bad)'))}`;
   } else if (tab === 'customers') {
     body = `<a class="btn sm back" href="#/rep">→ رجوع</a><input class="search" id="s" placeholder="🔎 ابحث بالاسم أو الرمز أو الهاتف…"><div id="cl"></div>`;
   } else if (tab === 'visits' || tab === 'team') {
@@ -102,7 +132,14 @@ async function viewRep(v, ctx) {
   v.querySelector('#newpay')?.addEventListener('click', () => payForm(ctx, ov ? pBy[ov.party_id] : null, ov, cust));
   v.querySelectorAll('[data-ph]').forEach(b => b.onclick = () => openAttachments('visit', b.dataset.ph, 'صور الزيارة'));
   v.querySelectorAll('[data-vx]').forEach(b => b.onclick = async () => { const { error } = await sb.rpc('visit_cancel', { p_id: b.dataset.vx }); if (error) return toast(arError(error), 'err'); ctx.rerender(); });
-  v.querySelector('#go')?.addEventListener('click', () => { location.hash = `#/rep?t=${tab}&from=${v.querySelector('#fr').value}&to=${v.querySelector('#tt').value}`; });
+  v.querySelector('#go')?.addEventListener('click', () => {
+    if (tab === 'mine') {
+      const rp = v.querySelector('#rp')?.value || '', p = new URLSearchParams({ t: 'mine', from: v.querySelector('#fr').value, to: v.querySelector('#to').value });
+      if (q('day')) p.set('day', q('day')); if (rp === 'all') p.set('all', '1'); else if (rp) p.set('rep', rp);
+      return void (location.hash = '#/rep?' + p.toString());
+    }
+    location.hash = `#/rep?t=${tab}&from=${v.querySelector('#fr').value}&to=${v.querySelector('#tt').value}`;
+  });
   const cl = v.querySelector('#cl');
   if (cl) {
     const draw = (t = '') => {

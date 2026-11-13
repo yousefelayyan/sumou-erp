@@ -9,7 +9,7 @@ import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
 
 const ST = {
-  portfolio: ['بالمحفظة', 'warn'], collected: ['محصّل', 'ok'], returned: ['راجع', 'bad'],
+  portfolio: ['بالمحفظة', 'warn'], deposited: ['مودع بالبنك (برسم التحصيل)', 'info'], collected: ['محصّل', 'ok'], returned: ['راجع', 'bad'],
   issued: ['صادر (بانتظار الصرف)', 'warn'], paid: ['مصروف', 'ok'], cancelled: ['ملغى', 'bad'],
 };
 const daysTo = (d) => Math.round((new Date(d) - new Date(today())) / 86400000);
@@ -34,7 +34,7 @@ async function viewCheques(v, ctx) {
       <div class="card stat"><span class="k">راجعة</span><span class="v" dir="ltr" style="color:var(--bad)">${fmtNum(data.filter(c => c.status === 'returned').reduce((s, c) => s + num(c.amount), 0))}</span></div></div>
     <div class="card no-print filters">
       <div class="field"><label>الحالة</label><select id="f-s"><option value="open">${dir === 'in' ? 'بالمحفظة' : 'صادرة'}</option><option value="">الكل</option>
-        ${Object.entries(ST).filter(([k]) => dir === 'in' ? ['portfolio', 'collected', 'returned'].includes(k) : ['issued', 'paid', 'cancelled'].includes(k)).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
+        ${Object.entries(ST).filter(([k]) => dir === 'in' ? ['portfolio', 'deposited', 'collected', 'returned'].includes(k) : ['issued', 'paid', 'cancelled'].includes(k)).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
       <div class="field"><label>الاستحقاق من</label><input type="date" id="f-from"></div><div class="field"><label>إلى</label><input type="date" id="f-to"></div>
       <div class="field"><label>بحث</label><input id="f-q" placeholder="رقم الشيك، الاسم، البنك…"></div>
       <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px"><button class="btn" id="prn">🖨️ طباعة</button><button class="btn" id="csv">⬇️ Excel</button></div></div>
@@ -52,7 +52,8 @@ async function viewCheques(v, ctx) {
         <td>${esc(pName[c.party_id] || c.drawer_name || '')}</td><td dir="ltr" style="text-align:left"><b>${fmtNum(c.amount)}</b></td>
         <td><span class="badge ${ST[c.status][1]}">${ST[c.status][0]}</span></td>
         <td class="actions">${can('cheques', 'post') ? (dir === 'in'
-          ? (c.status === 'portfolio' ? `<button class="btn sm primary" data-act="collect" data-id="${c.id}">✓ تحصيل</button> <button class="btn sm danger" data-act="return" data-id="${c.id}">راجع</button>`
+          ? (c.status === 'portfolio' ? `<button class="btn sm" data-act="deposit" data-id="${c.id}">🏦 إيداع</button> <button class="btn sm primary" data-act="collect" data-id="${c.id}">✓ تحصيل</button> <button class="btn sm danger" data-act="return" data-id="${c.id}">راجع</button>`
+             : c.status === 'deposited' ? `<button class="btn sm primary" data-act="collect" data-id="${c.id}">✓ تحصيل</button> <button class="btn sm danger" data-act="return" data-id="${c.id}">راجع</button> <button class="btn sm" data-act="undeposit" data-id="${c.id}" title="رجّعه للمحفظة">↩︎</button>`
              : c.status === 'collected' ? `<button class="btn sm danger" data-act="return" data-id="${c.id}">راجع</button>` : '')
           : (c.status === 'issued' ? `<button class="btn sm primary" data-act="pay" data-id="${c.id}">✓ انصرف</button> <button class="btn sm danger" data-act="cancel" data-id="${c.id}">إلغاء</button>` : '')) : ''}
           <button class="btn sm" data-hist="${c.id}">السجل</button></td></tr>`; }).join('') || '<tr><td colspan="7" class="empty">ما في شيكات</td></tr>';
@@ -60,6 +61,7 @@ async function viewCheques(v, ctx) {
   };
   draw(); ['#f-s', '#f-from', '#f-to', '#f-q'].forEach(s => v.querySelector(s).addEventListener('input', draw));
   const banks = leafAccounts(accs).filter(a => ['bank', 'cash'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['bank', 'cash'].includes(a.account_type)));
+  const depSel = () => `<select name="bank" required><option value="">— اختار —</option>${leafAccounts(accs).filter(a => a.category === 'assets' && a.account_type !== 'cash').map(a => `<option value="${a.id}">${esc(accLabel(a))}</option>`).join('')}</select>`;
   const bankSel = (sel) => `<select name="bank">${banks.map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select>`;
 
   v.querySelector('#add')?.addEventListener('click', () => {
@@ -105,11 +107,12 @@ async function viewCheques(v, ctx) {
     }
     if (!b) return;
     const c = data.find(x => x.id === b.dataset.id), act = b.dataset.act;
-    const T = { collect: 'تحصيل الشيك', return: 'شيك راجع', pay: 'صرف الشيك من البنك', cancel: 'إلغاء الشيك الصادر' }[act];
-    const needBank = act === 'collect' || act === 'pay' || (act === 'return' && c.status === 'collected');
+    const T = { collect: 'تحصيل الشيك', return: 'شيك راجع', pay: 'صرف الشيك من البنك', cancel: 'إلغاء الشيك الصادر', deposit: 'إيداع الشيك بالبنك', undeposit: 'سحب الشيك من الإيداع' }[act];
+    const needBank = act === 'collect' || act === 'pay' || act === 'deposit' || (act === 'return' && c.status === 'collected');
     const m = modal({ title: `${T} رقم ${c.cheque_no}`, size: 'sm', body: `<form id="a-form">
       <div class="field"><label>التاريخ</label><input type="date" name="date" value="${today()}"></div>
-      ${needBank ? `<div class="field"><label>البنك</label>${bankSel(c.bank_account_id)}</div>` : ''}
+      ${needBank ? `<div class="field"><label>${act === 'deposit' ? 'حساب «شيكات برسم التحصيل» عند البنك' : 'البنك'}</label>${act === 'deposit' ? depSel() : bankSel(c.bank_account_id)}</div>` : ''}
+      ${act === 'deposit' ? '<p class="muted" style="font-size:12px">القيد: من حـ/ شيكات برسم التحصيل (البنك) إلى حـ/ صندوق الشيكات. ولما يتحصّل: من حـ/ البنك إلى حـ/ شيكات برسم التحصيل.</p>' : ''}
       <div class="field"><label>ملاحظة</label><input name="note"></div></form>
       <p class="muted" style="font-size:13px">${act === 'return' ? 'الشيك الراجع بيرجّع المبلغ على حساب العميل.' : act === 'cancel' ? 'الإلغاء بيرجّع المبلغ لحساب المورد.' : 'بينعمل قيد مرحّل تلقائياً.'}</p>`,
       foot: `<button class="btn primary" data-go>تأكيد</button><button class="btn" data-close>إلغاء</button>` });

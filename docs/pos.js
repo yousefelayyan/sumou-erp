@@ -18,7 +18,10 @@ let cfgCache = null;
 async function loadPosCfg(force = false) {
   if (!force && cfgCache?.cid === S.company.id) return cfgCache.v;
   const { data } = await sb.from('company_settings').select('pos').eq('company_id', S.company.id).maybeSingle();
-  cfgCache = { cid: S.company.id, v: { ...POS_DEF, ...(data?.pos || {}) } };
+  // كاشير الفرع: إعدادات دائرة المستخدم الافتراضية بتغطي على إعداد الشركة
+  const dep = S.memberships.find(x => x.company_id === S.company.id)?.department_id;
+  const dp = dep ? ((await sb.from('departments').select('pos,name,address,phone,sales_tax_no').eq('id', dep).maybeSingle()).data || null) : null;
+  cfgCache = { cid: S.company.id, v: { ...POS_DEF, ...(data?.pos || {}), ...(dp?.pos || {}), branch: dp ? { name: dp.name, address: dp.address, phone: dp.phone, sales_tax_no: dp.sales_tax_no } : null } };
   return cfgCache.v;
 }
 
@@ -282,7 +285,7 @@ function receiptHTML({ sale, paid, change, method, cfg, name }) {
   table{width:100%;border-collapse:collapse;margin:4px 0}td{padding:2px 0;vertical-align:top}td.n{text-align:left;white-space:nowrap}
   .hr{border-top:1px dashed #000;margin:4px 0}.tot td{font-size:14px;font-weight:700}small{color:#333}</style></head><body>
   <div class="c">${c.logo_url ? `<img src="${esc(c.logo_url)}"><br>` : ''}<h1>${esc(c.name)}</h1>
-  ${cfg.header ? `<div>${esc(cfg.header).replace(/\n/g, '<br>')}</div>` : ''}${c.sales_tax_no ? `<div>رقم ضريبة المبيعات: ${esc(c.sales_tax_no)}</div>` : ''}</div>
+  ${cfg.header ? `<div>${esc(cfg.header).replace(/\n/g, '<br>')}</div>` : ''}${cfg.branch?.name ? `<div>${esc(cfg.branch.name)}${cfg.branch.phone ? ' — ' + esc(cfg.branch.phone) : ''}</div>` : ''}${(cfg.branch?.sales_tax_no || c.sales_tax_no) ? `<div>رقم ضريبة المبيعات: ${esc(cfg.branch?.sales_tax_no || c.sales_tax_no)}</div>` : ''}</div>
   <div class="hr"></div>
   <div>فاتورة رقم: <b>${esc(sale.doc_code || sale.no)}</b></div><div>${fmtDateTime(sale.created_at || new Date())}</div>
   <div>الكاشير: ${esc(who)}${name ? ` · الزبون: ${esc(name)}` : ''}</div>
@@ -321,7 +324,8 @@ export function printReceipt(o) {
 //  إعدادات نقطة البيع
 // ---------------------------------------------------------------------
 async function posSettings(ctx) {
-  const cfg = await loadPosCfg(true);
+  await loadPosCfg(true);   // (الكاش) — بس الشاشة بتعدّل إعداد الشركة العام، مش إعداد الفرع
+  const cfg = { ...POS_DEF, ...(((await sb.from('company_settings').select('pos').eq('company_id', S.company.id).maybeSingle()).data?.pos) || {}) };
   const [accs, whs] = await Promise.all([loadAccounts(), loadWarehouses()]);
   const cash = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type));
   const accOpts = (sel) => `<option value="">— الافتراضي من حسابات الربط —</option>` + cash.map(a => `<option value="${a.id}" ${a.id === sel ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('');

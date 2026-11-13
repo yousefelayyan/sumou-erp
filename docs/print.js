@@ -109,12 +109,15 @@ export function printBarHTML() {
   <button type="button" class="p" onclick="window.print()">🖨️ طباعة</button></div>`;
 }
 
-export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null } = {}) {
+export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null, branch = null } = {}) {
   const w = preview || window.open('', '_blank');
   if (!w) { alert('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهالموقع.'); return; }
   if (!preview) { w.document.write('<p dir="rtl" style="font-family:sans-serif;padding:20px">جاري تحضير الطباعة…</p>'); }
-  (given ? Promise.resolve(given) : loadPrintSettings()).then(cfg => {
-    const c = S.company || {};
+  Promise.all([given ? Promise.resolve(given) : loadPrintSettings(), Promise.resolve(branch).catch(() => null)]).then(([cfg, branchData]) => {
+    // ترويسة الفرع: اسم الفرع وعنوانه وأرقامه الضريبية (الفاضي بياخذ تبع الشركة)
+    const b = branchData || null;
+    const c = b ? { ...(S.company || {}), branchName: b.name, address: b.address || S.company?.address, city: b.city || S.company?.city, phone: b.phone || S.company?.phone,
+      income_tax_no: b.income_tax_no || S.company?.income_tax_no, sales_tax_no: b.sales_tax_no || S.company?.sales_tax_no } : (S.company || {});
     const paper = kind === 'invoice' ? cfg.invoice_paper : cfg.paper;
     const thermal = paper === '80mm';
     let body = typeof html === 'function' ? html(cfg, { thermal }) : html;
@@ -136,7 +139,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
   ${preview ? '' : printBarHTML()}
   ${cfg.watermark && !thermal ? `<div class="wm"><div>${esc(c.name || '')}<br>${esc(fy)}</div></div>` : ''}
   <div class="head">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}
-    <div class="co"><h1>${esc(c.name || '')}</h1><div>${esc([c.address, c.city].filter(Boolean).join(' - '))}${c.phone ? ' | هاتف: ' + esc(c.phone) : ''}</div>
+    <div class="co"><h1>${esc(c.name || '')}</h1>${c.branchName ? `<div style="font-weight:700">${esc(c.branchName)}</div>` : ''}<div>${esc([c.address, c.city].filter(Boolean).join(' - '))}${c.phone ? ' | هاتف: ' + esc(c.phone) : ''}</div>
       ${cfg.show_tax_numbers && (c.income_tax_no || c.sales_tax_no) ? `<div>${c.income_tax_no ? 'الرقم الضريبي: ' + esc(c.income_tax_no) : ''}${c.income_tax_no && c.sales_tax_no ? ' | ' : ''}${c.sales_tax_no ? 'رقم ضريبة المبيعات: ' + esc(c.sales_tax_no) : ''}</div>` : ''}</div>
     <div class="meta2">${esc(fy)}</div></div>
   ${cfg.header_note ? `<div class="note-top">${esc(cfg.header_note)}</div>` : ''}
