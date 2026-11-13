@@ -40,6 +40,7 @@ import { PROFILE_ROUTES } from './profile.js';
 import { BATCH_ROUTES } from './batches.js';
 import { BUDGET_ROUTES } from './budgets.js';
 import { NOTE_ROUTES } from './notes.js';
+import { CONTRACT_ROUTES } from './contracts.js';
 import { FOLLOW_ROUTES } from './follow.js';
 import { PARTYDOC_ROUTES } from './partydocs.js';
 import { COMPARE_ROUTES } from './compare.js';
@@ -289,6 +290,7 @@ const NAV = () => [
     { r: 'pos', i: '🛒', l: 'نقطة البيع (الكاشير)', show: () => S.company && can('pos', 'view') },
     { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'sales?t=sale_return', i: '↩️', l: 'مردودات المبيعات', show: () => S.company && can('sales_invoices', 'view') },
+    { r: 'contracts', i: '🔁', l: 'العقود والرسوم المتكررة', show: () => S.company && can('contracts', 'view') },
     { r: 'notes?type=customer', i: '🧾', l: 'إشعارات العملاء (مدين/دائن)', show: () => S.company && can('customer_notes', 'view') },
     { r: 'rep-aging?type=customer&mode=summary', i: '⏳', l: 'أعمار ذمم العملاء — تجميعي', show: () => S.company && can('reports', 'view') },
     { r: 'rep-aging?type=customer&mode=detail', i: '⏳', l: 'أعمار ذمم العملاء — تفصيلي', show: () => S.company && can('reports', 'view') },
@@ -613,7 +615,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...LANDED_ROUTES, ...LEAVE_ROUTES, ...PROFILE_ROUTES, ...BATCH_ROUTES, ...BUDGET_ROUTES, ...NOTE_ROUTES, ...FOLLOW_ROUTES, ...PARTYDOC_ROUTES, ...COMPARE_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...LANDED_ROUTES, ...LEAVE_ROUTES, ...PROFILE_ROUTES, ...BATCH_ROUTES, ...BUDGET_ROUTES, ...NOTE_ROUTES, ...CONTRACT_ROUTES, ...FOLLOW_ROUTES, ...PARTYDOC_ROUTES, ...COMPARE_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

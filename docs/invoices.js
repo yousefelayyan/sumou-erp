@@ -863,3 +863,8 @@ async function supplierSplits(inv, parties) {
     toast('انحفظت حصص الموردين', 'ok'); m.close();
   });
 }
+export async function openInvoiceById(id, ctx) {
+  const { data, error } = await sb.from('invoices').select('*').eq('id', id).single();
+  if (error) return toast(arError(error), 'err');
+  return invoiceEditor(data.inv_type, data, ctx);
+}
