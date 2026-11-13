@@ -9,6 +9,7 @@ routes=sys.argv[1:]
 async def main():
   async with async_playwright() as p:
     b=await p.chromium.launch(); pg=await b.new_page(viewport={'width':1400,'height':900})
+    if os.environ.get('SHOT_INIT'): await pg.add_init_script(os.environ['SHOT_INIT'])
     errs=[]; pg.on('pageerror',lambda e:errs.append(str(e))); pg.on('console',lambda m: m.type=='error' and errs.append(m.text))
     for r in routes:
       name,_,action=r.partition('@')

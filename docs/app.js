@@ -37,6 +37,7 @@ const $app = document.getElementById('app');
 //  شاشات الدخول
 // ---------------------------------------------------------------------
 function renderAuth(mode = 'login') {
+  if (mode === 'trial') return renderTrialSignup();
   const titles = { login: 'تسجيل الدخول', signup: 'حساب جديد', reset: 'نسيت كلمة السر' };
   $app.innerHTML = `
     <div class="auth-wrap"><div class="auth-card">
@@ -52,6 +53,7 @@ function renderAuth(mode = 'login') {
       <div class="auth-switch">
         ${mode === 'login' ? `<a data-mode="reset">نسيت كلمة السر؟</a>` : `<a data-mode="login">رجوع لتسجيل الدخول</a>`}
       </div>
+      ${mode === 'login' ? `<button type="button" class="btn block" data-mode="trial" style="margin-top:14px;border:2px dashed var(--brand);color:var(--brand);font-weight:700">🧪 جرّب البرنامج مجاناً 14 يوم</button>` : ''}
       <p class="muted" style="text-align:center;font-size:12px;margin-top:18px">الإصدار ${APP_VERSION}</p>
     </div></div>`;
   $app.querySelectorAll('[data-mode]').forEach(a => a.onclick = () => renderAuth(a.dataset.mode));
@@ -86,6 +88,40 @@ function renderAuth(mode = 'login') {
       }
     } catch (err) { toast(arError(err), 'err'); }
     finally { btn.disabled = false; }
+  };
+}
+
+function renderTrialSignup() {
+  $app.innerHTML = `
+    <div class="auth-wrap"><div class="auth-card" style="max-width:460px">
+      <div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
+      <p class="auth-sub">🧪 جرّب البرنامج مجاناً</p>
+      <p class="muted" style="font-size:13px;text-align:center;margin-top:-6px">14 يوم، شركة جاهزة فيها عملاء وأصناف وفواتير وقيود، وكل التقارير. بدون أي التزام.</p>
+      <form id="trial-form">
+        <div class="field"><label>اسمك *</label><input name="name" required maxlength="80" autocomplete="name"></div>
+        <div class="field"><label>اسم الشركة أو النشاط *</label><input name="company" required maxlength="100" autocomplete="organization"></div>
+        <div class="grid cols-2"><div class="field"><label>الموبايل *</label><input name="phone" required dir="ltr" inputmode="tel" placeholder="07xxxxxxxx" autocomplete="tel"></div>
+          <div class="field"><label>الإيميل</label><input name="email" type="email" dir="ltr" autocomplete="email"></div></div>
+        <div class="grid cols-2"><div class="field"><label>اسم المستخدم *</label><input name="username" required dir="ltr" autocapitalize="none" pattern="[A-Za-z0-9._-]{3,30}" title="أحرف إنجليزي أو أرقام" autocomplete="username"></div>
+          <div class="field"><label>كلمة السر *</label><input name="password" type="password" required minlength="6" dir="ltr" autocomplete="new-password"></div></div>
+        <button class="btn primary block" type="submit">🚀 ابدأ التجربة</button>
+      </form>
+      <div class="auth-switch"><a data-mode="login">عندي حساب، رجوع لتسجيل الدخول</a></div>
+    </div></div>`;
+  $app.querySelector('[data-mode]').onclick = () => renderAuth('login');
+  const form = document.getElementById('trial-form');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button'); btn.disabled = true; btn.textContent = 'جاري إنشاء حسابك…';
+    const f = formData(form);
+    try {
+      const { data, error } = await sb.rpc('trial_signup', { p: { name: f.name, company: f.company, phone: f.phone, email: f.email, username: f.username, password: f.password } });
+      if (error) throw error;
+      localStorageSet('sumou.tenant', data.code);
+      const { error: e2 } = await sb.auth.signInWithPassword({ email: data.username + '@' + data.code + '.sumou.local', password: f.password });
+      if (e2) throw e2;
+      localStorageSet('sumou.trialWelcome', JSON.stringify({ code: data.code, username: data.username, expires_at: data.expires_at }));
+    } catch (err) { toast(arError(err), 'err'); btn.disabled = false; btn.textContent = '🚀 ابدأ التجربة'; }
   };
 }
 
@@ -555,6 +591,16 @@ async function viewHome(v) {
     v.querySelector('#first-co')?.addEventListener('click', () => openCompanyForm(null));
     return;
   }
+  const tw = localStorageGet('sumou.trialWelcome');
+  if (tw) {
+    localStorageSet('sumou.trialWelcome', '');
+    try { const w = JSON.parse(tw); setTimeout(() => modal({ title: '🎉 حسابك التجريبي جاهز', size: 'sm',
+      body: `<p>شركتك التجريبية جاهزة وفيها بيانات للتجربة. جرّب الفواتير والسندات والتقارير براحتك.</p>
+        <p>احفظ هالمعلومات عشان تدخل مرة ثانية:</p>
+        <div class="card" style="font-size:18px;line-height:2"><div>رمز المشترك: <b dir="ltr">${esc(w.code)}</b></div><div>اسم المستخدم: <b dir="ltr">${esc(w.username)}</b></div></div>
+        <p class="muted">التجربة لحد ${fmtDate(w.expires_at)}.</p>`,
+      foot: '<button class="btn primary" data-close>يلا نبلّش</button>' }), 300); } catch {}
+  }
   const c = S.company;
   v.innerHTML = `
     <div class="page-head"><h2>${esc(c.name)}</h2><span class="badge brand">${esc(c.code)}</span></div>
@@ -771,7 +817,7 @@ async function viewCompanies(v) {
       <td>${esc(c.company_type || '')}</td><td dir="ltr" style="text-align:right">${esc(c.income_tax_no || '')}</td>
       <td>${c.subject_to_sales_tax ? '<span class="badge brand">خاضعة</span>' : '<span class="muted">—</span>'}</td>
       <td>${c.is_active ? '<span class="badge ok">فعّالة</span>' : '<span class="badge bad">موقوفة</span>'}</td>
-      <td class="actions"><button class="btn sm" data-edit="${c.id}">تعديل</button> <button class="btn sm danger" data-del="${c.id}">حذف</button></td></tr>`).join('')
+      <td class="actions"><button class="btn sm" data-edit="${c.id}">تعديل</button> <button class="btn sm danger" data-del="${c.id}">حذف</button>${isSuper() ? ` <button class="btn sm" data-tpl="${c.id}" title="كل مشترك تجريبي بياخذ نسخة من هالشركة">🧪 قالب التجربة</button>` : ''}</td></tr>`).join('')
       || `<tr><td colspan="7" class="empty">ما في شركات</td></tr>`;
   };
   draw();
@@ -781,6 +827,13 @@ async function viewCompanies(v) {
   v.querySelector('#rows').onclick = async (e) => {
     const ed = e.target.closest('[data-edit]'), dl = e.target.closest('[data-del]');
     if (ed) open(data.find(x => x.id === ed.dataset.edit));
+    const tp = e.target.closest('[data-tpl]');
+    if (tp) {
+      const c = data.find(x => x.id === tp.dataset.tpl);
+      if (!(await confirmBox(`اعتماد «${c.name}» قالب للتجربة المجانية؟ كل حدا بيسجّل تجربة جديدة بياخذ نسخة من بياناتها الحالية (عملاء، أصناف، فواتير، قيود). ما تحط فيها بيانات حقيقية لزبون.`))) return;
+      const r = await sb.rpc('super_set_demo_template', { p_company: c.id });
+      return r.error ? toast(arError(r.error), 'err') : toast('صارت قالب التجربة ✅', 'ok');
+    }
     if (dl) {
       const c = data.find(x => x.id === dl.dataset.del);
       const { data: act, error: ae } = await sb.rpc('company_activity', { p_company: c.id });
@@ -1255,6 +1308,11 @@ async function boot() {
     }
     if (!S.profile.is_active) return renderPending();
     if (S.sub?.status === 'suspended') return renderSuspended();
+    if (S.trial && !S.trial.has_company && S.profile.is_admin) {
+      $app.innerHTML = `<div class="auth-wrap"><div class="auth-card" style="text-align:center"><div style="font-size:44px">⏳</div><h3>جاري تجهيز شركتك التجريبية…</h3><p class="muted">بنعبّيلك عملاء وأصناف وفواتير وقيود عشان تشوف التقارير فوراً. ثواني بس.</p></div></div>`;
+      const r = await sb.rpc('trial_setup');
+      if (r.error) toast(arError(r.error), 'err'); else S.trial.has_company = true;
+    }
     await loadContext();
     applyTheme(canTheme() ? (S.profile?.theme || 'purple') : 'purple');
     renderShell(); route_();

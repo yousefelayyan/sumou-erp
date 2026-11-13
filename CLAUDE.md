@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..40). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..41). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -98,7 +98,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -122,7 +122,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.22.1)
+## اللي انبنى (لحد النسخة 4.23.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -190,6 +190,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **مراتب الولاء والاسترداد النقدي (المرحلة 39):** `loyalty_tiers` (rank، min_spend، cashback_pct ≤ 50، color hex) بصلاحية marketing. المرتبة من مبيعات الزبون المرحّلة ناقص المرتجع بآخر 365 يوم قبل كل فاتورة، والاسترداد = نسبة المرتبة × صافي الفاتورة (`loyalty_cashback(company, party, date)` بنافذة window). `loyalty_redeem(party, amount, date, notes)` (marketing post): قيد journal مرحّل مدين `company_settings.cashback_account_id` (حساب مصاريف فرعي) ودائن حساب الزبون، والتاريخ ما بيرجع لورا عن آخر استرداد. `loyalty_redemptions` كتابة من الدوال بس؛ الإلغاء `loyalty_redeem_cancel` بقيد عكسي بالـ GUC `sumou.loyalty`، و`ab_loyalty_entry_guard` بيمنع عكس/إلغاء ترحيل قيد الاسترداد من مكان ثاني. الشاشة `loyalty-cashback` بمجموعة التسويق.
 - **زيارات المندوبين ودفعات الجوال (المرحلة 40):** شاشة `rep_visits` (قسم sales). `sales_visits` (زيارة مفتوحة وحدة لكل مستخدم بالشركة؛ الموظف بيشوف زياراته بس، والمشرف = rep_visits edit). `visit_start/visit_end/visit_cancel`، `mobile_payment(jsonb)`: نقد/تحويل = سند قبض (مرحّل إذا إله receipt_vouchers post، وإلا مسودة)، شيكات = `register_cheque` لكل شيك؛ `journal_entries.visit_id` و`cheques.visit_id`؛ `company_settings.pos.require_visit` اختياري. `visits_report(company, from, to)` للمشرف (أيام بتوقيت عمّان، المعكوس والشيك المرتجع ما بينحسبوا). الصور مرفقات entity = 'visit' (بصلاحية rep_visits view). `visit_id` على القيود والشيكات من النظام بس (`ab_visit_link_guard`، GUC `sumou.visit`).
 - **ترقيم الشركات:** `tenants.settings.company_numbering` = {mode auto|manual, digits}. `company_numbering()` و`set_company_numbering(mode, digits)` (مدير المشترك). trigger `ab_company_code`: التلقائي بيعطي أكبر رمز رقمي + 1 (إذا طلع أطول من عدد الخانات بيضل زي ما هو) (قفل advisory) وما بيقبل تغيير الرمز؛ اليدوي الرمز مطلوب وما بيتكرر بالمشترك. الواجهة: «طريقة الترقيم ← الرموز الأساسية ← الشركات» (للمدير)، ومربع بحث فوق قائمة الأنواع. بالتلقائي خانة الرمز بنموذج الشركة مقفولة.
+- **التجربة المجانية (المرحلة 41):** بشاشة الدخول «🧪 جرّب البرنامج مجاناً 14 يوم» (`renderTrialSignup`) → `trial_signup(jsonb)` (مسموح لـ anon): بيعمل مشترك `is_trial` رمزه `dNNNNN` (14 يوم، مستخدمين 2، شركة 1، `max_docs` = 300) ومديره. حدود: نفس الموبايل مرة بالشهر، 15 تسجيل بالساعة و60 باليوم. بعد أول دخول `trial_setup()` بينسخ «قالب التجربة» (`demo_template`، بيختاره مدير المنصة من «ملف ← الشركات ← 🧪 قالب التجربة» = `super_set_demo_template`) بمعرّفات جديدة ثم `restore_company`. `ab_tenant_doc_limit` على القيود والفواتير وسندات المخزون والطلبات (الداخلي ما بينحسب). `trial_status()` → `S.trial` وشريط «نسخة تجريبية» مع «💬 اشترك الآن» (واتساب `SALES_WHATSAPP` بـ config.js). «إدارة المشتركين»: فلتر التجارب، عدد الحركات، و🗑️ `super_delete_trial` (حذف كامل بـ session_replication_role = replica). القالب لازم اسمه فيه «تجريب/عرض/ديمو/demo»، وبدون مرفقات وزيارات وإقرارات. حد الحركات بيعدّ (`tenant_docs_used`) القيود اليدوية والعكسية والفواتير وسندات المخزون والطلبات، وما بيتخطّاه إلا `sumou.trial` (تجهيز التجربة). التجربة ما بتسترجع نسخ (`ab_trial_restore_guard`) ولا بتعمل نسخ تلقائية. أول دفعة بـ tenant_payments بتحوّلها لاشتراك (`ab_trial_convert_on_payment`). حد التسجيل: 3 باليوم لكل IP (`signup_ip` من request.headers).
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.
 - بدون شركات (للعرض على الزباين): المدير بيشوف كل الشاشات بالقائمة (`DEMO()` بـ app.js)، والشاشة اللي بدها شركة بتعرض «هالشاشة بتشتغل على شركة» مع زر إضافة شركة (`viewNeedCompany`؛ الشاشات اللي ما بدها شركة بـ `NO_CO_ROUTES`).
 - شريط المستند: «التالي/السابق/الأول/الأخير» بيقرأ المستند من جديد من الجدول (عشان الحالة بعد إلغاء الترحيل). `dev/shots.py` صار بيقبل كذا كبسة: `"route@sel1@sel2"`.

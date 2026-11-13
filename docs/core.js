@@ -239,7 +239,11 @@ export async function loadProfile() {
   if (error) throw error;
   S.profile = data;
   S.sub = null;
-  if (data?.is_active) { const r = await sb.rpc('my_subscription'); if (!r.error) S.sub = r.data || null; }
+  if (data?.is_active) {
+    const [r, tr] = await Promise.all([sb.rpc('my_subscription'), sb.rpc('trial_status')]);
+    if (!r.error) S.sub = r.data || null;
+    S.trial = !tr.error && tr.data?.is_trial ? tr.data : null;
+  }
 }
 
 export async function loadContext() {

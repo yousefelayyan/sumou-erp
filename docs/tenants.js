@@ -4,6 +4,7 @@
 //  التمديد بتسجيل دفعة (كليك/تحويل)، الإيقاف، ومستخدمي كل مشترك.
 //  «اشتراكي» لمدير المشترك: تفاصيل اشتراكه ودفعاته.
 // =====================================================================
+import { SALES_WHATSAPP } from './config.js';
 import { S, sb, esc, toast, arError, modal, confirmBox, formData, fmtDate, fmtDateTime, fmtNum, num, today, isSuper, MODULES } from './core.js';
 
 const METHODS = ['كليك', 'تحويل بنكي', 'نقدي', 'شيك'];
@@ -28,29 +29,34 @@ async function viewTenants(v, ctx) {
   if (!isSuper()) return void (v.innerHTML = `<div class="notice">هالشاشة لمدير المنصة بس.</div>`);
   const { data, error } = await sb.rpc('super_tenants');
   if (error) return void (v.innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
-  const rows = data || [];
-  let q = '';
+  const [ex, tpl] = await Promise.all([sb.rpc('super_tenant_extras'), sb.rpc('super_demo_template_info')]);
+  const X = Object.fromEntries((ex.data || []).map(x => [x.id, x]));
+  const rows = (data || []).map(t => ({ ...t, ...(X[t.id] || {}) }));
+  let q = '', onlyTrial = false;
   const active = rows.filter(t => !t.is_default && t.status === 'active' && (!t.expires_at || t.expires_at >= today())).length;
   const soon = rows.filter(t => !t.is_default && t.status === 'active' && t.expires_at && t.expires_at >= today() && (new Date(t.expires_at) - new Date(today())) / 864e5 <= 14).length;
   const expired = rows.filter(t => !t.is_default && t.expires_at && t.expires_at < today()).length;
   const paid = rows.reduce((s, t) => s + Number(t.paid_total || 0), 0);
   const draw = () => {
-    const list = rows.filter(t => !q || [t.code, t.name, t.contact_name, t.phone].some(x => (x || '').toLowerCase().includes(q)));
+    const list = rows.filter(t => (!onlyTrial || t.is_trial) && (!q || [t.code, t.name, t.contact_name, t.phone].some(x => (x || '').toLowerCase().includes(q))));
     v.querySelector('tbody').innerHTML = list.map(t => `<tr>
-      <td><b dir="ltr">${esc(t.code)}</b></td><td><b>${esc(t.name)}</b>${t.plan ? `<div class="muted" style="font-size:12px">${esc(t.plan)}</div>` : ''}</td>
+      <td><b dir="ltr">${esc(t.code)}</b></td><td><b>${esc(t.name)}</b>${t.is_trial ? ` <span class="badge warn">🧪 تجربة · ${t.docs_used || 0}/${t.max_docs || '∞'} حركة</span>` : ''}${t.plan ? `<div class="muted" style="font-size:12px">${esc(t.plan)}</div>` : ''}</td>
       <td>${esc(t.contact_name || '')}${t.phone ? `<div class="muted" dir="ltr" style="font-size:12px">${esc(t.phone)}</div>` : ''}</td>
       <td>${t.expires_at ? fmtDate(t.expires_at) : '—'}<div>${expiryBadge(t)}</div></td>
       <td class="n">${limit(t.users_active, t.max_users)}</td><td class="n">${limit(t.companies_count, t.max_companies)}</td>
       <td style="font-size:12px" title="${esc(modsText(t.modules))}">${!Array.isArray(t.modules) ? 'الكل' : t.modules.length + ' من ' + MODULES.length}</td>
       <td class="muted" style="font-size:12px">${t.last_login ? fmtDateTime(t.last_login) : '—'}</td>
       <td class="n">${fmtNum(t.paid_total)}</td>
-      <td class="actions" style="white-space:nowrap">${t.is_default ? '' : `<button class="btn sm primary" data-pay="${t.id}" title="تسجيل دفعة وتمديد">💳 تمديد</button> `}<button class="btn sm" data-ed="${t.id}">تعديل</button> <button class="btn sm" data-us="${t.id}" title="المستخدمين">👥</button></td></tr>`).join('')
+      <td class="actions" style="white-space:nowrap">${t.is_default ? '' : `<button class="btn sm primary" data-pay="${t.id}" title="تسجيل دفعة وتمديد">💳 تمديد</button> `}<button class="btn sm" data-ed="${t.id}">تعديل</button>${t.is_trial ? ` <button class="btn sm danger" data-del="${t.id}" title="حذف التجربة وكل بياناتها">🗑️</button>` : ''} <button class="btn sm" data-us="${t.id}" title="المستخدمين">👥</button></td></tr>`).join('')
       || '<tr><td colspan="10" class="empty">ما في مشتركين</td></tr>';
   };
   v.innerHTML = `
     <div class="page-head"><h2>🏷️ إدارة المشتركين</h2><div class="spacer"></div>
       <input id="q" placeholder="بحث بالرمز أو الاسم أو الهاتف" style="max-width:240px">
+      <label class="check" style="margin:0"><input type="checkbox" id="ot"> التجارب بس (${rows.filter(t => t.is_trial).length})</label>
       <button class="btn primary" id="add">➕ مشترك جديد</button></div>
+    <div class="notice info" style="margin-bottom:12px">🧪 <b>قالب التجربة المجانية:</b> ${tpl.data ? `«${esc(tpl.data.company_name || '')}» (آخر تحديث ${fmtDateTime(tpl.data.updated_at)})` : 'لسا ما انختار، والتسجيل التجريبي مسكّر'}.
+      لتغييره افتح الشركة اللي بدك ياها من «ملف ← الشركات» واضغط «🧪 اعتمدها قالب للتجربة». كل مشترك تجريبي بياخذ نسخة منها.</div>
     <div class="grid cols-4" style="margin-bottom:14px">
       <div class="card stat"><span class="k">مشتركين فعّالين</span><span class="v">${active}</span></div>
       <div class="card stat"><span class="k">بينتهوا خلال أسبوعين</span><span class="v">${soon}</span></div>
@@ -62,9 +68,16 @@ async function viewTenants(v, ctx) {
   draw();
   v.querySelector('#q').oninput = (e) => { q = e.target.value.trim().toLowerCase(); draw(); };
   v.querySelector('#add').onclick = () => editTenant(null, ctx);
+  v.querySelector('#ot').onchange = (e) => { onlyTrial = e.target.checked; draw(); };
   v.querySelector('tbody').onclick = (e) => {
     const b = e.target.closest('button'); if (!b) return;
-    const t = rows.find(x => x.id === (b.dataset.ed || b.dataset.pay || b.dataset.us));
+    const t = rows.find(x => x.id === (b.dataset.ed || b.dataset.pay || b.dataset.us || b.dataset.del));
+    if (b.dataset.del) return void (async () => {
+      if (!(await confirmBox(`حذف التجربة «${t.name}» (${t.code}) مع شركتها ومستخدميها وكل حركاتها؟ ما بترجع.`))) return ctx.rerender();
+      const r = await sb.rpc('super_delete_trial', { p_tenant: t.id });
+      if (r.error) toast(arError(r.error), 'err'); else toast('انحذفت التجربة', 'ok');
+      ctx.rerender();
+    })();
     if (b.dataset.ed) editTenant(t, ctx); else if (b.dataset.pay) payments(t, ctx); else if (b.dataset.us) tenantUsers(t);
   };
 }
@@ -223,6 +236,17 @@ async function viewSubscription(v) {
 
 // شريط تنبيه الاشتراك فوق المحتوى
 export function subBannerHTML() {
+  const tr = S.trial;
+  if (tr) {
+    const wa = `https://wa.me/${SALES_WHATSAPP}?text=${encodeURIComponent('مرحبا، بدي أشترك ببرنامج السمو ERP (رمز التجربة ' + tr.code + ')')}`;
+    const left = Math.max(0, tr.days_left ?? 0), used = tr.docs_used || 0, max = tr.max_docs || 0;
+    const over = S.sub?.writable === false || (max && used >= max);
+    return `<div class="sub-banner ${over ? 'bad' : 'warn'}" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span>🧪 <b>نسخة تجريبية</b> (رمز المشترك <b dir="ltr">${esc(tr.code)}</b>)</span>
+      <span>${S.sub?.writable === false ? '⛔ خلصت مدة التجربة، البرنامج للعرض بس' : `⏳ باقي <b>${left}</b> يوم`}</span>
+      ${max ? `<span>📄 الحركات: <b>${used}</b> من ${max}</span>` : ''}
+      <a class="btn sm primary" target="_blank" rel="noopener" href="${wa}" style="margin-inline-start:auto">💬 اشترك الآن</a></div>`;
+  }
   const s = S.sub; if (!s || s.is_default) return '';
   if (s.writable === false) return `<div class="sub-banner bad">⛔ انتهى اشتراكك بتاريخ ${fmtDate(s.expires_at)}. البرنامج هلّق <b>للعرض والطباعة بس</b>، وبياناتك محفوظة. للتجديد تواصل معنا.</div>`;
   if (s.days_left != null && s.days_left <= 14) return `<div class="sub-banner warn">⏳ اشتراكك بينتهي بعد <b>${s.days_left} يوم</b> (${fmtDate(s.expires_at)}). جدّد قبلها عشان ما يتوقف الإدخال.</div>`;

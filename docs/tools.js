@@ -19,7 +19,7 @@ async function backupOne(c) {
 
 // نسخة تلقائية يومية بالتخزين (بتشتغل لما المدير يفتح البرنامج، مرة باليوم)
 export async function autoBackup() {
-  if (!isAdmin() || !S.companies?.length) return;
+  if (!isAdmin() || !S.companies?.length || S.trial) return;   // التجربة المجانية بدون نسخ تلقائية
   const key = 'sumou.autobackup.' + S.session.user.id, day = today();
   if (localStorageGet(key) === day) return;
   localStorageSet(key, day);
