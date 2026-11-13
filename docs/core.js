@@ -45,6 +45,7 @@ export const SCREENS = [
   { key: 'bank_recon',       label: 'التسوية البنكية',      group: 'المالية' },
   { key: 'payroll',          label: 'الموظفين والرواتب',    group: 'الموظفين والرواتب' },
   { key: 'fixed_assets',     label: 'الأصول الثابتة والاستهلاك', group: 'الأصول الثابتة' },
+  { key: 'asset_custody',    label: 'عهد الأصول الثابتة',   group: 'الأصول الثابتة' },
   { key: 'expense_cards',    label: 'بطاقات المصاريف وفئاتها', group: 'المصاريف' },
   { key: 'items',            label: 'الأصناف وفئات المواد', group: 'المخزون' },
   { key: 'inventory',        label: 'المستودعات وسندات المخزون والجرد', group: 'المخزون' },
@@ -208,7 +209,7 @@ export const MODULES = [
 const SCREEN_MODULE = {
   customers: 'sales', sales_invoices: 'sales', sales_orders: 'sales', pos: 'sales',
   suppliers: 'purchases', purchase_invoices: 'purchases', purchase_orders: 'purchases',
-  inventory: 'inventory', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets',
+  inventory: 'inventory', cheques: 'banking', bank_recon: 'banking', payroll: 'payroll', fixed_assets: 'assets', asset_custody: 'assets',
   marketing: 'marketing', manufacturing: 'manufacturing', maintenance: 'maintenance', obligations: 'office',
 };
 export const screenModule = (screen) => SCREEN_MODULE[screen] || 'core';

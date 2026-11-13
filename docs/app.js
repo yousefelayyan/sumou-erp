@@ -24,6 +24,7 @@ import { ORDER_ROUTES } from './orders.js';
 import { MFG_ROUTES, enhanceReportTables } from './mfg.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
+import { ASSET_ROUTES } from './assets.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
@@ -177,6 +178,8 @@ const NAV = () => [
   ]},
   { title: 'الأصول الثابتة', items: [
     { r: 'assets', i: '🏢', l: 'الأصول الثابتة والاستهلاك', show: () => S.company && can('fixed_assets', 'view') },
+    { r: 'asset-moves', i: '🔁', l: 'حركات الأصول الثابتة', show: () => S.company && can('fixed_assets', 'view') },
+    { r: 'asset-custody', i: '🧾', l: 'عهد الأصول الثابتة', show: () => S.company && can('asset_custody', 'view') },
     { r: 'asset-center', i: '📒', l: 'أستاذ مساعد الأصول الثابتة', show: () => S.company && can('fixed_assets', 'view') },
   ]},
   { title: 'المصاريف', items: [
@@ -496,7 +499,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };

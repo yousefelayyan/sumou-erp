@@ -6,6 +6,8 @@ import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirm
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
+import { loadDepartments, deptName } from './departments.js';
+import { custodyHistory } from './assets.js';
 
 const noCo = (v) => void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
 const q = (k) => new URLSearchParams(location.hash.split('?')[1] || '').get(k);
@@ -163,21 +165,22 @@ async function payrollRun(v, ctx, id) {
 // ---------------------------------------------------------------------
 async function viewAssets(v, ctx) {
   if (!S.company) return noCo(v);
-  const [{ data, error }, accs, ccs, runs] = await Promise.all([sb.from('fixed_assets').select('*').eq('company_id', S.company.id).order('code'), loadAccounts(), loadCC(),
-    sb.from('depreciation_runs').select('*').eq('company_id', S.company.id).order('created_at', { ascending: false }), loadNumbering(true)]);
+  const [{ data, error }, accs, ccs, runs, , depts] = await Promise.all([sb.from('fixed_assets').select('*').eq('company_id', S.company.id).order('code'), loadAccounts(), loadCC(),
+    sb.from('depreciation_runs').select('*').eq('company_id', S.company.id).order('created_at', { ascending: false }), loadNumbering(true), loadDepartments()]);
   if (error) throw error;
+  const subs = depts.filter(d => d.kind === 'sub');
   await sb.rpc('ensure_payroll_settings', { p_company: S.company.id });
   const accum = {}; await Promise.all(data.map(async a => { const r = await sb.rpc('asset_accum', { p_asset: a.id }); accum[a.id] = num(r.data); }));
   const by = Object.fromEntries(accs.map(a => [a.id, a])), leaves = leafAccounts(accs);
   const t = data.reduce((s, a) => ({ c: s.c + num(a.cost), d: s.d + accum[a.id] }), { c: 0, d: 0 });
   const table = `<table class="t pt rep"><thead><tr><th>الرقم</th><th>الأصل</th><th>تاريخ الشراء</th><th>الكلفة</th><th>العمر</th><th>القسط الشهري</th><th>مجمع الاستهلاك</th><th>القيمة الدفترية</th><th>الحالة</th><th class="no-print"></th></tr></thead><tbody>
-    ${data.map(a => `<tr><td>${esc(a.code)}</td><td><b>${esc(a.name)}</b><div class="muted" style="font-size:12px">${esc(a.category || '')} ${a.location ? '· ' + esc(a.location) : ''}</div></td><td>${fmtDate(a.purchase_date)}</td>
+    ${data.map(a => `<tr><td>${esc(a.code)}</td><td><b>${esc(a.name)}</b><div class="muted" style="font-size:12px">${esc(a.category || '')} ${a.location ? '· ' + esc(a.location) : ''} ${a.department_id ? '· 🏬 ' + esc(deptName(a.department_id)) : ''}</div></td><td>${fmtDate(a.purchase_date)}</td>
       <td class="n">${fmtNum(a.cost)}</td><td>${a.life_months % 12 ? a.life_months + ' شهر' : a.life_months / 12 + ' سنة'}</td><td class="n">${fmtNum((num(a.cost) - num(a.salvage)) / a.life_months)}</td>
       <td class="n">${fmtNum(accum[a.id])}</td><td class="n"><b>${fmtNum(num(a.cost) - accum[a.id])}</b></td>
       <td>${a.status === 'active' ? '<span class="badge ok">مستخدم</span>' : '<span class="badge bad">مستبعد</span>'}</td><td class="no-print"><button class="btn sm" data-ed="${a.id}">تعديل</button></td></tr>`).join('') || '<tr><td colspan="10" class="empty">ما في أصول</td></tr>'}</tbody>
     <tfoot><tr class="tot"><td colspan="3">المجموع</td><td class="n">${fmtNum(t.c)}</td><td colspan="2"></td><td class="n">${fmtNum(t.d)}</td><td class="n">${fmtNum(t.c - t.d)}</td><td colspan="2"></td></tr></tfoot></table>`;
   v.innerHTML = `<div class="page-head"><h2>🏢 الأصول الثابتة</h2><span class="badge brand">${data.length}</span><div class="spacer"></div>
-      <button class="btn" id="prn">🖨️ سجل الأصول</button> ${can('fixed_assets', 'post') ? '<button class="btn primary" id="dep">📉 احتساب الاستهلاك</button>' : ''} ${can('fixed_assets', 'edit') ? '<button class="btn primary" id="add">➕ أصل</button>' : ''}</div>
+      <a class="btn" href="#/asset-moves">🔁 حركات الأصول</a> <button class="btn" id="prn">🖨️ سجل الأصول</button> ${can('fixed_assets', 'post') ? '<button class="btn primary" id="dep">📉 احتساب الاستهلاك</button>' : ''} ${can('fixed_assets', 'edit') ? '<button class="btn primary" id="add">➕ أصل</button>' : ''}</div>
     <p class="muted">الاستهلاك بطريقة القسط الثابت شهرياً. سجّل شراء الأصل بسند صرف أو قيد على حساب الأصل، وبعدين ضيفه هون عشان ينحسب استهلاكه.</p>
     <div class="card table-wrap">${table}</div>
     <h3>دورات الاستهلاك المرحّلة</h3><div class="card table-wrap"><table class="t" id="runs"><thead><tr><th>لغاية</th><th>المبلغ</th><th>الحالة</th><th></th></tr></thead><tbody>
@@ -218,18 +221,22 @@ async function viewAssets(v, ctx) {
       <div class="field"><label>حساب مجمع الاستهلاك</label>${accSel('accum_account_id', a.accum_account_id, x => x.category === 'assets')}</div>
       <div class="field"><label>حساب مصروف الاستهلاك</label>${accSel('expense_account_id', a.expense_account_id, x => x.category === 'expenses')}</div>
       ${ccSelect(ccs, a.cost_center_id)}
-      <div class="field"><label>الحالة</label><select name="status"><option value="active" ${a.status === 'active' ? 'selected' : ''}>مستخدم</option><option value="disposed" ${a.status === 'disposed' ? 'selected' : ''}>مستبعد/مباع</option></select></div>
+      ${subs.length ? `<div class="field"><label>الدائرة</label><select name="department_id"><option value="">—</option>${subs.filter(d => d.is_active || d.id === a.department_id).map(d => `<option value="${d.id}" ${d.id === a.department_id ? 'selected' : ''}>${esc(d.code)} — ${esc(d.name)}</option>`).join('')}</select></div>` : ''}
+      <div class="field"><label>الحالة</label><select name="status"><option value="active" ${a.status === 'active' ? 'selected' : ''}>مستخدم</option><option value="disposed" ${a.status === 'disposed' ? 'selected' : ''}>مستبعد/مباع</option></select><small class="muted">الأفضل: استبعاد أو بيع من «حركات الأصول» عشان ينعمل القيد</small></div>
       <div class="field"><label>تاريخ الاستبعاد</label><input type="date" name="disposed_date" value="${esc(a.disposed_date)}"></div>
       <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(a.notes)}"></div></div></form>
       <p class="muted" style="font-size:13px">لما يكون الحساب «الافتراضي»: مصروف الاستهلاك ${esc(accs.find(x => x.code === '5213')?.name || '')} ومجمع الاستهلاك ${esc(accs.find(x => x.code === '1209')?.name || '')} (بتتغيّر من حسابات الربط).</p>`,
-      foot: `${can('fixed_assets', 'edit') ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${!isNew ? '<button class="btn" data-att>📎 مرفقات</button>' : ''}${!isNew && can('fixed_assets', 'edit') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
+      foot: `${can('fixed_assets', 'edit') ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${!isNew ? '<button class="btn" data-att>📎 مرفقات</button>' : ''}${!isNew && a.status === 'active' && can('fixed_assets', 'add') ? '<button class="btn" data-mv="dispose">🗑️ استبعاد</button><button class="btn" data-mv="sale">💰 بيع</button>' + (subs.length ? '<button class="btn" data-mv="transfer">🔀 نقل</button>' : '') : ''}${!isNew && can('asset_custody', 'view') ? '<button class="btn" data-hist>🧾 سجل العهدة</button>' : ''}${!isNew && can('fixed_assets', 'edit') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
     m.el.querySelector('.modal').style.maxWidth = '860px';
     m.el.querySelector('[data-att]')?.addEventListener('click', () => openAttachments('asset', a.id, a.name));
+    m.el.querySelector('[data-hist]')?.addEventListener('click', () => custodyHistory(a));
+    m.el.querySelectorAll('[data-mv]').forEach(b => b.onclick = () => { m.close(); location.hash = `#/asset-moves?new=${b.dataset.mv}&asset=${a.id}`; });
     m.el.querySelector('[data-del]')?.addEventListener('click', async () => { if (!(await confirmBox('حذف الأصل؟'))) return; const x = await sb.from('fixed_assets').delete().eq('id', a.id); if (x.error) return toast(arError(x.error), 'err'); m.close(); ctx.rerender(); });
     m.el.querySelector('[data-save]')?.addEventListener('click', async () => {
       const d = formData(m.el.querySelector('#f')); if (!d.name || !num(d.cost)) return toast('الاسم والكلفة مطلوبين', 'err');
       d.cost = num(d.cost); d.salvage = num(d.salvage); d.opening_accum = num(d.opening_accum); d.life_months = Math.max(1, parseInt(d.life_months, 10) || 1);
       if (!ccs.length) delete d.cost_center_id;
+      if (!subs.length) delete d.department_id; else d.department_id = d.department_id || null;
       const res = isNew ? await sb.from('fixed_assets').insert({ ...d, company_id: S.company.id }) : await sb.from('fixed_assets').update(d).eq('id', a.id);
       if (res.error) return toast(arError(res.error), 'err'); toast('تم الحفظ', 'ok'); m.close(); ctx.rerender();
     });

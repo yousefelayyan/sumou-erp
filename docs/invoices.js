@@ -143,13 +143,19 @@ async function viewSettings(v, ctx) {
       ${sel('ss_payable_account_id', 'أمانات الضمان الاجتماعي')}${sel('wht_payable_account_id', 'أمانات ضريبة الدخل')}
       ${sel('salaries_payable_account_id', 'رواتب مستحقة (الصافي)')}${sel('advances_account_id', 'سلف وذمم الموظفين')}</div>
     <h3 style="margin:16px 0 6px">🏢 الأصول الثابتة</h3>
-    <div class="grid cols-2">${sel('depreciation_account_id', 'مصروف الاستهلاك (الافتراضي)')}${sel('accum_dep_account_id', 'مجمع الاستهلاك (الافتراضي)')}</div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
+    <div class="grid cols-2">${sel('depreciation_account_id', 'مصروف الاستهلاك (الافتراضي)')}${sel('accum_dep_account_id', 'مجمع الاستهلاك (الافتراضي)')}
+      ${sel('asset_disposal_account_id', 'أرباح وخسائر بيع وشطب الأصول')}
+      <div class="field"><label>&nbsp;</label>${editable && !st.asset_disposal_account_id ? '<button type="button" class="btn sm" id="mk-disp">➕ اعمل حساب «أرباح (خسائر) بيع وشطب أصول» لحاله</button>' : ''}</div></div><div class="field"><label>ملاحظة أسفل الفاتورة المطبوعة</label><textarea name="invoice_footer" style="min-height:60px" ${editable ? '' : 'disabled'}>${esc(st.invoice_footer)}</textarea></div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
     const { error } = await sb.from('company_settings').upsert(d);
     if (error) return toast(arError(error), 'err');
     await log('تعديل', 'settings', S.company.id); toast('تم الحفظ', 'ok');
+  });
+  v.querySelector('#mk-disp')?.addEventListener('click', async () => {
+    const { error } = await sb.rpc('ensure_asset_disposal_account', { p_company: S.company.id }); if (error) return toast(arError(error), 'err');
+    toast('انعمل الحساب وانربط', 'ok'); S.accounts = null; viewSettings(v);
   });
   v.querySelector('#mk-wip')?.addEventListener('click', async () => {
     const { error } = await sb.rpc('ensure_wip_account', { p_company: S.company.id }); if (error) return toast(arError(error), 'err');

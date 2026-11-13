@@ -7300,3 +7300,711 @@ begin
 end $$;
 revoke execute on function public.fy_release_started(uuid) from public, anon;
 grant execute on function public.fy_release_started(uuid) to authenticated;
+
+
+-- #################### 33_asset_movements.sql ####################
+-- =====================================================================
+--  السمو ERP — المرحلة 33: حركات الأصول الثابتة
+--  استبعاد/إتلاف، بيع مباشر لزبون، ونقل بين الدوائر — مستند واحد بقيده.
+--  الكتابة كلها من دوال (asset_mov_*)؛ الجداول للعرض بس.
+--  القيد نوعه depreciation (قيود الأصول، داخلي)، وسطر لكل أصل.
+-- =====================================================================
+alter table public.fixed_assets add column if not exists department_id uuid references public.departments(id) on delete set null;
+alter table public.company_settings add column if not exists asset_disposal_account_id uuid references public.accounts(id) on delete set null;
+
+create table if not exists public.asset_movements (
+  id             uuid primary key default gen_random_uuid(),
+  company_id     uuid not null references public.companies(id) on delete cascade,
+  mov_no         int not null,
+  kind           text not null check (kind in ('dispose','sale','transfer')),
+  mov_date       date not null,
+  status         text not null default 'draft' check (status in ('draft','posted','cancelled')),
+  party_id       uuid references public.parties(id),   -- الزبون (البيع)
+  tax_rate       numeric(6,3) not null default 16 check (tax_rate >= 0),
+  from_department_id uuid references public.departments(id) on delete set null,
+  to_department_id   uuid references public.departments(id) on delete set null,
+  reference      text,
+  notes          text,
+  entry_id       uuid references public.journal_entries(id) on delete set null,
+  cancel_entry_id uuid references public.journal_entries(id) on delete set null,
+  total_cost     numeric(18,3) not null default 0,
+  total_accum    numeric(18,3) not null default 0,
+  total_price    numeric(18,3) not null default 0,
+  total_tax      numeric(18,3) not null default 0,
+  created_by     uuid default auth.uid(),
+  created_at     timestamptz not null default now(),
+  posted_at      timestamptz,
+  unique (company_id, mov_no)
+);
+create table if not exists public.asset_movement_lines (
+  id            uuid primary key default gen_random_uuid(),
+  movement_id   uuid not null references public.asset_movements(id) on delete cascade,
+  line_no       int not null,
+  asset_id      uuid not null references public.fixed_assets(id),
+  sale_price    numeric(18,3) not null default 0 check (sale_price >= 0),
+  tax_amount    numeric(18,3) not null default 0 check (tax_amount >= 0),
+  cost          numeric(18,3),          -- لقطة وقت الترحيل
+  accum         numeric(18,3),
+  book_value    numeric(18,3),
+  prev_status   text,
+  prev_department_id uuid,
+  notes         text,
+  unique (movement_id, asset_id)
+);
+create index if not exists asset_mov_lines_asset on public.asset_movement_lines (asset_id);
+
+alter table public.asset_movements enable row level security;
+alter table public.asset_movement_lines enable row level security;
+drop policy if exists am_select on public.asset_movements;
+create policy am_select on public.asset_movements for select to authenticated using (public.can(company_id, 'fixed_assets', 'view'));
+drop policy if exists aml_select on public.asset_movement_lines;
+create policy aml_select on public.asset_movement_lines for select to authenticated
+  using (exists (select 1 from public.asset_movements m where m.id = movement_id and public.can(m.company_id, 'fixed_assets', 'view')));
+revoke insert, update, delete on public.asset_movements, public.asset_movement_lines from authenticated;
+grant select on public.asset_movements, public.asset_movement_lines to authenticated;
+
+-- حساب «أرباح (خسائر) بيع وشطب أصول ثابتة»: أخ لحساب المبيعات، طبيعته مدين ودائن
+create or replace function public.ensure_asset_disposal_account(p_company uuid) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare st public.company_settings; sa public.accounts; aid uuid; c text; n int := 1;
+begin
+  if not (public.can(p_company, 'accounts', 'add') and public.can(p_company, 'companies', 'edit')) then raise exception 'ما عندك صلاحية'; end if;
+  perform public.ensure_company_settings(p_company);
+  select * into st from public.company_settings where company_id = p_company;
+  if st.asset_disposal_account_id is not null then return st.asset_disposal_account_id; end if;
+  select * into sa from public.accounts where id = st.sales_account_id;
+  if sa.id is null then raise exception 'حدّد حساب المبيعات أول بشاشة «حسابات الربط»'; end if;
+  select id into aid from public.accounts where company_id = p_company and name = 'أرباح (خسائر) بيع وشطب أصول ثابتة' and not is_group limit 1;
+  if aid is null then
+    loop
+      c := coalesce((select code from public.accounts where id = sa.parent_id), left(sa.code, greatest(length(sa.code) - 2, 1))) || lpad((90 + n)::text, 2, '0');
+      exit when not exists (select 1 from public.accounts where company_id = p_company and code = c);
+      n := n + 1; if n > 9 then raise exception 'ما لقيت رمز فاضي للحساب، اعمله بإيدك من دليل الحسابات'; end if;
+    end loop;
+    insert into public.accounts (company_id, code, name, parent_id, level, is_group, category, nature, account_type)
+    values (p_company, c, 'أرباح (خسائر) بيع وشطب أصول ثابتة', sa.parent_id, sa.level, false, 'revenue', 'both', 'general') returning id into aid;
+  end if;
+  update public.company_settings set asset_disposal_account_id = aid where company_id = p_company;
+  return aid;
+end $$;
+
+-- الأصل اللي انستبعد/انباع بحركة مرحّلة ما بترجع حالته إلا بإلغاء الحركة
+create or replace function public.ab_asset_mov_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.is_internal() then return new; end if;
+  if new.status is distinct from old.status and exists (select 1 from public.asset_movement_lines l join public.asset_movements m on m.id = l.movement_id
+       where l.asset_id = old.id and m.status = 'posted' and m.kind in ('dispose','sale')) then
+    raise exception 'الأصل مستبعد بحركة أصول مرحّلة. ألغِ الحركة بدل ما تغيّر حالته';
+  end if;
+  if new.status = 'disposed' and old.status = 'active' and exists (select 1 from public.asset_movement_lines l join public.asset_movements m on m.id = l.movement_id
+       where l.asset_id = old.id and m.status = 'draft') then
+    raise exception 'الأصل عليه حركة أصول لسا ما ترحّلت';
+  end if;
+  return new;
+end $$;
+drop trigger if exists ab_asset_mov_guard on public.fixed_assets;
+create trigger ab_asset_mov_guard before update of status on public.fixed_assets for each row execute function public.ab_asset_mov_guard();
+
+-- حفظ مسودة (جديدة أو تعديل): p = {id?, company_id, kind, mov_date, party_id, tax_rate, from_department_id, to_department_id, reference, notes, lines:[{asset_id, sale_price, tax_amount?, notes}]}
+create or replace function public.asset_mov_save(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare cid uuid := (p ->> 'company_id')::uuid; mid uuid := nullif(p ->> 'id', '')::uuid; m public.asset_movements; k text := p ->> 'kind';
+  l jsonb; a public.fixed_assets; n int := 0; pty public.parties; fd uuid := nullif(p ->> 'from_department_id', '')::uuid; td uuid := nullif(p ->> 'to_department_id', '')::uuid;
+  rate numeric := coalesce(nullif(p ->> 'tax_rate', '')::numeric, 16); pr numeric; tx numeric;
+begin
+  if mid is not null then
+    select * into m from public.asset_movements where id = mid for update;
+    if m.id is null then raise exception 'الحركة مش موجودة'; end if;
+    cid := m.company_id; k := m.kind;
+    if m.status <> 'draft' then raise exception 'الحركة مرحّلة أو ملغاة، ما بتتعدّل'; end if;
+    if not public.can(cid, 'fixed_assets', 'edit') then raise exception 'ما عندك صلاحية تعديل حركات الأصول'; end if;
+  elsif not public.can(cid, 'fixed_assets', 'add') then raise exception 'ما عندك صلاحية إضافة حركات الأصول';
+  end if;
+  if k not in ('dispose', 'sale', 'transfer') then raise exception 'نوع الحركة مش صحيح'; end if;
+  if nullif(p ->> 'mov_date', '') is null then raise exception 'اكتب تاريخ الحركة'; end if;
+  if k = 'sale' then
+    select * into pty from public.parties where id = nullif(p ->> 'party_id', '')::uuid;
+    if pty.id is null or pty.company_id <> cid or pty.party_type <> 'customer' then raise exception 'البيع لازم إله زبون من نفس الشركة'; end if;
+    if rate < 0 or rate > 100 then raise exception 'نسبة الضريبة مش منطقية'; end if;
+  end if;
+  if k = 'transfer' then
+    if td is null then raise exception 'حدّد الدائرة اللي بينتقل لها الأصل'; end if;
+    if fd is not distinct from td then raise exception 'الدائرة المنقول منها والمنقول لها لازم يختلفوا'; end if;
+    if not exists (select 1 from public.departments where id = td and company_id = cid and is_active)
+       or (fd is not null and not exists (select 1 from public.departments where id = fd and company_id = cid)) then raise exception 'الدائرة مش من نفس الشركة'; end if;
+  end if;
+  if coalesce(jsonb_typeof(p -> 'lines'), '') <> 'array' or jsonb_array_length(p -> 'lines') = 0 then raise exception 'أضف أصل واحد على الأقل'; end if;
+
+  if mid is null then
+    insert into public.asset_movements (company_id, mov_no, kind, mov_date, party_id, tax_rate, from_department_id, to_department_id, reference, notes)
+    values (cid, coalesce((select max(mov_no) from public.asset_movements where company_id = cid), 0) + 1, k, (p ->> 'mov_date')::date,
+            pty.id, case when k = 'sale' then rate else 0 end, fd, td, nullif(trim(p ->> 'reference'), ''), nullif(trim(p ->> 'notes'), ''))
+    returning id into mid;
+  else
+    update public.asset_movements set mov_date = (p ->> 'mov_date')::date, party_id = pty.id, tax_rate = case when k = 'sale' then rate else 0 end,
+           from_department_id = fd, to_department_id = td, reference = nullif(trim(p ->> 'reference'), ''), notes = nullif(trim(p ->> 'notes'), '')
+     where id = mid;
+    delete from public.asset_movement_lines where movement_id = mid;
+  end if;
+
+  for l in select * from jsonb_array_elements(p -> 'lines') loop
+    n := n + 1;
+    select * into a from public.fixed_assets where id = (l ->> 'asset_id')::uuid;
+    if a.id is null or a.company_id <> cid then raise exception 'أصل مش موجود (سطر %)', n; end if;
+    if a.status <> 'active' then raise exception 'الأصل «%» مستبعد', a.name; end if;
+    if k = 'transfer' and fd is not null and a.department_id is distinct from fd then raise exception 'الأصل «%» مش بالدائرة المنقول منها', a.name; end if;
+    if exists (select 1 from public.asset_movement_lines x join public.asset_movements y on y.id = x.movement_id
+               where x.asset_id = a.id and y.status = 'draft' and y.id <> mid) then
+      raise exception 'الأصل «%» بحركة ثانية لسا ما ترحّلت', a.name;
+    end if;
+    pr := case when k = 'sale' then round(coalesce(nullif(l ->> 'sale_price', '')::numeric, 0), 3) else 0 end;
+    if k = 'sale' and pr <= 0 then raise exception 'اكتب سعر البيع للأصل «%»', a.name; end if;
+    tx := case when k = 'sale' then round(pr * rate / 100, 3) else 0 end;
+    insert into public.asset_movement_lines (movement_id, line_no, asset_id, sale_price, tax_amount, notes)
+    values (mid, n, a.id, pr, tx, nullif(trim(l ->> 'notes'), ''));
+  end loop;
+  update public.asset_movements set total_price = (select coalesce(sum(sale_price), 0) from public.asset_movement_lines where movement_id = mid),
+         total_tax = (select coalesce(sum(tax_amount), 0) from public.asset_movement_lines where movement_id = mid) where id = mid;
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), cid, case when p ? 'id' and nullif(p ->> 'id', '') is not null then 'تعديل' else 'إضافة' end, 'asset_movements', mid::text, jsonb_build_object('kind', k, 'lines', n));
+  return mid;
+end $$;
+
+-- الترحيل: القيد + تطبيق الحركة على الأصول
+create or replace function public.asset_mov_post(p_id uuid) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare m public.asset_movements; st public.company_settings; fy uuid; eid uuid := null; ln int := 0; r record; prev_m date;
+  acc_asset uuid; acc_accum uuid; disp uuid; party_acc uuid; v_book numeric; v_accum numeric; t_cost numeric := 0; t_acc numeric := 0; tot numeric := 0;
+  descr text; gl numeric; prev text := current_setting('sumou.internal', true);
+begin
+  select * into m from public.asset_movements where id = p_id for update;
+  if m.id is null then raise exception 'الحركة مش موجودة'; end if;
+  if not public.can(m.company_id, 'fixed_assets', 'post') then raise exception 'ما عندك صلاحية ترحيل حركات الأصول'; end if;
+  if m.status <> 'draft' then raise exception 'الحركة مرحّلة أو ملغاة'; end if;
+  if not exists (select 1 from public.asset_movement_lines where movement_id = p_id) then raise exception 'ما في أصول بالحركة'; end if;
+  perform public.ensure_company_settings(m.company_id);
+  perform public.ensure_payroll_settings(m.company_id);
+  select * into st from public.company_settings where company_id = m.company_id;
+  prev_m := (date_trunc('month', m.mov_date) - interval '1 day')::date;
+  descr := case m.kind when 'dispose' then 'استبعاد أصول' when 'sale' then 'بيع أصول' else 'نقل أصول بين الدوائر' end || ' — حركة ' || m.mov_no;
+
+  if m.kind in ('dispose', 'sale') then
+    select id into fy from public.fiscal_years where company_id = m.company_id and m.mov_date between start_date and end_date and not is_closed order by start_date desc limit 1;
+    if fy is null then raise exception 'ما في سنة مالية مفتوحة بتاريخ الحركة'; end if;
+    disp := st.asset_disposal_account_id;
+    if disp is null then raise exception 'حدّد حساب «أرباح وخسائر بيع وشطب الأصول» بحسابات الربط'; end if;
+    if m.kind = 'sale' then
+      select account_id into party_acc from public.parties where id = m.party_id;
+      if party_acc is null then raise exception 'الزبون ما إله حساب'; end if;
+      if m.total_tax > 0 and st.output_tax_account_id is null then raise exception 'حدّد حساب ضريبة المبيعات بحسابات الربط'; end if;
+    end if;
+    perform set_config('sumou.internal', public.internal_token(), true);
+    insert into public.journal_entries (company_id, fiscal_year_id, entry_type, entry_date, description, reference, status)
+    values (m.company_id, fy, 'depreciation', m.mov_date, descr, coalesce(m.reference, 'حركة أصول ' || m.mov_no), 'draft') returning id into eid;
+  else
+    if not exists (select 1 from public.fiscal_years where company_id = m.company_id and m.mov_date between start_date and end_date and not is_closed) then
+      raise exception 'ما في سنة مالية مفتوحة بتاريخ الحركة';
+    end if;
+    perform set_config('sumou.internal', public.internal_token(), true);
+  end if;
+
+  for r in select l.*, a.name, a.code, a.cost acost, a.salvage, a.dep_start, a.status astatus, a.department_id adept,
+                  a.asset_account_id, a.accum_account_id, a.cost_center_id cc
+             from public.asset_movement_lines l join public.fixed_assets a on a.id = l.asset_id
+            where l.movement_id = p_id order by l.line_no for update of a loop
+    if r.astatus <> 'active' then raise exception 'الأصل «%» مستبعد', r.name; end if;
+    v_accum := least(greatest(coalesce(public.asset_accum(r.asset_id), 0), 0), r.acost);
+    v_book := r.acost - v_accum;
+    if public.asset_last_dep(r.asset_id) > (date_trunc('month', m.mov_date) + interval '1 month - 1 day')::date then
+      raise exception 'الأصل «%» إله استهلاك مرحّل بعد شهر الحركة. ألغِ دورة الاستهلاك أو غيّر التاريخ', r.name;
+    end if;
+    if m.kind = 'transfer' and m.from_department_id is not null and r.adept is distinct from m.from_department_id then
+      raise exception 'الأصل «%» ما عاد بالدائرة المنقول منها', r.name;
+    end if;
+    if m.kind in ('dispose', 'sale') then
+      -- لازم يكون مستهلك لنهاية الشهر السابق (عشان القيمة الدفترية تكون صح)
+      if r.dep_start <= prev_m and v_accum < r.acost - r.salvage - 0.0005
+         and coalesce(public.asset_last_dep(r.asset_id), r.dep_start - 1) < prev_m then
+        raise exception 'الأصل «%» لازم يكون مستهلك لنهاية %. رحّل الاستهلاك أول', r.name, to_char(prev_m, 'MM/YYYY');
+      end if;
+      acc_asset := r.asset_account_id; acc_accum := coalesce(r.accum_account_id, st.accum_dep_account_id);
+      if acc_asset is null or acc_accum is null then raise exception 'حدّد حساب الأصل ومجمع الاستهلاك للأصل «%»', r.name; end if;
+      -- مدين: المجمع، دائن: الأصل بالكلفة
+      if v_accum > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, acc_accum, 'مجمع استهلاك ' || r.code || ' ' || r.name, v_accum, 0); end if;
+      ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit, cost_center_id) values (eid, ln, acc_asset, r.code || ' ' || r.name, 0, r.acost, r.cc);
+      if m.kind = 'dispose' then
+        if v_book > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, disp, 'خسارة استبعاد ' || r.code || ' ' || r.name, v_book, 0); end if;
+      else
+        ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit, party_id) values (eid, ln, party_acc, 'بيع ' || r.code || ' ' || r.name, r.sale_price + r.tax_amount, 0, m.party_id);
+        if r.tax_amount > 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, st.output_tax_account_id, 'ضريبة بيع ' || r.code, 0, r.tax_amount); end if;
+        gl := r.sale_price - v_book;   -- موجب = ربح (دائن)، سالب = خسارة (مدين)
+        if gl <> 0 then ln := ln + 1; insert into public.journal_lines (entry_id, line_no, account_id, description, debit, credit) values (eid, ln, disp, case when gl > 0 then 'ربح بيع ' else 'خسارة بيع ' end || r.code || ' ' || r.name, greatest(-gl, 0), greatest(gl, 0)); end if;
+      end if;
+      update public.fixed_assets set status = 'disposed', disposed_date = m.mov_date where id = r.asset_id;
+    else
+      update public.fixed_assets set department_id = m.to_department_id where id = r.asset_id;
+    end if;
+    update public.asset_movement_lines set cost = r.acost, accum = v_accum, book_value = v_book, prev_status = r.astatus, prev_department_id = r.adept where id = r.id;
+    t_cost := t_cost + r.acost; t_acc := t_acc + v_accum;
+  end loop;
+
+  if eid is not null then
+    select sum(debit) into tot from public.journal_lines where entry_id = eid;
+    if coalesce(tot, 0) = 0 or tot <> (select sum(credit) from public.journal_lines where entry_id = eid) then
+      raise exception 'قيد الحركة مش متوازن، راجع بيانات الأصول (الكلفة ومجمع الاستهلاك السابق)';
+    end if;
+    update public.journal_entries set status = 'posted', total = tot, posted_by = auth.uid(), posted_at = now() where id = eid;
+  end if;
+  update public.asset_movements set status = 'posted', entry_id = eid, total_cost = t_cost, total_accum = t_acc, posted_at = now() where id = p_id;
+  perform set_config('sumou.internal', coalesce(prev, ''), true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), m.company_id, 'ترحيل', 'asset_movements', p_id::text, jsonb_build_object('no', m.mov_no, 'kind', m.kind));
+  return eid;
+end $$;
+
+-- الإلغاء: المسودة بتنلغى؛ المرحّلة بقيد عكسي وبيرجع الأصل لحالته (إذا ما عليه حركة بعدها)
+create or replace function public.asset_mov_cancel(p_id uuid, p_date date default null) returns void
+language plpgsql security definer set search_path = public as $$
+declare m public.asset_movements; nid uuid; r record; prev text := current_setting('sumou.internal', true);
+begin
+  select * into m from public.asset_movements where id = p_id for update;
+  if m.id is null then raise exception 'الحركة مش موجودة'; end if;
+  if not public.can(m.company_id, 'fixed_assets', case when m.status = 'posted' then 'post' else 'edit' end) then raise exception 'ما عندك صلاحية'; end if;
+  if m.status = 'cancelled' then raise exception 'الحركة ملغاة من قبل'; end if;
+  if m.status = 'posted' then
+    for r in select l.asset_id, a.name, a.department_id dept from public.asset_movement_lines l join public.fixed_assets a on a.id = l.asset_id where l.movement_id = p_id loop
+      if m.kind = 'transfer' and r.dept is distinct from m.to_department_id then
+        raise exception 'الأصل «%» ما عاد بالدائرة المنقول لها، ما بينلغى النقل', r.name;
+      end if;
+      if exists (select 1 from public.asset_movement_lines x join public.asset_movements y on y.id = x.movement_id
+                 where x.asset_id = r.asset_id and y.status = 'posted' and y.posted_at > m.posted_at) then
+        raise exception 'على الأصل «%» حركة بعد هاي، ألغِها أول', r.name;
+      end if;
+      if m.kind in ('dispose', 'sale') and exists (select 1 from public.depreciation_lines dl join public.depreciation_runs dr on dr.id = dl.run_id
+                 where dl.asset_id = r.asset_id and dr.status = 'posted' and dl.to_date >= m.mov_date) then
+        raise exception 'الأصل «%» إله استهلاك مرحّل بعد تاريخ الحركة', r.name;
+      end if;
+    end loop;
+    if m.entry_id is not null then
+      nid := public.reverse_internal(m.entry_id, greatest(coalesce(p_date, public.local_today()), m.mov_date), 'إلغاء حركة أصول ' || m.mov_no);
+    end if;
+    perform set_config('sumou.internal', public.internal_token(), true);
+    if m.kind = 'transfer' then
+      update public.fixed_assets a set department_id = l.prev_department_id
+        from public.asset_movement_lines l where l.movement_id = p_id and l.asset_id = a.id;
+    else
+      update public.fixed_assets a set status = coalesce(l.prev_status, 'active'),
+             disposed_date = case when coalesce(l.prev_status, 'active') = 'active' then null else a.disposed_date end
+        from public.asset_movement_lines l where l.movement_id = p_id and l.asset_id = a.id;
+    end if;
+  end if;
+  update public.asset_movements set status = 'cancelled', cancel_entry_id = nid where id = p_id;
+  perform set_config('sumou.internal', coalesce(prev, ''), true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), m.company_id, 'إلغاء', 'asset_movements', p_id::text, jsonb_build_object('no', m.mov_no));
+end $$;
+
+create or replace function public.asset_mov_delete(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare m public.asset_movements;
+begin
+  select * into m from public.asset_movements where id = p_id;
+  if m.id is null then return; end if;
+  if not public.can(m.company_id, 'fixed_assets', 'delete') then raise exception 'ما عندك صلاحية'; end if;
+  if m.status = 'posted' then raise exception 'الحركة مرحّلة، ألغِها بدل الحذف'; end if;
+  if m.status <> 'draft' then raise exception 'الحركة الملغاة بتضل للسجل، ما بتنحذف'; end if;
+  delete from public.asset_movements where id = p_id;
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), m.company_id, 'حذف', 'asset_movements', p_id::text, jsonb_build_object('no', m.mov_no, 'kind', m.kind));
+end $$;
+
+revoke execute on function public.ensure_asset_disposal_account(uuid), public.asset_mov_save(jsonb), public.asset_mov_post(uuid),
+  public.asset_mov_cancel(uuid, date), public.asset_mov_delete(uuid) from public, anon;
+grant execute on function public.ensure_asset_disposal_account(uuid), public.asset_mov_save(jsonb), public.asset_mov_post(uuid),
+  public.asset_mov_cancel(uuid, date), public.asset_mov_delete(uuid) to authenticated;
+
+-- النسخ الاحتياطي: حركات الأصول بعد الاستهلاك
+create or replace function public.backup_tables() returns table (ord int, tbl text, cond text, ordby text)
+language sql immutable as $$
+  values
+   (1,  'companies',          'id = $1', 'code'),
+   (2,  'fiscal_years',       'company_id = $1', 'start_date'),
+   (3,  'accounts',           'company_id = $1', 'level, code'),
+   (4,  'cost_centers',       'company_id = $1', 'code'),
+   (5,  'currencies',         'company_id = $1', 'code'),
+   (6,  'company_settings',   'company_id = $1', 'company_id'),
+   (7,  'lookups',            'company_id = $1', 'parent_id nulls first, kind, code'),
+   (8,  'custom_fields',      'company_id = $1', 'entity, sort'),
+   (9,  'party_categories',   'company_id = $1', 'party_type, code'),
+   (10, 'parties',            'company_id = $1', 'code'),
+   (11, 'item_categories',    'company_id = $1', 'code'),
+   (12, 'items',              'company_id = $1', 'code'),
+   (13, 'promotions',         'company_id = $1', 'date_from'),
+   (14, 'warehouses',         'company_id = $1', 'code'),
+   (15, 'departments',        'company_id = $1', 'level, code'),
+   (16, 'boms',               'company_id = $1', 'code'),
+   (17, 'bom_lines',          'bom_id in (select id from public.boms where company_id = $1)', 'bom_id, line_no'),
+   (18, 'journal_entries',    'company_id = $1', 'created_at'),
+   (19, 'journal_lines',      'entry_id in (select id from public.journal_entries where company_id = $1)', 'entry_id, line_no'),
+   (20, 'invoices',           'company_id = $1', 'created_at'),
+   (21, 'invoice_lines',      'invoice_id in (select id from public.invoices where company_id = $1)', 'invoice_id, line_no'),
+   (22, 'orders',             'company_id = $1', 'created_at'),
+   (23, 'order_lines',        'order_id in (select id from public.orders where company_id = $1)', 'order_id, line_no'),
+   (24, 'service_tickets',    'company_id = $1', 'ticket_no'),
+   (25, 'cheques',            'company_id = $1', 'created_at'),
+   (26, 'cheque_events',      'cheque_id in (select id from public.cheques where company_id = $1)', 'created_at'),
+   (27, 'stock_docs',         'company_id = $1', 'created_at'),
+   (28, 'stock_doc_lines',    'doc_id in (select id from public.stock_docs where company_id = $1)', 'doc_id, line_no'),
+   (29, 'stock_moves',        'company_id = $1', 'created_at'),
+   (30, 'productions',        'company_id = $1', 'prod_no'),
+   (31, 'obligations',        'company_id = $1', 'due_date'),
+   (32, 'recurring_entries',  'company_id = $1', 'created_at'),
+   (33, 'employees',          'company_id = $1', 'code'),
+   (34, 'payroll_runs',       'company_id = $1', 'period'),
+   (35, 'payroll_lines',      'run_id in (select id from public.payroll_runs where company_id = $1)', 'run_id'),
+   (36, 'fixed_assets',       'company_id = $1', 'code'),
+   (37, 'depreciation_runs',  'company_id = $1', 'created_at'),
+   (38, 'depreciation_lines', 'run_id in (select id from public.depreciation_runs where company_id = $1)', 'run_id'),
+   (39, 'asset_movements',    'company_id = $1', 'mov_no'),
+   (40, 'asset_movement_lines', 'movement_id in (select id from public.asset_movements where company_id = $1)', 'movement_id, line_no'),
+   (41, 'bank_recons',        'company_id = $1', 'created_at'),
+   (42, 'bank_cleared',       'company_id = $1', 'line_id'),
+   (43, 'attachments',        'company_id = $1', 'created_at'),
+   (44, 'fiscal_periods',     'company_id = $1', 'start_date');
+$$;
+
+-- إلغاء دورة استهلاك: ممنوع إذا أصل فيها انستبعد/انباع بحركة مرحّلة
+create or replace function public.cancel_depreciation(p_run uuid, p_date date default current_date) returns void
+language plpgsql security definer set search_path = public as $$
+declare r public.depreciation_runs; nid uuid; nm text;
+begin
+  select * into r from public.depreciation_runs where id = p_run for update;
+  if r.id is null or not public.can(r.company_id, 'fixed_assets', 'post') then raise exception 'ما عندك صلاحية'; end if;
+  if r.status <> 'posted' then raise exception 'الدورة ملغاة من قبل'; end if;
+  if exists (select 1 from public.depreciation_runs x where x.company_id = r.company_id and x.status = 'posted' and x.created_at > r.created_at) then
+    raise exception 'ألغِ دورات الاستهلاك الأحدث أول';
+  end if;
+  select a.name into nm from public.depreciation_lines dl join public.fixed_assets a on a.id = dl.asset_id
+   where dl.run_id = p_run and exists (select 1 from public.asset_movement_lines l join public.asset_movements m on m.id = l.movement_id
+                                        where l.asset_id = dl.asset_id and m.status = 'posted' and m.kind in ('dispose', 'sale')) limit 1;
+  if nm is not null then raise exception 'الأصل «%» انستبعد أو انباع بحركة مرحّلة؛ ألغِ الحركة أول', nm; end if;
+  nid := public.reverse_internal(r.entry_id, greatest(p_date, r.period_to), 'إلغاء استهلاك لغاية ' || to_char(r.period_to, 'DD/MM/YYYY'));
+  update public.depreciation_runs set status = 'cancelled', cancel_entry_id = nid where id = p_run;
+  perform set_config('sumou.internal', '', true);
+end $$;
+
+
+-- #################### 34_asset_custody.sql ####################
+-- =====================================================================
+--  السمو ERP — المرحلة 34: عهد الأصول الثابتة
+--  أصحاب العهد + مستندات تسليم/نقل/إرجاع بحالات (في الانتظار ← مثبت ← انتهاء العمل ← مغلق).
+--  «انتهاء العمل» بيطبّق على الأصول (صاحب العهدة والموقع). ما في قيد محاسبي.
+--  الصلاحية: شاشة asset_custody (قسم الأصول).
+-- =====================================================================
+create or replace function public.screen_module(s text) returns text
+language sql immutable as $$
+  select case
+    when s in ('customers','sales_invoices','sales_orders','pos')   then 'sales'
+    when s in ('suppliers','purchase_invoices','purchase_orders')   then 'purchases'
+    when s = 'inventory'                                            then 'inventory'
+    when s in ('cheques','bank_recon')                              then 'banking'
+    when s = 'payroll'                                              then 'payroll'
+    when s in ('fixed_assets','asset_custody')                      then 'assets'
+    when s = 'marketing'                                            then 'marketing'
+    when s = 'manufacturing'                                        then 'manufacturing'
+    when s = 'maintenance'                                          then 'maintenance'
+    when s = 'obligations'                                          then 'office'
+    else 'core' end;
+$$;
+
+create table if not exists public.asset_custodians (
+  id          uuid primary key default gen_random_uuid(),
+  company_id  uuid not null references public.companies(id) on delete cascade,
+  code        text not null,
+  name        text not null,
+  employee_id uuid references public.employees(id) on delete set null,
+  phone       text,
+  notes       text,
+  is_active   boolean not null default true,
+  created_at  timestamptz not null default now(),
+  unique (company_id, code)
+);
+alter table public.asset_custodians enable row level security;
+grant select, insert, update, delete on public.asset_custodians to authenticated;
+drop policy if exists acu_select on public.asset_custodians;
+create policy acu_select on public.asset_custodians for select to authenticated
+  using (public.can(company_id, 'asset_custody', 'view') or public.can(company_id, 'fixed_assets', 'view'));
+drop policy if exists acu_insert on public.asset_custodians;
+create policy acu_insert on public.asset_custodians for insert to authenticated with check (public.can(company_id, 'asset_custody', 'add'));
+drop policy if exists acu_update on public.asset_custodians;
+create policy acu_update on public.asset_custodians for update to authenticated using (public.can(company_id, 'asset_custody', 'edit')) with check (public.can(company_id, 'asset_custody', 'edit'));
+drop policy if exists acu_delete on public.asset_custodians;
+create policy acu_delete on public.asset_custodians for delete to authenticated using (public.can(company_id, 'asset_custody', 'delete'));
+
+create or replace function public.ad_custodian_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'UPDATE' and new.company_id <> old.company_id then raise exception 'ما بتقدر تغيّر شركة صاحب العهدة'; end if;
+  if nullif(trim(new.code), '') is null or nullif(trim(new.name), '') is null then raise exception 'رمز صاحب العهدة واسمه مطلوبين'; end if;
+  if new.employee_id is not null and not exists (select 1 from public.employees where id = new.employee_id and company_id = new.company_id) then
+    raise exception 'الموظف مش من نفس الشركة';
+  end if;
+  return new;
+end $$;
+drop trigger if exists ad_custodian_check on public.asset_custodians;
+create trigger ad_custodian_check before insert or update on public.asset_custodians for each row execute function public.ad_custodian_check();
+
+alter table public.fixed_assets add column if not exists custodian_id uuid references public.asset_custodians(id) on delete set null;
+alter table public.fixed_assets add column if not exists custody_since date;
+
+create table if not exists public.custody_docs (
+  id            uuid primary key default gen_random_uuid(),
+  company_id    uuid not null references public.companies(id) on delete cascade,
+  doc_no        int not null,
+  kind          text not null check (kind in ('handover','transfer','return')),
+  doc_date      date not null,
+  status        text not null default 'pending' check (status in ('pending','confirmed','done','closed','cancelled')),
+  from_custodian_id uuid references public.asset_custodians(id),
+  to_custodian_id   uuid references public.asset_custodians(id),
+  location      text,
+  department_id uuid references public.departments(id) on delete set null,
+  reference     text,
+  notes         text,
+  done_at       timestamptz,
+  created_by    uuid default auth.uid(),
+  created_at    timestamptz not null default now(),
+  unique (company_id, doc_no)
+);
+create table if not exists public.custody_doc_lines (
+  id            uuid primary key default gen_random_uuid(),
+  doc_id        uuid not null references public.custody_docs(id) on delete cascade,
+  line_no       int not null,
+  asset_id      uuid not null references public.fixed_assets(id),
+  condition     text,
+  accessories   text,
+  notes         text,
+  prev_custodian_id uuid,
+  prev_location text,
+  prev_since    date,
+  unique (doc_id, asset_id)
+);
+create index if not exists custody_lines_asset on public.custody_doc_lines (asset_id);
+alter table public.custody_docs enable row level security;
+alter table public.custody_doc_lines enable row level security;
+drop policy if exists cd_select on public.custody_docs;
+create policy cd_select on public.custody_docs for select to authenticated using (public.can(company_id, 'asset_custody', 'view'));
+drop policy if exists cdl_select on public.custody_doc_lines;
+create policy cdl_select on public.custody_doc_lines for select to authenticated
+  using (exists (select 1 from public.custody_docs d where d.id = doc_id and public.can(d.company_id, 'asset_custody', 'view')));
+revoke insert, update, delete on public.custody_docs, public.custody_doc_lines from authenticated;
+grant select on public.custody_docs, public.custody_doc_lines to authenticated;
+
+-- صاحب العهدة على بطاقة الأصل ما بينكتب يدوي: من المستندات بس
+create or replace function public.ab_asset_custody_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if public.is_internal() then return new; end if;
+  if tg_op = 'INSERT' then
+    if new.custodian_id is not null then raise exception 'صاحب العهدة بيتسجّل بمستند «تسليم عهدة»'; end if;
+    new.custody_since := null;
+  elsif new.custodian_id is distinct from old.custodian_id or new.custody_since is distinct from old.custody_since then
+    raise exception 'صاحب العهدة بيتغيّر بمستندات عهد الأصول بس';
+  end if;
+  return new;
+end $$;
+drop trigger if exists ab_asset_custody_guard on public.fixed_assets;
+create trigger ab_asset_custody_guard before insert or update on public.fixed_assets for each row execute function public.ab_asset_custody_guard();
+
+-- حفظ (جديد أو تعديل وهو «في الانتظار»)
+-- p = {id?, company_id, kind, doc_date, from_custodian_id, to_custodian_id, location, department_id, reference, notes, lines:[{asset_id, condition, accessories, notes}]}
+create or replace function public.custody_save(p jsonb) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare cid uuid := (p ->> 'company_id')::uuid; did uuid := nullif(p ->> 'id', '')::uuid; d public.custody_docs; k text := p ->> 'kind';
+  fc uuid := nullif(p ->> 'from_custodian_id', '')::uuid; tc uuid := nullif(p ->> 'to_custodian_id', '')::uuid; dep uuid := nullif(p ->> 'department_id', '')::uuid;
+  l jsonb; a public.fixed_assets; n int := 0;
+begin
+  if did is not null then
+    select * into d from public.custody_docs where id = did for update;
+    if d.id is null then raise exception 'المستند مش موجود'; end if;
+    cid := d.company_id; k := d.kind;
+    if not public.can(cid, 'asset_custody', 'edit') then raise exception 'ما عندك صلاحية تعديل مستندات العهد'; end if;
+    if d.status <> 'pending' then raise exception 'المستند مش «في الانتظار»، رجّعه للانتظار أول عشان تعدّله'; end if;
+  elsif not public.can(cid, 'asset_custody', 'add') then raise exception 'ما عندك صلاحية إضافة مستندات العهد';
+  end if;
+  if k not in ('handover', 'transfer', 'return') then raise exception 'نوع الحركة مش صحيح'; end if;
+  if nullif(p ->> 'doc_date', '') is null then raise exception 'اكتب التاريخ'; end if;
+  if k = 'handover' then fc := null; end if;
+  if k = 'return' then tc := null; end if;
+  if k in ('transfer', 'return') and fc is null then raise exception 'حدّد صاحب العهدة المسلِّم'; end if;
+  if k in ('handover', 'transfer') and tc is null then raise exception 'حدّد صاحب العهدة المستلِم'; end if;
+  if fc is not null and fc is not distinct from tc then raise exception 'المسلِّم والمستلِم لازم يختلفوا'; end if;
+  if (fc is not null and not exists (select 1 from public.asset_custodians where id = fc and company_id = cid))
+     or (tc is not null and not exists (select 1 from public.asset_custodians where id = tc and company_id = cid and is_active)) then
+    raise exception 'صاحب العهدة مش من نفس الشركة أو موقوف';
+  end if;
+  if dep is not null and not exists (select 1 from public.departments where id = dep and company_id = cid) then raise exception 'الدائرة مش من نفس الشركة'; end if;
+  if coalesce(jsonb_typeof(p -> 'lines'), '') <> 'array' or jsonb_array_length(p -> 'lines') = 0 then raise exception 'أضف أصل واحد على الأقل'; end if;
+
+  if did is null then
+    insert into public.custody_docs (company_id, doc_no, kind, doc_date, from_custodian_id, to_custodian_id, location, department_id, reference, notes)
+    values (cid, coalesce((select max(doc_no) from public.custody_docs where company_id = cid), 0) + 1, k, (p ->> 'doc_date')::date, fc, tc,
+            nullif(trim(p ->> 'location'), ''), dep, nullif(trim(p ->> 'reference'), ''), nullif(trim(p ->> 'notes'), ''))
+    returning id into did;
+  else
+    update public.custody_docs set doc_date = (p ->> 'doc_date')::date, from_custodian_id = fc, to_custodian_id = tc, location = nullif(trim(p ->> 'location'), ''),
+           department_id = dep, reference = nullif(trim(p ->> 'reference'), ''), notes = nullif(trim(p ->> 'notes'), '') where id = did;
+    delete from public.custody_doc_lines where doc_id = did;
+  end if;
+  for l in select * from jsonb_array_elements(p -> 'lines') loop
+    n := n + 1;
+    select * into a from public.fixed_assets where id = (l ->> 'asset_id')::uuid;
+    if a.id is null or a.company_id <> cid then raise exception 'أصل مش موجود (سطر %)', n; end if;
+    if a.status <> 'active' then raise exception 'الأصل «%» مستبعد', a.name; end if;
+    if k = 'handover' and a.custodian_id is not null then raise exception 'الأصل «%» بعهدة حدا، استعمل «نقل»', a.name; end if;
+    if k in ('transfer', 'return') and a.custodian_id is distinct from fc then raise exception 'الأصل «%» مش بعهدة المسلِّم', a.name; end if;
+    if exists (select 1 from public.custody_doc_lines x join public.custody_docs y on y.id = x.doc_id
+               where x.asset_id = a.id and y.id <> did and y.status in ('pending', 'confirmed')) then
+      raise exception 'الأصل «%» بمستند عهدة ثاني لسا ما انتهى', a.name;
+    end if;
+    insert into public.custody_doc_lines (doc_id, line_no, asset_id, condition, accessories, notes)
+    values (did, n, a.id, nullif(trim(l ->> 'condition'), ''), nullif(trim(l ->> 'accessories'), ''), nullif(trim(l ->> 'notes'), ''));
+  end loop;
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), cid, case when p ? 'id' and nullif(p ->> 'id', '') is not null then 'تعديل' else 'إضافة' end, 'custody_docs', did::text, jsonb_build_object('kind', k, 'lines', n));
+  return did;
+end $$;
+
+-- تغيير الحالة. done = تطبيق على الأصول، والرجوع منها بيرجّع الأصول (إذا ما في مستند أحدث)
+create or replace function public.custody_set_status(p_id uuid, p_status text) returns void
+language plpgsql security definer set search_path = public as $$
+declare d public.custody_docs; r record; prev text := current_setting('sumou.internal', true);
+begin
+  select * into d from public.custody_docs where id = p_id for update;
+  if d.id is null then raise exception 'المستند مش موجود'; end if;
+  if p_status not in ('pending', 'confirmed', 'done', 'closed', 'cancelled') then raise exception 'حالة مش صحيحة'; end if;
+  if p_status = d.status then return; end if;
+  if not public.can(d.company_id, 'asset_custody', case when p_status in ('done', 'closed') or d.status in ('done', 'closed') then 'post' else 'edit' end) then
+    raise exception 'ما عندك صلاحية تغيير حالة المستند';
+  end if;
+  if d.status = 'cancelled' then raise exception 'المستند ملغى'; end if;
+  if d.status = 'closed' then raise exception 'المستند مغلق (أرشيف)'; end if;
+  if p_status = 'closed' and d.status <> 'done' then raise exception 'بس المستند المنتهي بيتسكّر'; end if;
+  if p_status = 'cancelled' and d.status = 'done' then raise exception 'رجّع المستند للانتظار أول'; end if;
+  perform set_config('sumou.internal', public.internal_token(), true);
+
+  if p_status = 'done' then
+    if not exists (select 1 from public.custody_doc_lines where doc_id = p_id) then raise exception 'ما في أصول بالمستند'; end if;
+    for r in select l.id lid, a.* from public.custody_doc_lines l join public.fixed_assets a on a.id = l.asset_id where l.doc_id = p_id order by l.line_no for update of a loop
+      if r.status <> 'active' then raise exception 'الأصل «%» مستبعد', r.name; end if;
+      if d.kind = 'handover' and r.custodian_id is not null then raise exception 'الأصل «%» بعهدة حدا، استعمل «نقل»', r.name; end if;
+      if d.kind in ('transfer', 'return') and r.custodian_id is distinct from d.from_custodian_id then raise exception 'الأصل «%» مش بعهدة المسلِّم', r.name; end if;
+      if exists (select 1 from public.custody_doc_lines x join public.custody_docs y on y.id = x.doc_id
+                 where x.asset_id = r.id and y.id <> p_id and y.status = 'done' and y.done_at is not null and y.doc_date > d.doc_date) then
+        raise exception 'الأصل «%» عليه مستند عهدة بتاريخ أحدث', r.name;
+      end if;
+      update public.custody_doc_lines set prev_custodian_id = r.custodian_id, prev_location = r.location, prev_since = r.custody_since where id = r.lid;
+      update public.fixed_assets set custodian_id = d.to_custodian_id,
+             custody_since = case when d.to_custodian_id is null then null else d.doc_date end,
+             location = coalesce(d.location, location)
+       where id = r.id;
+    end loop;
+    update public.custody_docs set status = 'done', done_at = now() where id = p_id;
+  elsif d.status = 'done' then   -- رجوع من «انتهاء العمل»
+    for r in select l.*, a.name, a.custodian_id cur from public.custody_doc_lines l join public.fixed_assets a on a.id = l.asset_id where l.doc_id = p_id for update of a loop
+      if exists (select 1 from public.custody_doc_lines x join public.custody_docs y on y.id = x.doc_id
+                 where x.asset_id = r.asset_id and y.id <> p_id and y.status in ('done', 'closed') and y.done_at > d.done_at) then
+        raise exception 'على الأصل «%» حركة عهدة لاحقة، ارجع عنها أول', r.name;
+      end if;
+      update public.fixed_assets set custodian_id = r.prev_custodian_id, location = r.prev_location, custody_since = r.prev_since where id = r.asset_id;
+    end loop;
+    update public.custody_docs set status = p_status, done_at = null where id = p_id;
+    update public.custody_doc_lines set prev_custodian_id = null, prev_location = null, prev_since = null where doc_id = p_id;
+  else
+    update public.custody_docs set status = p_status where id = p_id;
+  end if;
+  perform set_config('sumou.internal', coalesce(prev, ''), true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), d.company_id, case when p_status in ('done', 'closed') then 'ترحيل' else 'تعديل' end, 'custody_docs', p_id::text,
+          jsonb_build_object('no', d.doc_no, 'from', d.status, 'to', p_status));
+end $$;
+
+create or replace function public.custody_delete(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare d public.custody_docs;
+begin
+  select * into d from public.custody_docs where id = p_id;
+  if d.id is null then return; end if;
+  if not public.can(d.company_id, 'asset_custody', 'delete') then raise exception 'ما عندك صلاحية'; end if;
+  if d.status not in ('pending', 'cancelled') then raise exception 'بس المستند «في الانتظار» أو الملغى بينحذف'; end if;
+  delete from public.custody_docs where id = p_id;
+end $$;
+
+-- سجل عهدة أصل (المستندات المنتهية والمغلقة)
+create or replace function public.custody_history(p_asset uuid)
+returns table (doc_id uuid, doc_no int, kind text, doc_date date, status text, from_name text, to_name text, location text, condition text, accessories text, ended date)
+language sql stable security definer set search_path = public as $$
+  with h as (
+    select d.id, d.doc_no, d.kind, d.doc_date, d.status, f.name fn, t.name tn, d.location, l.condition, l.accessories, d.done_at
+      from public.custody_doc_lines l join public.custody_docs d on d.id = l.doc_id
+      left join public.asset_custodians f on f.id = d.from_custodian_id left join public.asset_custodians t on t.id = d.to_custodian_id
+     where l.asset_id = p_asset and d.status in ('done', 'closed')
+       and (public.can(d.company_id, 'asset_custody', 'view') or public.can(d.company_id, 'fixed_assets', 'view')))
+  select id, doc_no, kind, doc_date, status, fn, tn, location, condition, accessories, lead(doc_date) over (order by doc_date, done_at) from h order by doc_date desc, done_at desc;
+$$;
+
+revoke execute on function public.custody_save(jsonb), public.custody_set_status(uuid, text), public.custody_delete(uuid), public.custody_history(uuid) from public, anon;
+grant execute on function public.custody_save(jsonb), public.custody_set_status(uuid, text), public.custody_delete(uuid), public.custody_history(uuid) to authenticated;
+
+-- النسخ الاحتياطي: أصحاب العهد قبل الأصول، والمستندات بعدها
+create or replace function public.backup_tables() returns table (ord int, tbl text, cond text, ordby text)
+language sql immutable as $$
+  values
+   (1,  'companies',          'id = $1', 'code'),
+   (2,  'fiscal_years',       'company_id = $1', 'start_date'),
+   (3,  'accounts',           'company_id = $1', 'level, code'),
+   (4,  'cost_centers',       'company_id = $1', 'code'),
+   (5,  'currencies',         'company_id = $1', 'code'),
+   (6,  'company_settings',   'company_id = $1', 'company_id'),
+   (7,  'lookups',            'company_id = $1', 'parent_id nulls first, kind, code'),
+   (8,  'custom_fields',      'company_id = $1', 'entity, sort'),
+   (9,  'party_categories',   'company_id = $1', 'party_type, code'),
+   (10, 'parties',            'company_id = $1', 'code'),
+   (11, 'item_categories',    'company_id = $1', 'code'),
+   (12, 'items',              'company_id = $1', 'code'),
+   (13, 'promotions',         'company_id = $1', 'date_from'),
+   (14, 'warehouses',         'company_id = $1', 'code'),
+   (15, 'departments',        'company_id = $1', 'level, code'),
+   (16, 'boms',               'company_id = $1', 'code'),
+   (17, 'bom_lines',          'bom_id in (select id from public.boms where company_id = $1)', 'bom_id, line_no'),
+   (18, 'journal_entries',    'company_id = $1', 'created_at'),
+   (19, 'journal_lines',      'entry_id in (select id from public.journal_entries where company_id = $1)', 'entry_id, line_no'),
+   (20, 'invoices',           'company_id = $1', 'created_at'),
+   (21, 'invoice_lines',      'invoice_id in (select id from public.invoices where company_id = $1)', 'invoice_id, line_no'),
+   (22, 'orders',             'company_id = $1', 'created_at'),
+   (23, 'order_lines',        'order_id in (select id from public.orders where company_id = $1)', 'order_id, line_no'),
+   (24, 'service_tickets',    'company_id = $1', 'ticket_no'),
+   (25, 'cheques',            'company_id = $1', 'created_at'),
+   (26, 'cheque_events',      'cheque_id in (select id from public.cheques where company_id = $1)', 'created_at'),
+   (27, 'stock_docs',         'company_id = $1', 'created_at'),
+   (28, 'stock_doc_lines',    'doc_id in (select id from public.stock_docs where company_id = $1)', 'doc_id, line_no'),
+   (29, 'stock_moves',        'company_id = $1', 'created_at'),
+   (30, 'productions',        'company_id = $1', 'prod_no'),
+   (31, 'obligations',        'company_id = $1', 'due_date'),
+   (32, 'recurring_entries',  'company_id = $1', 'created_at'),
+   (33, 'employees',          'company_id = $1', 'code'),
+   (34, 'payroll_runs',       'company_id = $1', 'period'),
+   (35, 'payroll_lines',      'run_id in (select id from public.payroll_runs where company_id = $1)', 'run_id'),
+   (36, 'asset_custodians',   'company_id = $1', 'code'),
+   (37, 'fixed_assets',       'company_id = $1', 'code'),
+   (38, 'depreciation_runs',  'company_id = $1', 'created_at'),
+   (39, 'depreciation_lines', 'run_id in (select id from public.depreciation_runs where company_id = $1)', 'run_id'),
+   (40, 'asset_movements',    'company_id = $1', 'mov_no'),
+   (41, 'asset_movement_lines', 'movement_id in (select id from public.asset_movements where company_id = $1)', 'movement_id, line_no'),
+   (42, 'custody_docs',       'company_id = $1', 'doc_no'),
+   (43, 'custody_doc_lines',  'doc_id in (select id from public.custody_docs where company_id = $1)', 'doc_id, line_no'),
+   (44, 'bank_recons',        'company_id = $1', 'created_at'),
+   (45, 'bank_cleared',       'company_id = $1', 'line_id'),
+   (46, 'attachments',        'company_id = $1', 'created_at'),
+   (47, 'fiscal_periods',     'company_id = $1', 'start_date');
+$$;
