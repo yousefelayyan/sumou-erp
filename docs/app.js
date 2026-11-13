@@ -483,6 +483,7 @@ function renderShell() {
           <button type="button" data-tool="year" title="تبديل السنة المالية"><span>📅</span><small>تبديل السنة</small></button>
           <button type="button" data-tool="user" title="تبديل المستخدم"><span>👤</span><small>تبديل المستخدم</small></button>
           <button type="button" data-tool="instance" title="مثيل جديد: نافذة جديدة بتسجيل دخول لحاله"><span>🪟</span><small>مثيل جديد</small></button>
+          <button type="button" data-tool="lang" data-noi18n title="${LANG === 'en' ? 'عربي' : 'English'}"><span>🌐</span><small>${LANG === 'en' ? 'عربي' : 'English'}</small></button>
           <button type="button" data-tool="exit" title="خروج"><span>🚪</span><small>خروج</small></button>
         </div>
       </aside>
@@ -493,7 +494,8 @@ function renderShell() {
             <button type="button" data-nav="back" title="رجوع للشاشة السابقة">→</button>
             <button type="button" data-nav="fwd" title="للأمام">←</button>
             <button type="button" data-nav="up" title="أزرار مجموعة هالشاشة">▦</button>
-            <button type="button" data-nav="home" title="الرئيسية">🏠</button></div>
+            <button type="button" data-nav="home" title="الرئيسية">🏠</button>
+            <button type="button" data-nav="lang" data-noi18n title="${LANG === 'en' ? 'عربي' : 'English'}">${LANG === 'en' ? 'ع' : 'EN'}</button></div>
           <div class="pg-tabs" id="pg-tabs">${pgTabsHTML()}</div></div>
         </div>
         ${subBannerHTML()}
@@ -507,6 +509,7 @@ function renderShell() {
     if (t === 'home') location.hash = '#/home';
     if (t === 'company') switchCompanyDialog();
     if (t === 'year') switchYearDialog();
+    if (t === 'lang') return switchLang(LANG === 'en' ? 'ar' : 'en');
     if (t === 'instance') window.open(location.pathname + '?instance=' + Date.now() + '#/home', '_blank', 'noopener');
     if (t === 'user') { if (!(await confirmBox('تبديل المستخدم؟ رح تطلع من هالحساب وتدخل بحساب ثاني.'))) return; await log('خروج', 'auth', null, { switch: true }); await signOutHere(); }
     if (t === 'exit') {
@@ -525,6 +528,7 @@ function renderShell() {
     const b = e.target.closest('[data-nav]'); if (!b) return;
     const k = b.dataset.nav;
     if (k === 'back') { if (history.length > 1) history.back(); else location.hash = '#/home'; } else if (k === 'fwd') history.forward(); else if (k === 'home') location.hash = '#/home';
+    else if (k === 'lang') switchLang(LANG === 'en' ? 'ar' : 'en');
     else {
       const r = curHash().replace(/^#\//, ''), r0 = r.split('?')[0];
       const g = NAV().find(g => g.items.some(it => it.r && (it.r === r || it.r.split('?')[0] === r0)));
