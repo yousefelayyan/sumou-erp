@@ -44,6 +44,7 @@ async function viewPrintSettings(v) {
         <div class="field"><label>عنوان فاتورة البيع (اختياري)</label><input name="invoice_title" value="${esc(cfg.invoice_title)}" placeholder="مثلاً: فاتورة ضريبية" ${dis}></div>
       </div>
       <label class="check"><input type="checkbox" name="watermark" ${cfg.watermark ? 'checked' : ''} ${dis}> علامة مائية باسم الشركة والسنة</label>
+      <label class="check"><input type="checkbox" name="invoice_item_images" ${cfg.invoice_item_images ? 'checked' : ''} ${dis}> صورة الصنف بالفاتورة (جنب التفاصيل)</label>
       <label class="check"><input type="checkbox" name="show_tax_numbers" ${cfg.show_tax_numbers ? 'checked' : ''} ${dis}> إظهار الأرقام الضريبية بالترويسة</label>
       <label class="check"><input type="checkbox" name="show_printed_by" ${cfg.show_printed_by ? 'checked' : ''} ${dis}> إظهار «طُبع بواسطة» تحت</label>
       <h3>الشعار</h3>

@@ -21,6 +21,7 @@ export const PRINT_DEFAULTS = {
   invoice_layout: 'standard',   // standard | bilingual
   invoice_title_en: '',
   invoice_terms: '',
+  invoice_item_images: false,   // صورة الصنف جنب التفاصيل بالفاتورة
   sig: {
     invoice: 'المستلِم، المحاسب',
     receipt: 'المحاسب، المدير المالي، المستلِم',
@@ -109,8 +110,8 @@ export function printBarHTML() {
   <button type="button" class="p" onclick="window.print()">🖨️ طباعة</button></div>`;
 }
 
-export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null, branch = null, copies = 1 } = {}) {
-  const w = preview || window.open('', '_blank');
+export function printDoc(title, html, { subtitle = '', landscape = false, kind = null, preview = null, cfg: given = null, branch = null, copies = 1, win = null } = {}) {
+  const w = preview || win || window.open('', '_blank');
   if (!w) { alert('المتصفح منع نافذة الطباعة. اسمح بالنوافذ المنبثقة لهالموقع.'); return; }
   if (!preview) { w.document.write('<p dir="rtl" style="font-family:sans-serif;padding:20px">جاري تحضير الطباعة…</p>'); }
   Promise.all([given ? Promise.resolve(given) : loadPrintSettings(), Promise.resolve(branch).catch(() => null)]).then(([cfg, branchData]) => {

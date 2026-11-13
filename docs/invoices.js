@@ -14,7 +14,7 @@ import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
-import { printDoc, amountToWords } from './print.js';
+import { printDoc, amountToWords, loadPrintSettings } from './print.js';
 import { openAttachments } from './attach.js';
 
 export const INV = {
@@ -558,8 +558,13 @@ function bestPromo(promos, it, date, qty) {
 }
 export function openInvoicePrefill(type, prefill, ctx) { returnPrefill = { ...prefill, fromOrder: true }; return invoiceEditor(type, null, ctx); }
 
-function printInvoice(type, inv, lines, party, st) {
+async function printInvoice(type, inv, lines, party, st) {
   const T = INV[type], c = S.company;
+  const win = window.open('', '_blank');   // قبل أي انتظار عشان المتصفح ما يمنع النافذة
+  let images = {};
+  const pcfg = await loadPrintSettings().catch(() => ({}));
+  const ids = [...new Set(lines.map(l => l.item_id).filter(Boolean))];
+  if (pcfg.invoice_item_images && ids.length) { const { data } = await sb.from('items').select('id,image').in('id', ids); (data || []).forEach(x => { if (x.image) images[x.id] = x.image; }); }
   const stamp = inv.status === 'cancelled' ? '<h2 class="cancel-stamp">— فاتورة ملغاة —</h2>' : inv.status === 'draft' ? '<h3 class="draft-stamp">— مسودة غير مرحّلة —</h3>' : '';
   const full = () => `
     <table class="meta"><tr><td><b>رقم الفاتورة:</b> ${esc(docNo(inv))}</td><td><b>التاريخ:</b> ${fmtDate(inv.inv_date)}</td><td><b>طريقة الدفع:</b> ${inv.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td></tr>
@@ -567,7 +572,7 @@ function printInvoice(type, inv, lines, party, st) {
       ${party?.address || party?.phone ? `<tr><td colspan="3">${esc([party.address, party.city, party.mobile || party.phone].filter(Boolean).join(' — '))}</td></tr>` : ''}
       ${inv.reference ? `<tr><td colspan="3"><b>المرجع:</b> ${esc(inv.reference)}</td></tr>` : ''}</table>
     <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>قبل الضريبة</th><th>ض%</th><th>الضريبة</th><th>الإجمالي</th></tr></thead><tbody>
-      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.description || '')}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
+      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:90px;max-height:80px;margin-inline-start:6px;object-fit:contain">` : ''}${esc(l.description || '')}${l.details ? `<div style="font-size:11px;color:#555">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
         <td class="n">${fmtNum(l.subtotal)}</td><td class="n">${num(l.tax_rate)}%</td><td class="n">${fmtNum(l.tax_amount)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody></table>
     <table class="pt" style="width:45%;margin:10px 0 0 auto;margin-inline-start:auto"><tr><td>المجموع قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr>
       ${num(inv.discount_total) ? `<tr><td>الخصومات</td><td class="n">${fmtNum(inv.discount_total)}</td></tr>` : ''}
@@ -589,19 +594,20 @@ function printInvoice(type, inv, lines, party, st) {
       cfg, titleAr: arTitle(cfg), titleEn: cfg.invoice_title_en || (type === 'sale_return' ? 'Sales Return' : 'Sales Invoice'),
       no: docNo(inv), date: inv.inv_date, pay: inv.payment_type === 'cash' ? 'نقدي / Cash' : 'آجل / Credit', orderNo, project: inv.project,
       party, partyName: party?.name || inv.party_name, lines, sub: inv.subtotal, disc: inv.discount_total, tax: inv.tax_total, total: inv.total, notes: inv.notes, stamp,
-      footer: st.invoice_footer }) : full(), { kind: 'invoice', copies: docCopies(inv.doc_type_id), branch: inv.department_id ? sb.from('departments').select('name,address,city,phone,income_tax_no,sales_tax_no').eq('id', inv.department_id).maybeSingle().then(r => r.data || null) : null });
+      footer: st.invoice_footer, images }) : full(), { kind: 'invoice', win, copies: docCopies(inv.doc_type_id), branch: inv.department_id ? sb.from('departments').select('name,address,city,phone,income_tax_no,sales_tax_no').eq('id', inv.department_id).maybeSingle().then(r => r.data || null) : null });
   if (isSaleType(type)) sb.from('orders').select('order_no').eq('invoice_id', inv.id).limit(1).then(({ data }) => go(data?.[0]?.order_no || '')); else go('');
 }
 const isSaleType = (t) => t === 'sale' || t === 'sale_return';
+const imgOk = (u) => typeof u === 'string' && /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/.test(u);
 
 // نموذج ثنائي اللغة (عربي/إنجليزي) للفاتورة وطلب المبيعات — مثل نماذج الشركات التجارية
-export function bilingualDoc({ cfg, titleAr, titleEn, no, date, pay, orderNo, project, party, partyName, lines, sub, disc, tax, total, notes, stamp = '', footer = '', noLabel = ['رقم الفاتورة', 'Invoice No.'] }) {
+export function bilingualDoc({ cfg, titleAr, titleEn, no, date, pay, orderNo, project, party, partyName, lines, sub, disc, tax, total, notes, stamp = '', footer = '', noLabel = ['رقم الفاتورة', 'Invoice No.'], images = {} }) {
   const c = S.company || {}, col = cfg.color || '#2e6b4f';
   const itBy = Object.fromEntries((S.items || []).map(i => [i.id, i]));
   const L = (ar, en) => `<span class="ar">${ar}</span><span class="en">${en}</span>`;
   const rows = lines.map((l, i) => { const it = itBy[l.item_id] || {};
     return `<tr><td class="c">${i + 1}</td><td class="c">${esc(it.code || '')}</td>
-      <td class="desc"><b>${esc(l.description || '')}</b>${l.details ? `<div class="det">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td>
+      <td class="desc">${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:120px;max-height:110px;margin:2px 0 2px 8px;object-fit:contain">` : ''}<b>${esc(l.description || '')}</b>${l.details ? `<div class="det">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td>
       <td class="c">${esc(it.unit || '')}</td><td class="c">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${fmtNum(num(l.qty) * num(l.unit_price) - num(l.discount))}</td></tr>`; }).join('');
   const filler = `<tr class="fill"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   const html = `<div class="bl">
