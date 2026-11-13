@@ -7444,6 +7444,7 @@ begin
   if coalesce(jsonb_typeof(p -> 'lines'), '') <> 'array' or jsonb_array_length(p -> 'lines') = 0 then raise exception 'أضف أصل واحد على الأقل'; end if;
 
   if mid is null then
+    perform pg_advisory_xact_lock(hashtext('assetmov:' || cid::text));
     insert into public.asset_movements (company_id, mov_no, kind, mov_date, party_id, tax_rate, from_department_id, to_department_id, reference, notes)
     values (cid, coalesce((select max(mov_no) from public.asset_movements where company_id = cid), 0) + 1, k, (p ->> 'mov_date')::date,
             pty.id, case when k = 'sale' then rate else 0 end, fd, td, nullif(trim(p ->> 'reference'), ''), nullif(trim(p ->> 'notes'), ''))
@@ -7859,6 +7860,7 @@ begin
   if coalesce(jsonb_typeof(p -> 'lines'), '') <> 'array' or jsonb_array_length(p -> 'lines') = 0 then raise exception 'أضف أصل واحد على الأقل'; end if;
 
   if did is null then
+    perform pg_advisory_xact_lock(hashtext('custody:' || cid::text));
     insert into public.custody_docs (company_id, doc_no, kind, doc_date, from_custodian_id, to_custodian_id, location, department_id, reference, notes)
     values (cid, coalesce((select max(doc_no) from public.custody_docs where company_id = cid), 0) + 1, k, (p ->> 'doc_date')::date, fc, tc,
             nullif(trim(p ->> 'location'), ''), dep, nullif(trim(p ->> 'reference'), ''), nullif(trim(p ->> 'notes'), ''))
@@ -8121,17 +8123,34 @@ alter table public.stock_docs add column if not exists supply_request_id uuid re
 -- سند الإدخال الناتج من طلب تزويد: أصنافه وكلفته من سند الإخراج، ما بتتعدّل
 create or replace function public.ab_supply_in_lines_guard() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare did uuid := coalesce(new.doc_id, old.doc_id);
+declare did uuid := case when tg_op = 'DELETE' then old.doc_id else new.doc_id end;
 begin
   if public.is_internal() then return coalesce(new, old); end if;
-  if exists (select 1 from public.stock_docs where id = did and supply_request_id is not null and doc_type = 'in') then
+  if exists (select 1 from public.stock_docs where id = did and supply_request_id is not null and doc_type = 'in')
+     or (tg_op = 'UPDATE' and old.doc_id <> new.doc_id and exists (select 1 from public.stock_docs where id = old.doc_id and supply_request_id is not null and doc_type = 'in')) then
     raise exception 'سطور سند الإدخال لطلب التزويد ما بتتعدّل (بتيجي من سند الإخراج)';
   end if;
   return coalesce(new, old);
 end $$;
 drop trigger if exists ab_supply_in_lines_guard on public.stock_doc_lines;
-create trigger ab_supply_in_lines_guard before insert or update on public.stock_doc_lines
+create trigger ab_supply_in_lines_guard before insert or update or delete on public.stock_doc_lines
   for each row execute function public.ab_supply_in_lines_guard();
+
+-- سطور سندات المخزون: القراءة بصلاحية view، والإضافة add/edit، والتعديل edit، والحذف edit/delete (كانت سياسة وحدة للكل)
+drop policy if exists sdl_all on public.stock_doc_lines;
+drop policy if exists sdl_select on public.stock_doc_lines;
+create policy sdl_select on public.stock_doc_lines for select to authenticated
+  using (exists (select 1 from public.stock_docs d where d.id = doc_id and public.can(d.company_id, 'inventory', 'view')));
+drop policy if exists sdl_insert on public.stock_doc_lines;
+create policy sdl_insert on public.stock_doc_lines for insert to authenticated
+  with check (exists (select 1 from public.stock_docs d where d.id = doc_id and (public.can(d.company_id, 'inventory', 'add') or public.can(d.company_id, 'inventory', 'edit'))));
+drop policy if exists sdl_update on public.stock_doc_lines;
+create policy sdl_update on public.stock_doc_lines for update to authenticated
+  using (exists (select 1 from public.stock_docs d where d.id = doc_id and public.can(d.company_id, 'inventory', 'edit')))
+  with check (exists (select 1 from public.stock_docs d where d.id = doc_id and public.can(d.company_id, 'inventory', 'edit')));
+drop policy if exists sdl_delete on public.stock_doc_lines;
+create policy sdl_delete on public.stock_doc_lines for delete to authenticated
+  using (exists (select 1 from public.stock_docs d where d.id = doc_id and (public.can(d.company_id, 'inventory', 'edit') or public.can(d.company_id, 'inventory', 'delete'))));
 
 create or replace function public.ab_supply_doc_guard() returns trigger
 language plpgsql security definer set search_path = public as $$
@@ -8146,6 +8165,35 @@ begin
 end $$;
 drop trigger if exists ab_supply_doc_guard on public.stock_docs;
 create trigger ab_supply_doc_guard before insert or update on public.stock_docs for each row execute function public.ab_supply_doc_guard();
+
+-- سند إخراج طلب التزويد: بعد إصدار سند الإدخال ما بينلغى ترحيله
+create or replace function public.ab_supply_out_lock() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.supply_request_id is not null and old.doc_type = 'out' and old.status = 'posted' and new.status <> 'posted'
+     and exists (select 1 from public.supply_requests where out_doc_id = old.id and in_doc_id is not null) then
+    raise exception 'انصدر سند الإدخال لطلب التزويد؛ احذف سند الإدخال أول عشان تلغي ترحيل الإخراج';
+  end if;
+  return new;
+end $$;
+drop trigger if exists ab_supply_out_lock on public.stock_docs;
+create trigger ab_supply_out_lock before update of status on public.stock_docs for each row execute function public.ab_supply_out_lock();
+
+-- أرصدة أصناف الطلب بالمستودعين (للشاشة)
+create or replace function public.supply_balances(p_company uuid, p_from uuid, p_to uuid, p_date date, p_items uuid[])
+returns table (item_id uuid, src_qty numeric, dest_qty numeric, min_qty numeric, max_qty numeric)
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (public.can(p_company, 'supply_requests', 'view') or public.can(p_company, 'inventory', 'view')) then raise exception 'ما عندك صلاحية'; end if;
+  return query
+  select i.id, public.stock_qty(i.id, p_from, coalesce(p_date, public.local_today())), public.stock_qty(i.id, p_to, coalesce(p_date, public.local_today())), l.min_qty, l.max_qty
+    from public.items i left join public.item_wh_limits l on l.item_id = i.id and l.warehouse_id = p_to
+   where i.company_id = p_company and i.id = any(p_items)
+     and exists (select 1 from public.warehouses w where w.id = p_from and w.company_id = p_company)
+     and exists (select 1 from public.warehouses w where w.id = p_to and w.company_id = p_company);
+end $$;
+revoke execute on function public.supply_balances(uuid, uuid, uuid, date, uuid[]) from public, anon;
+grant execute on function public.supply_balances(uuid, uuid, uuid, date, uuid[]) to authenticated;
 
 -- حفظ الطلب (جديد أو «في الانتظار»): p = {id?, company_id, req_date, from_warehouse_id, to_warehouse_id, reference, notes, lines:[{item_id, qty, note}]}
 create or replace function public.supply_save(p jsonb) returns uuid
@@ -8170,6 +8218,7 @@ begin
   if coalesce(jsonb_typeof(p -> 'lines'), '') <> 'array' or jsonb_array_length(p -> 'lines') = 0 then raise exception 'أضف صنف واحد على الأقل'; end if;
   if jsonb_array_length(p -> 'lines') > 500 then raise exception 'الطلب كبير كثير'; end if;
   if rid is null then
+    perform pg_advisory_xact_lock(hashtext('supply:' || cid::text));
     insert into public.supply_requests (company_id, req_no, req_date, from_warehouse_id, to_warehouse_id, reference, notes)
     values (cid, coalesce((select max(req_no) from public.supply_requests where company_id = cid), 0) + 1, (p ->> 'req_date')::date, fw, tw,
             nullif(trim(p ->> 'reference'), ''), nullif(trim(p ->> 'notes'), '')) returning id into rid;
@@ -8214,18 +8263,20 @@ end $$;
 -- إصدار سند الإخراج (مسودة) من مستودع المصدر
 create or replace function public.supply_issue_out(p_id uuid) returns uuid
 language plpgsql security definer set search_path = public as $$
-declare r public.supply_requests; did uuid; prev text := current_setting('sumou.internal', true);
+declare r public.supply_requests; did uuid; dep uuid; prev text := current_setting('sumou.internal', true);
 begin
   select * into r from public.supply_requests where id = p_id for update;
   if r.id is null then raise exception 'الطلب مش موجود'; end if;
   if not (public.can(r.company_id, 'inventory', 'add') and (public.can(r.company_id, 'supply_requests', 'view') or public.can(r.company_id, 'inventory', 'view'))) then
     raise exception 'ما عندك صلاحية إصدار سندات المخزون';
   end if;
+  select uc.department_id into dep from public.user_companies uc join public.departments dd on dd.id = uc.department_id and dd.is_active and dd.kind = 'sub'
+   where uc.user_id = auth.uid() and uc.company_id = r.company_id;
   if r.status <> 'confirmed' then raise exception 'ثبّت الطلب أول'; end if;
   if r.out_doc_id is not null then raise exception 'انصدر سند الإخراج من قبل'; end if;
   perform set_config('sumou.internal', public.internal_token(), true);
-  insert into public.stock_docs (company_id, doc_type, doc_date, warehouse_id, notes, supply_request_id)
-  values (r.company_id, 'out', greatest(r.req_date, public.local_today()), r.from_warehouse_id, 'طلب تزويد ' || r.req_no || coalesce(' — ' || r.reference, ''), r.id)
+  insert into public.stock_docs (company_id, doc_type, doc_date, warehouse_id, notes, supply_request_id, department_id)
+  values (r.company_id, 'out', greatest(r.req_date, public.local_today()), r.from_warehouse_id, 'طلب تزويد ' || r.req_no || coalesce(' — ' || r.reference, ''), r.id, dep)
   returning id into did;
   insert into public.stock_doc_lines (doc_id, line_no, item_id, qty, note)
   select did, line_no, item_id, qty, note from public.supply_request_lines where request_id = p_id order by line_no;
@@ -8250,9 +8301,10 @@ begin
   select * into o from public.stock_docs where id = r.out_doc_id;
   if o.id is null then raise exception 'اصدر سند الإخراج أول'; end if;
   if o.status <> 'posted' then raise exception 'سند الإخراج لسا ما ترحّل للمخزون'; end if;
+  if o.doc_type <> 'out' or o.supply_request_id is distinct from r.id or o.warehouse_id <> r.from_warehouse_id then raise exception 'سند الإخراج مش تابع لهالطلب'; end if;
   perform set_config('sumou.internal', public.internal_token(), true);
-  insert into public.stock_docs (company_id, doc_type, doc_date, warehouse_id, notes, supply_request_id)
-  values (r.company_id, 'in', greatest(o.doc_date, public.local_today()), r.to_warehouse_id, 'استلام طلب تزويد ' || r.req_no, r.id) returning id into did;
+  insert into public.stock_docs (company_id, doc_type, doc_date, warehouse_id, notes, supply_request_id, department_id, account_id)
+  values (r.company_id, 'in', greatest(o.doc_date, public.local_today()), r.to_warehouse_id, 'استلام طلب تزويد ' || r.req_no, r.id, o.department_id, o.account_id) returning id into did;
   insert into public.stock_doc_lines (doc_id, line_no, item_id, qty, unit_cost, note)
   select did, row_number() over (order by min(m.created_at)), m.item_id, -sum(m.qty), round(sum(m.qty * m.unit_cost) / nullif(sum(m.qty), 0), 3), null
     from public.stock_moves m where m.source_type = 'stock_doc' and m.source_id = o.id group by m.item_id having sum(m.qty) < 0;
@@ -8356,3 +8408,65 @@ language sql immutable as $$
    (49, 'attachments', 'company_id = $1', 'created_at'),
    (50, 'fiscal_periods', 'company_id = $1', 'start_date');
 $$;
+
+
+-- #################### 36_party_fields.sql ####################
+-- =====================================================================
+--  السمو ERP — المرحلة 36: حقول إضافية لبطاقة العميل/المورد (مثل Stallion)
+--  المرجع، الوصف #2 (اسم ثاني)، المسار (lookups kind = route)، الدائرة، العملة، وسيلة الدفع الافتراضية.
+-- =====================================================================
+do $$
+declare c record;
+begin
+  for c in select conname from pg_constraint where conrelid = 'public.lookups'::regclass and contype = 'c'
+             and pg_get_constraintdef(oid) like '%kind%' and pg_get_constraintdef(oid) not like '%route%' loop
+    execute format('alter table public.lookups drop constraint %I', c.conname);
+  end loop;
+  if not exists (select 1 from pg_constraint where conname = 'lookups_kind_chk3') then
+    alter table public.lookups add constraint lookups_kind_chk3
+      check (kind in ('payment_method','bank','bank_branch','country','region','cheque_type','sales_rep','loyalty_type','route'));
+  end if;
+end $$;
+
+alter table public.parties add column if not exists reference text;
+alter table public.parties add column if not exists name2 text;
+alter table public.parties add column if not exists route_id uuid references public.lookups(id) on delete set null;
+alter table public.parties add column if not exists department_id uuid references public.departments(id) on delete set null;
+alter table public.parties add column if not exists currency text;
+alter table public.parties add column if not exists payment_method_id uuid references public.lookups(id) on delete set null;
+
+create or replace function public.ad_party_fields_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.route_id is not null and (tg_op = 'INSERT' or new.route_id is distinct from old.route_id)
+     and not exists (select 1 from public.lookups where id = new.route_id and company_id = new.company_id and kind = 'route') then
+    raise exception 'المسار مش من نفس الشركة';
+  end if;
+  if new.payment_method_id is not null and (tg_op = 'INSERT' or new.payment_method_id is distinct from old.payment_method_id)
+     and not exists (select 1 from public.lookups where id = new.payment_method_id and company_id = new.company_id and kind = 'payment_method') then
+    raise exception 'وسيلة الدفع مش من نفس الشركة';
+  end if;
+  if new.department_id is not null and (tg_op = 'INSERT' or new.department_id is distinct from old.department_id)
+     and not exists (select 1 from public.departments where id = new.department_id and company_id = new.company_id and kind = 'sub') then
+    raise exception 'الدائرة لازم تكون فرعية ومن نفس الشركة';
+  end if;
+  if new.currency is not null and (tg_op = 'INSERT' or new.currency is distinct from old.currency) then
+    new.currency := nullif(upper(trim(new.currency)), '');
+    if new.currency is not null and new.currency <> 'JOD' and not exists (select 1 from public.currencies where company_id = new.company_id and upper(code) = new.currency) then
+      raise exception 'العملة «%» مش معرّفة بالشركة (مراكز الكلفة والعملات)', new.currency;
+    end if;
+  end if;
+  return new;
+end $$;
+drop trigger if exists ad_party_fields_check on public.parties;
+create trigger ad_party_fields_check before insert or update on public.parties for each row execute function public.ad_party_fields_check();
+
+
+
+-- نموذج الفاتورة ثنائي اللغة: اسم وعنوان الشركة بالإنجليزي، المشروع، وتفاصيل متعددة الأسطر لكل سطر
+alter table public.companies add column if not exists name_en text;
+alter table public.companies add column if not exists address_en text;
+alter table public.invoices add column if not exists project text;
+alter table public.orders add column if not exists project text;
+alter table public.invoice_lines add column if not exists details text;
+alter table public.order_lines add column if not exists details text;

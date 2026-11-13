@@ -18,6 +18,9 @@ export const PRINT_DEFAULTS = {
   header_note: '',
   footer_text: '',
   invoice_title: '',
+  invoice_layout: 'standard',   // standard | bilingual
+  invoice_title_en: '',
+  invoice_terms: '',
   sig: {
     invoice: 'المستلِم، المحاسب',
     receipt: 'المحاسب، المدير المالي، المستلِم',
@@ -114,7 +117,16 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
     const c = S.company || {};
     const paper = kind === 'invoice' ? cfg.invoice_paper : cfg.paper;
     const thermal = paper === '80mm';
-    const body = typeof html === 'function' ? html(cfg, { thermal }) : html;
+    let body = typeof html === 'function' ? html(cfg, { thermal }) : html;
+    if (body && typeof body === 'object' && body.bare) {   // نموذج كامل جاهز (مثل الفاتورة الثنائية): بدون ترويسة وتواقيع البرنامج
+      const t0 = typeof title === 'function' ? title(cfg) : title;
+      const d0 = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${esc(t0)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>${css(cfg, { landscape, thermal, paper: paper === 'A5' ? 'A5' : 'A4' })}${body.css || ''}</style></head><body>
+  ${preview ? '' : printBarHTML()}${body.html}
+  ${preview ? '' : '<script>window.onload = () => setTimeout(() => window.print(), 450);<\/script>'}</body></html>`;
+      w.document.open(); w.document.write(d0); w.document.close(); return;
+    }
     if (typeof title === 'function') title = title(cfg);
     const sigs = kind && cfg.sig[kind] ? String(cfg.sig[kind]).split(/[،,]/).map(x => x.trim()).filter(Boolean) : [];
     const fy = S.fy ? (S.fy.name || S.fy.code) : '';

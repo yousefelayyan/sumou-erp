@@ -3,7 +3,8 @@
 // =====================================================================
 import { S, sb, esc, toast, arError, can, modal, confirmBox, formData, fmtNum, fmtDate, num, today } from './core.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
-import { loadItems, openInvoicePrefill } from './invoices.js';
+import { loadItems, openInvoicePrefill, bilingualDoc } from './invoices.js';
+import { printDoc, amountToWords } from './print.js';
 import { loadLookups, repOptions, hasReps } from './lookups.js';
 import { downloadCSV } from './finance.js';
 import { attachAudit } from './audit.js';
@@ -47,6 +48,22 @@ async function viewOrders(v, ctx) {
   v.querySelector('#tb').onclick = (e) => { const tr = e.target.closest('[data-open]'); if (tr) orderEditor(type, rows.find(o => o.id === tr.dataset.open), ctx); };
 }
 
+function printOrder(type, ord, lines, party, items) {
+  const O = ORD[type], itBy = Object.fromEntries(items.map(i => [i.id, i]));
+  const ls = lines.map(l => ({ ...l, sub: r3(num(l.qty) * num(l.unit_price) - num(l.discount)) }));
+  const sub = r3(ls.reduce((s, l) => s + l.sub, 0)), disc = r3(ls.reduce((s, l) => s + num(l.discount), 0)), tax = r3(ls.reduce((s, l) => s + r3(l.sub * num(l.tax_rate) / 100), 0));
+  const en = type === 'sales_order' ? 'Sales Order' : 'Purchase Order';
+  printDoc(`${O.label} رقم ${ord.order_no}`, (cfg) => cfg.invoice_layout === 'bilingual'
+    ? bilingualDoc({ cfg, titleAr: O.label, titleEn: en, no: ord.order_no, date: ord.order_date, pay: '', orderNo: ord.reference || '', project: ord.project, party, partyName: party?.name || ord.party_name,
+        lines: ls, sub, disc, tax, total: r3(sub + tax), notes: ord.notes, noLabel: ['رقم الطلب', 'Order No.'] })
+    : `<table class="meta"><tr><td><b>الرقم:</b> ${ord.order_no}</td><td><b>التاريخ:</b> ${fmtDate(ord.order_date)}</td><td>${ord.valid_until ? `<b>صالح لغاية:</b> ${fmtDate(ord.valid_until)}` : ''}</td></tr>
+        <tr><td colspan="2"><b>${O.partyLabel}:</b> ${esc(party?.name || ord.party_name || '')}</td><td>${ord.reference ? `<b>المرجع:</b> ${esc(ord.reference)}` : ''}</td></tr>${ord.project ? `<tr><td colspan="3"><b>المشروع:</b> ${esc(ord.project)}</td></tr>` : ''}</table>
+      <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الصنف</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>المجموع</th></tr></thead><tbody>
+      ${ls.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itBy[l.item_id]?.code || '')}</td><td>${esc(l.description || '')}${l.details ? `<div style="font-size:.9em;color:#444">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td><td class="n">${fmtNum(l.sub)}</td></tr>`).join('')}</tbody></table>
+      <table class="pt" style="width:45%;margin:10px 0 0 auto;margin-inline-start:auto"><tr><td>قبل الضريبة</td><td class="n">${fmtNum(sub)}</td></tr><tr><td>الضريبة</td><td class="n">${fmtNum(tax)}</td></tr><tr class="tot"><td>الإجمالي</td><td class="n">${fmtNum(sub + tax)}</td></tr></table>
+      <div class="amount-box">${amountToWords(sub + tax)}</div>${ord.notes ? `<p><b>ملاحظات:</b> ${esc(ord.notes)}</p>` : ''}`, { kind: 'invoice' });
+}
+
 async function orderEditor(type, ord, ctx) {
   const O = ORD[type];
   const [parties, items] = await Promise.all([loadParties(), loadItems(), loadLookups()]);
@@ -55,7 +72,7 @@ async function orderEditor(type, ord, ctx) {
   if (ord) lines = (await sb.from('order_lines').select('*').eq('order_id', ord.id).order('line_no')).data || [];
   const ro = (ord && ord.status !== 'open') || (ord ? !can(O.screen, 'edit') : !can(O.screen, 'add')) ? 'disabled' : '';
   const o0 = ord || { order_date: today(), party_id: null, reference: '', notes: '' };
-  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
+  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 });
   const m = modal({ title: ord ? `${O.label} رقم ${ord.order_no}` : `${O.label} جديد`, body: `
     ${ord ? `<div style="margin:-6px 0 12px">${obadge(ord.status)}</div>` : ''}
@@ -63,6 +80,7 @@ async function orderEditor(type, ord, ctx) {
       <div class="field"><label>التاريخ *</label><input type="date" name="order_date" value="${esc(o0.order_date)}" ${ro}></div>
       <div class="field"><label>صالح لغاية</label><input type="date" name="valid_until" value="${esc(o0.valid_until || '')}" ${ro}></div>
       <div class="field"><label>المرجع</label><input name="reference" value="${esc(o0.reference || '')}" ${ro}></div>
+      ${type === 'sales_order' ? `<div class="field"><label>المشروع</label><input name="project" value="${esc(o0.project || '')}" ${ro}></div>` : ''}
       <div class="field" style="grid-column:span 2"><label>${O.partyLabel}</label><input list="party-list" id="party" value="${esc(partyLabel(pById[o0.party_id]))}" placeholder="رقم أو اسم ${O.partyLabel}…" ${ro}>${partyDatalist(myParties)}</div>
       <div class="field"><label>الاسم (بدون بطاقة)</label><input name="party_name" value="${esc(o0.party_name || '')}" ${ro}></div>
       ${type === 'sales_order' && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id" ${ro}><option value="">—</option>${repOptions(o0.sales_rep_id)}</select></div>` : ''}
@@ -77,6 +95,7 @@ async function orderEditor(type, ord, ctx) {
       ${ord && ord.status === 'open' && can(INVSCR[O.inv], 'add') ? `<button class="btn" data-conv>🧾 تحويل لفاتورة ${O.inv === 'sale' ? 'بيع' : 'شراء'}</button>` : ''}
       ${ord && ord.status === 'converted' ? '<span class="muted">تحوّل لفاتورة — شوفها من شاشة الفواتير</span>' : ''}
       ${ord && ord.status === 'open' && can(O.screen, 'edit') ? '<button class="btn" data-cancelord>🚫 إلغاء الطلب</button>' : ''}
+      ${ord && can(O.screen, 'print') ? '<button class="btn" data-print>🖨️ طباعة</button>' : ''}
       ${ord && ord.status === 'open' && can(O.screen, 'delete') ? '<button class="btn danger" data-del>حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '1000px';
@@ -85,7 +104,7 @@ async function orderEditor(type, ord, ctx) {
   const totals = () => { let s = 0, t = 0; rows.forEach((r, i) => { const c = calc(r); s += c.g; t += c.t; const el = tb.querySelector(`[data-tot="${i}"]`); if (el) el.textContent = fmtNum(c.tot); });
     m.el.querySelector('#t-sub').textContent = fmtNum(s); m.el.querySelector('#t-tax').textContent = fmtNum(t); m.el.querySelector('#t-tot').textContent = fmtNum(s + t); };
   const draw = () => { tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
-      <td><input list="item-list" class="cell" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td><td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}></td>
+      <td><input list="item-list" class="cell" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td><td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!ro || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}</td>
       ${['qty', 'price', 'disc', 'rate'].map(k => `<td><input class="cell n" dir="ltr" inputmode="decimal" data-i="${i}" data-k="${k}" value="${esc(r[k] || '')}" ${ro}></td>`).join('')}
       <td class="n" data-tot="${i}"></td><td>${ro ? '' : `<button class="btn sm" type="button" data-rm="${i}">✕</button>`}</td></tr>`).join(''); totals(); };
   draw();
@@ -96,6 +115,7 @@ async function orderEditor(type, ord, ctx) {
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
   m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
   if (ord) attachAudit(m.el, ord);
+  m.el.querySelector('[data-print]')?.addEventListener('click', () => printOrder(type, ord, lines, pById[ord.party_id], items));
   const collect = () => {
     const out = [];
     for (const [k, r] of rows.entries()) {
@@ -103,7 +123,7 @@ async function orderEditor(type, ord, ctx) {
       const it = resolveItem(items, r.item); if (r.item && !it) { toast(`السطر ${k + 1}: الصنف مش موجود`, 'err'); return null; }
       if (num(r.qty) <= 0) { toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err'); return null; }
       if (num(r.disc) > num(r.qty) * num(r.price)) { toast(`السطر ${k + 1}: الخصم أكبر من قيمة السطر`, 'err'); return null; }
-      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate) });
+      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate) });
     }
     if (!out.length) { toast('ضيف سطر واحد على الأقل', 'err'); return null; }
     return out;
@@ -112,7 +132,7 @@ async function orderEditor(type, ord, ctx) {
     const h = formData(m.el.querySelector('#o-form')); const pv = m.el.querySelector('#party').value; const p = resolveParty(myParties, pv);
     if (pv && !p) return toast(`${O.partyLabel} مش موجود بالقائمة`, 'err');
     const out = collect(); if (!out) return;
-    const header = { order_date: h.order_date, valid_until: h.valid_until || null, reference: h.reference || null, party_id: p?.id || null, party_name: h.party_name || p?.name || null, notes: h.notes || null,
+    const header = { order_date: h.order_date, valid_until: h.valid_until || null, reference: h.reference || null, party_id: p?.id || null, party_name: h.party_name || p?.name || null, notes: h.notes || null, ...('project' in h ? { project: h.project || null } : {}),
       ...('sales_rep_id' in h ? { sales_rep_id: h.sales_rep_id || null } : {}) };
     e.target.disabled = true;
     try {
@@ -128,7 +148,7 @@ async function orderEditor(type, ord, ctx) {
     const { data: cur } = await sb.from('orders').select('status').eq('id', ord.id).single();
     if (cur?.status !== 'open') { toast('الطلب مش مفتوح، يمكن حدا حوّله من قبل', 'err'); m.close(); return ctx.rerender(); }
     m.close();
-    openInvoicePrefill(O.inv, { inv: { inv_type: O.inv, party_id: ord.party_id, party_name: ord.party_name, payment_type: 'credit', sales_rep_id: ord.sales_rep_id, notes: ord.notes },
+    openInvoicePrefill(O.inv, { inv: { inv_type: O.inv, party_id: ord.party_id, party_name: ord.party_name, payment_type: 'credit', sales_rep_id: ord.sales_rep_id, notes: ord.notes, project: ord.project },
       lines, ref: `من ${O.label} رقم ${ord.order_no}${ord.reference ? ' — ' + ord.reference : ''}`,
       onSaved: async (invId) => { const { error } = await sb.rpc('link_order_invoice', { p_order: ord.id, p_invoice: invId }); if (error) toast(arError(error), 'err'); else toast('الطلب تحوّل لفاتورة', 'ok'); } }, ctx);
   });

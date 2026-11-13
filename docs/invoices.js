@@ -320,10 +320,10 @@ async function invoiceEditor(type, inv, ctx) {
   const i0 = inv || { inv_date: today() >= S.fy.start_date && today() <= S.fy.end_date ? today() : S.fy.start_date, payment_type: pre?.inv.payment_type || 'credit',
     prices_include_tax: pre?.inv.prices_include_tax || false, cash_account_id: pre?.inv.cash_account_id || st.cash_account_id, party_id: pre?.inv.party_id,
     party_name: pre?.inv.party_name, reference: pre ? (pre.fromOrder ? pre.ref : `مرتجع من ${INV[pre.inv.inv_type].label} ${docNo(pre.inv)}`) : '',
-    original_invoice_id: pre && !pre.fromOrder ? pre.inv.id : null, sales_rep_id: pre?.inv.sales_rep_id || null, department_id: pre?.inv.department_id || null, notes: pre?.inv.notes || '' };
+    original_invoice_id: pre && !pre.fromOrder ? pre.inv.id : null, sales_rep_id: pre?.inv.sales_rep_id || null, department_id: pre?.inv.department_id || null, notes: pre?.inv.notes || '', project: pre?.inv.project || '' };
   if (pre) lines = pre.lines;
   const pById = Object.fromEntries(parties.map(p => [p.id, p])), itById = Object.fromEntries(items.map(i => [i.id, i]));
-  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
+  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
   const dept = await deptField(inv?.department_id, ro, !inv); await loadLookups();
@@ -338,6 +338,7 @@ async function invoiceEditor(type, inv, ctx) {
       <div class="field" id="pn-box"><label>الاسم (للنقدي بدون بطاقة)</label><input name="party_name" value="${esc(i0.party_name)}" ${ro}></div>
       <div class="field" id="cash-box"><label>الصندوق / البنك</label><select name="cash_account_id" ${ro}><option value="">— اختار —</option>${pmOptions(isSale ? 'sales' : 'purchases')}${cashAccs.map(a => `<option value="${a.id}" ${a.id === i0.cash_account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>
       <div class="field"><label>${isSale ? 'رقم الطلب / المرجع' : 'رقم فاتورة المورد'}</label><input name="reference" value="${esc(i0.reference)}" ${ro}></div>
+      ${isSale ? `<div class="field"><label>المشروع</label><input name="project" value="${esc(i0.project || '')}" ${ro}></div>` : ''}
       ${ccs.length ? `<div class="field"><label>مركز الكلفة</label><select name="cost_center_id" ${ro}><option value="">—</option>${ccs.map(c => `<option value="${c.id}" ${c.id === i0.cost_center_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>` : ''}
       ${dept}
       ${isSale && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id" ${ro}><option value="">— مندوب العميل —</option>${repOptions(i0.sales_rep_id)}</select></div>` : ''}
@@ -372,7 +373,7 @@ async function invoiceEditor(type, inv, ctx) {
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="item-list" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td>
-      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}></td>
+      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}</td>
       <td><input class="cell n" data-i="${i}" data-k="qty" value="${r.qty || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="price" value="${r.price || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="disc" value="${r.disc || ''}" inputmode="decimal" ${ro}></td>
@@ -432,7 +433,7 @@ async function invoiceEditor(type, inv, ctx) {
       if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err');
       if (num(r.disc) > num(r.qty) * num(r.price)) return toast(`السطر ${k + 1}: الخصم أكبر من قيمة السطر`, 'err');
       const c = calc(r);
-      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate),
+      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate),
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
     }
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
@@ -440,7 +441,7 @@ async function invoiceEditor(type, inv, ctx) {
     if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم الفاتورة (رقم صحيح أكبر من صفر)', 'err');
     const header = { ...(mn.value ? { inv_no: mn.value } : {}), inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
       party_name: h.payment_type === 'cash' ? (h.party_name || p?.name || null) : null, cash_account_id: h.payment_type === 'cash' ? h.cash_account_id : null,
-      reference: h.reference, prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
+      reference: h.reference, ...(isSale ? { project: h.project || null } : {}), prices_include_tax: h.prices_include_tax, notes: h.notes, ...(whs.length > 1 ? { warehouse_id: h.warehouse_id } : {}), ...deptValue(m.el.querySelector('#inv-form')), ...(isSale && hasReps() ? { sales_rep_id: h.sales_rep_id || null } : {}), ...(ccs.length ? { cost_center_id: h.cost_center_id || null } : {}),
       subtotal: r3(out.reduce((s, l) => s + l.subtotal, 0)), tax_total: r3(out.reduce((s, l) => s + l.tax_amount, 0)), discount_total: r3(out.reduce((s, l) => s + l.discount, 0)) };
     header.total = r3(header.subtotal + header.tax_total);
     if (p && isSale && type === 'sale' && p.credit_limit > 0 && h.payment_type === 'credit') {
@@ -526,8 +527,71 @@ function printInvoice(type, inv, lines, party, st) {
       <tfoot><tr><td colspan="2">قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr><tr><td colspan="2">الضريبة</td><td class="n">${fmtNum(inv.tax_total)}</td></tr>
       <tr class="tot"><td colspan="2">الإجمالي</td><td class="n">${fmtNum(inv.total)}</td></tr></tfoot></table>
     ${st.invoice_footer ? `<p style="text-align:center">${esc(st.invoice_footer)}</p>` : ''}${stamp}`;
-  printDoc((cfg) => (type === 'sale' && cfg.invoice_title) ? cfg.invoice_title : `${T.label}${c.subject_to_sales_tax && type === 'sale' ? ' ضريبية' : ''}`,
-    (cfg, { thermal }) => thermal ? slim() : full(), { kind: 'invoice' });
+  const arTitle = (cfg) => (type === 'sale' && cfg.invoice_title) ? cfg.invoice_title : `${T.label}${c.subject_to_sales_tax && type === 'sale' ? ' ضريبية' : ''}`;
+  const go = (orderNo) => printDoc(arTitle,
+    (cfg, { thermal }) => thermal ? slim() : (cfg.invoice_layout === 'bilingual' && isSaleType(type)) ? bilingualDoc({
+      cfg, titleAr: arTitle(cfg), titleEn: cfg.invoice_title_en || (type === 'sale_return' ? 'Sales Return' : 'Sales Invoice'),
+      no: docNo(inv), date: inv.inv_date, pay: inv.payment_type === 'cash' ? 'نقدي / Cash' : 'آجل / Credit', orderNo, project: inv.project,
+      party, partyName: party?.name || inv.party_name, lines, sub: inv.subtotal, disc: inv.discount_total, tax: inv.tax_total, total: inv.total, notes: inv.notes, stamp,
+      footer: st.invoice_footer }) : full(), { kind: 'invoice' });
+  if (isSaleType(type)) sb.from('orders').select('order_no').eq('invoice_id', inv.id).limit(1).then(({ data }) => go(data?.[0]?.order_no || '')); else go('');
+}
+const isSaleType = (t) => t === 'sale' || t === 'sale_return';
+
+// نموذج ثنائي اللغة (عربي/إنجليزي) للفاتورة وطلب المبيعات — مثل نماذج الشركات التجارية
+export function bilingualDoc({ cfg, titleAr, titleEn, no, date, pay, orderNo, project, party, partyName, lines, sub, disc, tax, total, notes, stamp = '', footer = '', noLabel = ['رقم الفاتورة', 'Invoice No.'] }) {
+  const c = S.company || {}, col = cfg.color || '#2e6b4f';
+  const itBy = Object.fromEntries((S.items || []).map(i => [i.id, i]));
+  const L = (ar, en) => `<span class="ar">${ar}</span><span class="en">${en}</span>`;
+  const rows = lines.map((l, i) => { const it = itBy[l.item_id] || {};
+    return `<tr><td class="c">${i + 1}</td><td class="c">${esc(it.code || '')}</td>
+      <td class="desc"><b>${esc(l.description || '')}</b>${l.details ? `<div class="det">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td>
+      <td class="c">${esc(it.unit || '')}</td><td class="c">${num(l.qty)}</td><td class="n">${fmtNum(l.unit_price)}</td><td class="n">${fmtNum(num(l.qty) * num(l.unit_price) - num(l.discount))}</td></tr>`; }).join('');
+  const filler = `<tr class="fill"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  const html = `<div class="bl">
+    <div class="bl-head">
+      <div class="bl-ar"><div class="nm">${esc(c.name || '')}</div><div>${esc([c.address, c.city].filter(Boolean).join(' - '))}</div></div>
+      <div class="bl-logo">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}</div>
+      <div class="bl-en"><div class="nm">${esc(c.name_en || c.name || '')}</div><div>${esc(c.address_en || '')}</div></div></div>
+    <div class="bl-titles"><div class="t-ar">${esc(titleAr)}</div><div class="tax">${c.sales_tax_no || c.income_tax_no ? `الرقم الضريبي: <b>${esc(c.sales_tax_no || c.income_tax_no)}</b>` : ''}</div><div class="t-en">${esc(titleEn)}</div></div>
+    <table class="bl-meta"><tr>
+      <td class="lbl">${L('السيد / السادة:', 'Messrs:')}</td><td class="val big">${esc(partyName || '')}</td>
+      <td class="lbl">${L(noLabel[0] + ':', noLabel[1] + ':')}</td><td class="val">${esc(no)}</td></tr>
+      <tr><td class="lbl">${L('رقم الهاتف:', 'Phone:')}</td><td class="val" dir="ltr">${esc([party?.mobile, party?.phone].filter(Boolean).join(' - '))}</td>
+      <td class="lbl">${L('التاريخ:', 'Date:')}</td><td class="val">${fmtDate(date)}</td></tr>
+      <tr><td class="lbl">${L('بريد إلكتروني:', 'E-Mail:')}</td><td class="val" dir="ltr">${esc(party?.email || '')}</td>
+      <td class="lbl">${L('وسيلة الدفع:', 'Payment:')}</td><td class="val">${esc(pay || '')}</td></tr>
+      <tr><td class="lbl">${L('المشروع:', 'Project:')}</td><td class="val">${esc(project || '')}</td>
+      <td class="lbl">${L('رقم الطلب:', 'Order#:')}</td><td class="val">${esc(orderNo || '')}</td></tr>
+      ${party?.tax_no ? `<tr><td class="lbl">${L('رقم العميل الضريبي:', 'Customer TRN:')}</td><td class="val">${esc(party.tax_no)}</td><td></td><td></td></tr>` : ''}</table>
+    <table class="bl-lines"><thead><tr><th class="c">${L('رقم', 'No.')}</th><th class="c">${L('رقم المادة', 'Item No.')}</th><th>${L('التفاصيل', 'Description')}</th><th class="c">${L('الوحدة', 'Unit')}</th><th class="c">${L('الكمية', 'Qty.')}</th><th>${L('سعر الوحدة', 'Unit Price')}</th><th>${L('المجموع', 'Total')}</th></tr></thead>
+      <tbody>${rows}${filler}</tbody></table>
+    <table class="bl-foot"><tr>
+      <td class="sig"><div class="sg"><div>${L('اسم وتوقيع البائع', 'Prepared By')}</div><div class="ln"></div></div><div class="sg"><div>${L('اسم وتوقيع العميل', 'Authenticated By')}</div><div class="ln"></div></div></td>
+      <td class="tots"><table>
+        <tr><td>${L('المجموع', 'Total')}</td><td class="n">${fmtNum(num(sub) + num(disc))}</td></tr>
+        <tr><td>${L('الخصم', 'Discount')}</td><td class="n">${fmtNum(disc)}</td></tr>
+        <tr><td>${L('الصافي', 'Net')}</td><td class="n">${fmtNum(sub)}</td></tr>
+        <tr><td>${L('الضريبة', 'VAT')}</td><td class="n">${fmtNum(tax)}</td></tr>
+        <tr class="due"><td>${L('المطلوب', 'Net Due')}</td><td class="n">${fmtNum(total)}</td></tr></table></td></tr>
+      <tr><td colspan="2" class="words">${esc(amountToWords(total))}</td></tr></table>
+    ${notes ? `<div class="bl-note"><b>ملاحظات / Notes:</b> ${esc(notes)}</div>` : ''}
+    ${cfg.invoice_terms ? `<div class="bl-note">- ${esc(cfg.invoice_terms)}</div>` : ''}${footer ? `<div class="bl-note">${esc(footer)}</div>` : ''}${stamp}
+    <div class="bl-bottom" dir="ltr">${esc([c.address_en || c.address, c.city].filter(Boolean).join(' | '))}${c.mobile ? ` | Mobile: ${esc(c.mobile)}` : ''}${c.phone ? ` | Phone: ${esc(c.phone)}` : ''}<br>${c.website ? `Website: ${esc(c.website)}` : ''}${c.email ? ` | Email: ${esc(c.email)}` : ''}</div></div>`;
+  const css = `.bl{font-size:12px}.bl .en{display:block;font-size:.82em;direction:ltr;opacity:.85}.bl .ar{display:block}
+    .bl-head{display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid ${col};padding-bottom:6px;gap:10px}
+    .bl-head .nm{font-size:1.35em;font-weight:800;color:${col}}.bl-en{direction:ltr;text-align:left;flex:1}.bl-ar{text-align:right;flex:1}.bl-logo img{max-height:70px;max-width:160px}
+    .bl-titles{display:flex;justify-content:space-between;align-items:center;margin:8px 0}.bl-titles .t-ar,.bl-titles .t-en{font-size:1.5em;font-weight:800;color:${col}}.bl-titles .t-en{direction:ltr}
+    .bl-meta{width:100%;border-collapse:collapse;margin-bottom:6px}.bl-meta td{padding:3px 6px;vertical-align:top}.bl-meta .lbl{white-space:nowrap;color:#444;width:1%}.bl-meta .val{border-bottom:1px dotted #bbb}.bl-meta .big{font-weight:700;font-size:1.1em}
+    .bl-lines{width:100%;border-collapse:collapse;border:1px solid #888}.bl-lines th{background:${col};color:#fff;padding:5px;font-size:.92em;border:1px solid #888}
+    .bl-lines td{border-inline:1px solid #888;padding:5px;vertical-align:top}.bl-lines tbody tr:not(.fill) td{border-bottom:1px solid #ddd}.bl-lines .fill td{height:120px}
+    .bl-lines .c{text-align:center}.bl-lines .n{text-align:left;direction:ltr}.bl-lines .desc{text-align:left;direction:ltr}.bl-lines .desc .det{font-size:.9em;color:#333;white-space:normal;margin-top:2px}
+    .bl-foot{width:100%;border-collapse:collapse;margin-top:6px}.bl-foot td{vertical-align:top}.bl-foot .sig{display:flex;gap:20px;justify-content:space-around;padding-top:10px}.bl-foot .sg{text-align:center;min-width:160px}.bl-foot .ln{border-bottom:1px solid #555;height:40px}
+    .bl-foot .tots{width:36%}.bl-foot .tots table{width:100%;border-collapse:collapse}.bl-foot .tots td{border:1px solid #888;padding:4px 6px}.bl-foot .tots td:first-child{background:${col};color:#fff;width:45%}
+    .bl-foot .tots .due td{font-weight:800;font-size:1.1em}.bl-foot .n{text-align:left;direction:ltr}
+    .bl-foot .words{background:${col};color:#fff;text-align:center;padding:5px;font-weight:700}.bl-note{margin-top:6px;font-size:.92em}
+    .bl-bottom{margin-top:12px;border-top:2px solid ${col};padding-top:6px;text-align:center;font-size:.9em;color:#333}`;
+  return { bare: true, html, css };
 }
 
 // ---------------------------------------------------------------------

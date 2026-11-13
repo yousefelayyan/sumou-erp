@@ -1,6 +1,7 @@
 // =====================================================================
 //  السمو ERP — المرحلة 4: الزبائن والموردين
 // =====================================================================
+import { loadDepartments } from './departments.js';
 import { loadLookups, lookupDatalistSync, repOptions, hasReps, loyaltyOptions, hasLoyalty } from './lookups.js';
 import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
@@ -45,7 +46,7 @@ function partyList(type) {
   return async function (v, ctx) {
     if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
     const P = PARTY[type];
-    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups(), loadCustomFields(), loadFieldLayout()]);
+    const [parties, accs, , cats] = await Promise.all([loadParties(true), loadAccounts(), loadNumbering(true), loadPartyCats(type), loadLookups(), loadCustomFields(), loadFieldLayout(), loadDepartments()]);
     const catById = Object.fromEntries(cats.map(c => [c.id, c]));
     let bal = {};
     if (S.fy) {
@@ -69,7 +70,7 @@ function partyList(type) {
       <p class="muted" style="font-size:13px">الرصيد من القيود المرحّلة بالسنة المالية الحالية. ${type === 'customer' ? 'الرصيد الموجب = علينا نحصّله من العميل.' : 'الرصيد الموجب = علينا ندفعه للمورد.'}</p>`;
     const draw = () => {
       const q = v.querySelector('#q').value.trim().toLowerCase(), fc = v.querySelector('#fc').value;
-      const rows = list.filter(p => (!fc || (fc === '-' ? !p.category_id : p.category_id === fc))).filter(p => !q || [p.code, p.name, p.trade_name, p.phone, p.mobile, p.tax_no].some(x => (x || '').toLowerCase().includes(q)));
+      const rows = list.filter(p => (!fc || (fc === '-' ? !p.category_id : p.category_id === fc))).filter(p => !q || [p.code, p.name, p.name2, p.reference, p.trade_name, p.phone, p.mobile, p.tax_no].some(x => (x || '').toLowerCase().includes(q)));
       v.querySelector('#rows').innerHTML = rows.map(p => { const b = (bal[p.id] || 0) * P.side; const over = p.credit_limit > 0 && b > p.credit_limit;
         return `<tr><td>${esc(p.code)}</td><td><b>${esc(p.name)}</b>${p.trade_name ? `<div class="muted" style="font-size:12px">${esc(p.trade_name)}</div>` : ''}</td><td>${esc(catById[p.category_id]?.name || '')}</td>
         <td dir="ltr" style="text-align:right">${esc(p.mobile || p.phone || '')}</td><td>${esc(p.city || '')}</td><td dir="ltr" style="text-align:right">${esc(p.tax_no || '')}</td>
@@ -100,6 +101,10 @@ function partyList(type) {
   };
 }
 
+const lkOpts = (kind, val) => (S._lk?.cid === S.company?.id ? S._lk.rows : []).filter(r => r.kind === kind && (r.is_active || r.id === val))
+  .map(r => `<option value="${r.id}" ${r.id === val ? 'selected' : ''}>${esc(r.code)} — ${esc(r.name)}</option>`).join('');
+const subDepts = () => (S._depts?.cid === S.company?.id ? S._depts.rows : []).filter(d => d.kind === 'sub');
+
 function partyForm(type, p, accs, ctx, cats = []) {
   const P = PARTY[type], isNew = !p;
   const leaves = leafAccounts(accs);
@@ -115,6 +120,8 @@ function partyForm(type, p, accs, ctx, cats = []) {
         <div class="field"><label>الرقم</label><input name="code" value="${esc(p.code)}" placeholder="تلقائي" dir="ltr"></div>
         ${type === 'customer' && hasReps() ? `<div class="field"><label>المندوب</label><select name="sales_rep_id"><option value="">—</option>${repOptions(p.sales_rep_id)}</select></div>` : ''}
         <div class="field"><label>الفئة</label><select name="category_id"><option value="">— بدون فئة —</option>${cats.filter(c => c.is_active || c.id === p.category_id).map(c => `<option value="${c.id}" ${c.id === p.category_id ? 'selected' : ''}>${esc(c.code)} — ${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="field"><label>الوصف #2 (اسم ثاني / بالإنجليزي)</label><input name="name2" value="${esc(p.name2 || '')}"></div>
+        <div class="field"><label>المرجع</label><input name="reference" value="${esc(p.reference || '')}"></div>
         <div class="field"><label>الاسم التجاري</label><input name="trade_name" value="${esc(p.trade_name)}"></div>
         <div class="field"><label>الرقم الضريبي</label><input name="tax_no" value="${esc(p.tax_no)}" dir="ltr"></div>
         <div class="field"><label>الرقم الوطني</label><input name="national_no" value="${esc(p.national_no)}" dir="ltr"></div>
@@ -135,7 +142,11 @@ function partyForm(type, p, accs, ctx, cats = []) {
           ${sorted.map(a => `<option value="${a.id}" ${a.id === p.account_id ? 'selected' : ''}>${esc(accLabel(a))}${okAcc(a) ? ' ★' : ''}</option>`).join('')}</select>
           <span class="hint">عادة «${type === 'customer' ? 'الذمم المدينة (العملاء)' : 'الذمم الدائنة (الموردين)'}». كل ${P.plural} بيتجمّعوا على هالحساب، وكل واحد إله كشف لحاله.</span></div>
         <div class="field"><label>سقف الائتمان</label><input name="credit_limit" value="${p.credit_limit || ''}" inputmode="decimal" dir="ltr" placeholder="0 = بدون سقف"></div>
-        <div class="field"><label>مدة السداد (أيام)</label><input name="payment_terms_days" value="${p.payment_terms_days || ''}" inputmode="numeric" dir="ltr"></div></div>
+        <div class="field"><label>مدة السداد / شروط الدفع (أيام)</label><input name="payment_terms_days" value="${p.payment_terms_days || ''}" inputmode="numeric" dir="ltr"></div>
+        <div class="field"><label>وسيلة الدفع الافتراضية</label><select name="payment_method_id"><option value="">—</option>${lkOpts('payment_method', p.payment_method_id)}</select></div>
+        <div class="field"><label>العملة</label><input name="currency" list="cur-list" value="${esc(p.currency || '')}" dir="ltr" placeholder="JOD"><datalist id="cur-list"></datalist></div>
+        <div class="field"><label>المسار</label><select name="route_id"><option value="">—</option>${lkOpts('route', p.route_id)}</select></div>
+        ${subDepts().length ? `<div class="field"><label>الدائرة</label><select name="department_id"><option value="">—</option>${subDepts().filter(d => d.is_active || d.id === p.department_id).map(d => `<option value="${d.id}" ${d.id === p.department_id ? 'selected' : ''}>${esc(d.code)} — ${esc(d.name)}</option>`).join('')}</select></div>` : ''}</div>
         <div class="field"><label>ملاحظات</label><textarea name="notes" style="min-height:60px">${esc(p.notes)}</textarea></div></div>
     </form>`, foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
   if (!isNew) attachAudit(m.el, p);
@@ -145,6 +156,9 @@ function partyForm(type, p, accs, ctx, cats = []) {
     m.el.querySelectorAll('.tab-panel').forEach(x => x.classList.toggle('active', x.dataset.tab === t.dataset.tab));
   }));
   applyLayout(m.el.querySelector('#p-form'), type);
+  sb.from('currencies').select('code,name').eq('company_id', S.company.id).eq('is_active', true).then(({ data }) => {
+    const dl = m.el.querySelector('#cur-list'); if (dl) dl.innerHTML = '<option value="JOD">دينار أردني</option>' + (data || []).map(c => `<option value="${esc(c.code)}">${esc(c.name)}</option>`).join('');
+  });
   m.el.querySelector('[data-save]').onclick = async () => {
     const d = formData(m.el.querySelector('#p-form'));
     if (!d.name) return toast('الاسم مطلوب', 'err');
@@ -153,6 +167,7 @@ function partyForm(type, p, accs, ctx, cats = []) {
     const ex = cfValues(m.el.querySelector('#p-form'), type, p.extra); Object.keys(d).filter(k => k.startsWith('cf__')).forEach(k => delete d[k]); if (ex) d.extra = ex;
     if ('loyalty_type_id' in d) d.loyalty_type_id = d.loyalty_type_id || null; if ('loyalty_card_no' in d) d.loyalty_card_no = d.loyalty_card_no || null;
     d.credit_limit = num(d.credit_limit); d.payment_terms_days = parseInt(d.payment_terms_days) || 0; d.category_id = d.category_id || null; if ('sales_rep_id' in d) d.sales_rep_id = d.sales_rep_id || null;
+    ['route_id', 'payment_method_id', 'department_id', 'currency', 'reference', 'name2'].forEach(k => { if (k in d) d[k] = String(d[k] || '').trim() || null; });
     if (isNew) { d.company_id = S.company.id; d.party_type = type; d.code = d.code || ''; }
     else if (!d.code) delete d.code;
     const res = isNew ? await sb.from('parties').insert(d) : await sb.from('parties').update(d).eq('id', p.id);

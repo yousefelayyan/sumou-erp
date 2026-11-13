@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..35). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..36). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -95,7 +95,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -119,7 +119,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.19.0)
+## اللي انبنى (لحد النسخة 4.20.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -179,11 +179,12 @@ dev/                أدوات الفحص (شوف تحت)
 - **السنوات «غير المتاحة» (المرحلة 32):** `fiscal_years.unavailable` = السنة الجاية مفتوحة بدري. ما بتنختار تلقائياً، وبتبيّن بس لمين إله صلاحية شاشة `fy_unavailable` (`canHiddenYears()`؛ `S.fiscalYearsAll` فيها الكل). ممنوعة على السنة اللي فيها تاريخ اليوم (`ad_fy_unavailable_check`). `fy_release_started(company)` بيشيل العلامة لما يبدأ تاريخها (بينادى من `loadFiscalYears`) إذا `company_settings.fy_auto_release`. إنشاء سنة بتترك أيام فاضية بعد السابقة بيسأل.
 - **حركات الأصول الثابتة (المرحلة 33):** `asset_movements`/`asset_movement_lines` (kind dispose/sale/transfer، draft/posted/cancelled). الكتابة بس من دوال: `asset_mov_save(jsonb)`، `asset_mov_post(id)`، `asset_mov_cancel(id, date)`، `asset_mov_delete(id)` (صلاحيات fixed_assets add/edit/post/delete). الاستبعاد والبيع لازم الأصل مستهلك لنهاية الشهر السابق؛ القيد نوعه depreciation (داخلي): المجمع مدين، الأصل دائن بكلفته، والقيمة الدفترية/الفرق على `company_settings.asset_disposal_account_id` (`ensure_asset_disposal_account` بيعمله أخ لحساب المبيعات، طبيعته مدين ودائن)؛ البيع: الزبون مدين بالسعر + الضريبة، والضريبة على حساب المخرجات. النقل بيغيّر `fixed_assets.department_id` بدون قيد. الإلغاء بقيد عكسي وبيرجّع الأصل (ممنوع إذا في حركة أحدث أو استهلاك مرحّل بعدها). `ab_asset_mov_guard` بيمنع تغيير حالة أصل مستبعد بحركة مرحّلة يدوياً. الجداول بالنسخة الاحتياطية بعد الاستهلاك.
 - **عهد الأصول (المرحلة 34):** `asset_custodians` (رمز، اسم، موظف اختياري؛ كتابة مباشرة بصلاحية شاشة `asset_custody`). `fixed_assets.custodian_id/custody_since` ما بيتغيّروا إلا داخلياً (`ab_asset_custody_guard`). `custody_docs`/`custody_doc_lines` (handover/transfer/return؛ pending → confirmed → done → closed، أو cancelled) بالكتابة بس من `custody_save(jsonb)` (بس «في الانتظار») و`custody_set_status(id, status)` (done/closed أو الرجوع منهم بصلاحية post): «انتهاء العمل» بيطبّق صاحب العهدة والموقع على الأصل وبيحفظ القديم بالسطر؛ الرجوع بيرجّعه إذا ما في مستند لاحق؛ المغلق أرشيف. الأصل ما بيكون بمستندين مفتوحين. `custody_delete` (انتظار/ملغى)، `custody_history(asset)`. ما في قيد. `screen_module` صار فيه asset_custody → assets.
-- **طلبات التزويد (المرحلة 35):** `item_wh_limits` (حد أدنى/أعلى لكل صنف بمستودع؛ كتابة مباشرة بصلاحية inventory edit). `supply_requests`/`supply_request_lines` (pending/confirmed/rejected/cancelled؛ الكتابة من `supply_save` و`supply_set_status` بصلاحيات شاشة `supply_requests`، التثبيت/الرفض بـ post). `supply_issue_out(id)` (بصلاحية inventory add، الطلب مثبت) بيعمل سند إخراج مسودة من المصدر، و`supply_issue_in(id)` بعد ترحيل الإخراج بيعمل سند إدخال مسودة للوجهة بالكميات والكلفة الفعلية من stock_moves. `stock_docs.supply_request_id` من النظام بس (`ab_supply_doc_guard`)، وسطور سند الإدخال ما بتنضاف/تتعدّل (`ab_supply_in_lines_guard`). `supply_min_suggest(company, from, to, date)` للتعبئة للحد الأدنى. الحالة الظاهرة بالواجهة بتنحسب من السندات. بالاسترجاع `out_doc_id/in_doc_id` بيرجعوا بعد سندات المخزون (14_backup). `screen_module`: supply_requests → inventory.
+- **طلبات التزويد (المرحلة 35):** `item_wh_limits` (حد أدنى/أعلى لكل صنف بمستودع؛ كتابة مباشرة بصلاحية inventory edit). `supply_requests`/`supply_request_lines` (pending/confirmed/rejected/cancelled؛ الكتابة من `supply_save` و`supply_set_status` بصلاحيات شاشة `supply_requests`، التثبيت/الرفض بـ post). `supply_issue_out(id)` (بصلاحية inventory add، الطلب مثبت) بيعمل سند إخراج مسودة من المصدر، و`supply_issue_in(id)` بعد ترحيل الإخراج بيعمل سند إدخال مسودة للوجهة بالكميات والكلفة الفعلية من stock_moves. `stock_docs.supply_request_id` من النظام بس (`ab_supply_doc_guard`)، وسطور سند الإدخال ما بتنضاف/تتعدّل (`ab_supply_in_lines_guard`). `supply_min_suggest(company, from, to, date)` للتعبئة للحد الأدنى و`supply_balances(...)` لأرصدة أصناف الطلب. سند الإخراج ما بينلغى ترحيله بعد إصدار الإدخال (`ab_supply_out_lock`)، وسند الإدخال بياخذ دائرة وحساب سند الإخراج. سطور سندات المخزون صار إلها سياسات منفصلة (الحذف بـ edit/delete مش view). الحالة الظاهرة بالواجهة بتنحسب من السندات. بالاسترجاع `out_doc_id/in_doc_id` بيرجعوا بعد سندات المخزون (14_backup). `screen_module`: supply_requests → inventory.
+- **حقول بطاقة العميل والفاتورة الثنائية (المرحلة 36):** `parties.reference/name2/route_id/department_id/currency/payment_method_id` (`ad_party_fields_check`: المسار lookups kind = route، وسيلة الدفع payment_method، الدائرة فرعية، العملة JOD أو من currencies). «المسارات» بقوائم الإعداد. `companies.name_en/address_en`، `invoices.project`، `orders.project`، `invoice_lines.details`/`order_lines.details` (أسطر إضافية تحت البيان). نماذج الطباعة: `invoice_layout` = standard | bilingual، و`invoice_title_en`، و`invoice_terms`. `bilingualDoc()` بـ invoices.js (الفاتورة وطلب المبيعات/التزويد) بيرجع `{bare, html, css}` و`printDoc` بيطبعه بدون ترويسة البرنامج. طلبات المبيعات صار إلها طباعة.
 
 ## مأجّل أو ناقص
 - **قبل البيع:** خطة Supabase مدفوعة (Pro) للنسخ الاحتياطي والأداء، ودومين، وشروط استخدام وسياسة خصوصية.
-- **قائمة الشغل الجاي (من أدلة Stallion اللي بعتها يوسف):** نموذج فاتورة وطلب مبيعات ثنائي اللغة مثل GCT (شعار، رقم ضريبي، Messrs/Phone/E-Mail/Project، وصف متعدد الأسطر، تفقيط، QR، تواقيع)، زيارات المندوبين والمشرف، حقول بطاقة العميل الإضافية (المرجع، الوصف 2، المجموعة، المسار، الدائرة، العملة، شروط الدفع، وسيلة الدفع)، الحضور والانصراف (موظف ومشرف، موقع العمل)، القروض والسلف (طلب، أقساط، تأجيل، اعتماد المشرف، خصم من الراتب)، دفعات العملاء من الجوال (نقد/تحويل/شيكات، طباعة وإرسال).
+- **قائمة الشغل الجاي (من أدلة Stallion اللي بعتها يوسف):** رمز QR بالفاتورة (مع الفوترة الإلكترونية)، زيارات المندوبين والمشرف، الحضور والانصراف (موظف ومشرف، موقع العمل)، القروض والسلف (طلب، أقساط، تأجيل، اعتماد المشرف، خصم من الراتب)، دفعات العملاء من الجوال (نقد/تحويل/شيكات، طباعة وإرسال).
 - **الفوترة الإلكترونية (جوفوترة):** مأجلة بطلب يوسف، لحد ما يتأكد إنه البرنامج شغّال 100%.
 - التسوية البنكية بتشتغل جوّا السنة المالية الواحدة.
 - النسخة التلقائية بتنحفظ جوّا نفس Supabase، فلازم ينصح يوسف ينزّل نسخة أسبوعية على جهازه.

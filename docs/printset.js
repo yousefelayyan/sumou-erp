@@ -38,6 +38,9 @@ async function viewPrintSettings(v) {
         <div class="field"><label>ورق المستندات والتقارير</label><select name="paper" ${dis}>${opt('paper', [['A4', 'A4'], ['A5', 'A5 (نص صفحة)']])}</select></div>
         <div class="field"><label>ورق الفواتير</label><select name="invoice_paper" ${dis}>${opt('invoice_paper', [['A4', 'A4'], ['A5', 'A5 (نص صفحة)'], ['80mm', 'طابعة كاشير حرارية 80 ملم']])}</select></div>
         <div class="field"><label>حجم الخط</label><select name="font" ${dis}>${[11, 12, 12.5, 13, 14].map(n => `<option value="${n}" ${+cfg.font === n ? 'selected' : ''}>${n}</option>`).join('')}</select></div>
+        <div class="field"><label>شكل الفاتورة وطلب المبيعات</label><select name="invoice_layout" ${dis}>${opt('invoice_layout', [['standard', 'عادي (عربي)'], ['bilingual', 'ثنائي اللغة عربي/إنجليزي (Messrs / Item No.)']])}</select></div>
+        <div class="field"><label>عنوان الفاتورة بالإنجليزي (للثنائي)</label><input name="invoice_title_en" value="${esc(cfg.invoice_title_en || '')}" placeholder="Sales Invoice" dir="ltr" ${dis}></div>
+        <div class="field" style="grid-column:span 2"><label>نص أسفل الفاتورة الثنائية (إقرار الاستلام)</label><input name="invoice_terms" value="${esc(cfg.invoice_terms || '')}" placeholder="إن توقيع المستلم يعتبر إقراراً باستلام البضاعة المبينة بالفاتورة كاملة وبحالة جيدة…" ${dis}></div>
         <div class="field"><label>عنوان فاتورة البيع (اختياري)</label><input name="invoice_title" value="${esc(cfg.invoice_title)}" placeholder="مثلاً: فاتورة ضريبية" ${dis}></div>
       </div>
       <label class="check"><input type="checkbox" name="watermark" ${cfg.watermark ? 'checked' : ''} ${dis}> علامة مائية باسم الشركة والسنة</label>

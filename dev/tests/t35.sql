@@ -34,6 +34,8 @@ select supply_issue_in((select id from supply_requests where req_no=1)) is not n
 select i.code, l.qty, l.unit_cost from stock_doc_lines l join items i on i.id=l.item_id where l.doc_id=(select in_doc_id from supply_requests where req_no=1) order by i.code;
 \echo == edit in-doc lines (expected ERROR)
 update stock_doc_lines set qty=99 where doc_id=(select in_doc_id from supply_requests where req_no=1);
+\echo == delete in-doc lines (expected ERROR)
+delete from stock_doc_lines where doc_id=(select in_doc_id from supply_requests where req_no=1);
 \echo == spoof supply_request_id on a doc (silently ignored)
 insert into stock_docs(company_id,doc_type,doc_date,warehouse_id,supply_request_id) values (:'C','in','2026-03-05','a3500000-0000-0000-0000-000000000001',(select id from supply_requests where req_no=1)) returning supply_request_id is null as ignored;
 select post_stock_doc((select in_doc_id from supply_requests where req_no=1));
@@ -43,4 +45,6 @@ select supply_delete((select id from supply_requests where req_no=1));
 \echo == employee no rights (expected ERROR)
 select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false) \g /dev/null
 select supply_save(jsonb_build_object('company_id',:'C','req_date','2026-03-01','from_warehouse_id','a3500000-0000-0000-0000-000000000001','to_warehouse_id','a3500000-0000-0000-0000-000000000002','lines',jsonb_build_array(jsonb_build_object('item_id','13500000-0000-0000-0000-000000000001','qty',5))));
+\echo == view-only user cannot delete any stock doc lines (0 rows)
+with d as (delete from stock_doc_lines where doc_id='d3500000-0000-0000-0000-000000000001' returning 1) select count(*) as deleted from d;
 reset role;

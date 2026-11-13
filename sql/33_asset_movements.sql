@@ -132,6 +132,7 @@ begin
   if coalesce(jsonb_typeof(p -> 'lines'), '') <> 'array' or jsonb_array_length(p -> 'lines') = 0 then raise exception 'أضف أصل واحد على الأقل'; end if;
 
   if mid is null then
+    perform pg_advisory_xact_lock(hashtext('assetmov:' || cid::text));
     insert into public.asset_movements (company_id, mov_no, kind, mov_date, party_id, tax_rate, from_department_id, to_department_id, reference, notes)
     values (cid, coalesce((select max(mov_no) from public.asset_movements where company_id = cid), 0) + 1, k, (p ->> 'mov_date')::date,
             pty.id, case when k = 'sale' then rate else 0 end, fd, td, nullif(trim(p ->> 'reference'), ''), nullif(trim(p ->> 'notes'), ''))

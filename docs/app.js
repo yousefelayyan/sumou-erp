@@ -155,6 +155,7 @@ const NAV = () => [
     { r: 'setup?k=country', i: '🌍', l: 'الدول / البلاد', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=region', i: '🗺️', l: 'المناطق / الأقاليم', show: () => S.company && can('lookups', 'view') },
     { r: 'setup?k=sales_rep', i: '🧑‍💼', l: 'مندوبي المبيعات', show: () => S.company && can('lookups', 'view') },
+    { r: 'setup?k=route', i: '🛣️', l: 'المسارات', show: () => S.company && can('lookups', 'view') },
     { r: 'cost-centers', i: '💱', l: 'العملات وأسعار التحويل', show: () => S.company && can('accounts', 'view') },
     { r: 'custom-fields', i: '🧩', l: 'الحقول الإضافية', show: () => S.company && can('lookups', 'view') },
     { r: 'field-layout', i: '🧱', l: 'تنسيق الحقول', show: () => S.company && can('companies', 'view') },
@@ -600,6 +601,7 @@ function companyFormHTML(c = {}, readOnly = false) {
         <div class="field"><label>اسم الشركة *</label><input name="name" required value="${esc(c.name)}" ${ro}></div>
         <div class="field"><label>الاسم القانوني</label><input name="legal_name" value="${esc(c.legal_name)}" ${ro}></div>
         <div class="field"><label>الاسم التجاري</label><input name="trade_name" value="${esc(c.trade_name)}" ${ro}></div>
+        <div class="field"><label>الاسم بالإنجليزي (للفاتورة الثنائية)</label><input name="name_en" value="${esc(c.name_en || '')}" dir="ltr" ${ro}></div>
         <div class="field"><label>نوع الشركة</label><select name="company_type" ${ro}>${opt(COMPANY_TYPES, c.company_type)}</select></div>
         <div class="field"><label>نوع النشاط</label><select name="activity_type" ${ro}>${opt(ACTIVITY_TYPES, c.activity_type)}</select></div>
         <div class="field"><label>العملة</label><select name="currency" ${ro}>
@@ -631,6 +633,7 @@ function companyFormHTML(c = {}, readOnly = false) {
         <div class="field"><label>الموبايل</label><input name="mobile" value="${esc(c.mobile)}" ${ro} dir="ltr"></div>
         <div class="field"><label>الإيميل</label><input name="email" type="email" value="${esc(c.email)}" ${ro} dir="ltr"></div>
         <div class="field"><label>الموقع الإلكتروني</label><input name="website" value="${esc(c.website)}" ${ro} dir="ltr"></div>
+        <div class="field"><label>العنوان بالإنجليزي</label><input name="address_en" value="${esc(c.address_en || '')}" ${ro} dir="ltr"></div>
       </div>
     </div>
     <div class="tab-panel" data-tab="logo">

@@ -154,6 +154,7 @@ begin
   if coalesce(jsonb_typeof(p -> 'lines'), '') <> 'array' or jsonb_array_length(p -> 'lines') = 0 then raise exception 'أضف أصل واحد على الأقل'; end if;
 
   if did is null then
+    perform pg_advisory_xact_lock(hashtext('custody:' || cid::text));
     insert into public.custody_docs (company_id, doc_no, kind, doc_date, from_custodian_id, to_custodian_id, location, department_id, reference, notes)
     values (cid, coalesce((select max(doc_no) from public.custody_docs where company_id = cid), 0) + 1, k, (p ->> 'doc_date')::date, fc, tc,
             nullif(trim(p ->> 'location'), ''), dep, nullif(trim(p ->> 'reference'), ''), nullif(trim(p ->> 'notes'), ''))

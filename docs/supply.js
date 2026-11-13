@@ -55,7 +55,7 @@ async function openReq(ctx, r, whs, docs) {
       <div class="field"><label>المرجع</label><input name="reference" value="${esc(r.reference || '')}" ${ro}></div>
       <div class="field" style="grid-column:span 2"><label>الملاحظات</label><input name="notes" value="${esc(r.notes || '')}" ${ro}></div></div></form>
     ${editable ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"><input id="pick" list="sup-items" placeholder="➕ أضف صنف (رمز أو اسم)…" style="flex:1;min-width:220px"><datalist id="sup-items">${items.filter(x => x.is_active).map(x => `<option value="${esc(x.code)} — ${esc(x.name)}">`).join('')}</datalist>
-      <button type="button" class="btn" id="fill">📈 تعبئة للحد الأدنى</button></div>` : ''}
+      <button type="button" class="btn" id="fill">📈 تعبئة للحد الأدنى</button></div><div id="fillbox"></div>` : ''}
     <div class="table-wrap"><table class="t" id="ln"><thead><tr><th>#</th><th>الصنف</th><th>الوحدة</th><th>رصيد المصدر</th><th>رصيد الوجهة</th><th>الحد الأدنى / الأعلى</th><th>الكمية</th><th>ملاحظة</th>${editable ? '<th></th>' : ''}</tr></thead><tbody></tbody></table></div>
     ${!isNew ? `<div class="card" style="margin-top:10px;padding:10px;display:flex;gap:14px;flex-wrap:wrap;align-items:center">
       <span>📤 سند الإخراج: ${o ? `<a href="#/stock-docs?type=out"><b>${esc(dn(o))}</b></a> (${o.status === 'posted' ? 'مرحّل' : 'مسودة'})` : '—'}</span>
@@ -75,14 +75,9 @@ async function openReq(ctx, r, whs, docs) {
   let bal = {};   // item -> {src, dst, min, max}
   const loadBal = async () => {
     const fw = val('from_warehouse_id'), tw = val('to_warehouse_id'); bal = {};
-    if (!fw || !tw) return draw();
-    const [m1, m2, lim] = await Promise.all([
-      sb.from('stock_moves').select('item_id,qty').eq('company_id', S.company.id).eq('warehouse_id', fw).limit(20000),
-      sb.from('stock_moves').select('item_id,qty').eq('company_id', S.company.id).eq('warehouse_id', tw).limit(20000),
-      sb.from('item_wh_limits').select('item_id,min_qty,max_qty').eq('company_id', S.company.id).eq('warehouse_id', tw)]);
-    const add = (rows, k) => (rows.data || []).forEach(x => { (bal[x.item_id] ||= {})[k] = num(bal[x.item_id]?.[k]) + num(x.qty); });
-    add(m1, 'src'); add(m2, 'dst');
-    (lim.data || []).forEach(x => Object.assign(bal[x.item_id] ||= {}, { min: num(x.min_qty), max: x.max_qty == null ? null : num(x.max_qty) }));
+    if (!fw || !tw || fw === tw || !lines.length) return draw();
+    const { data } = await sb.rpc('supply_balances', { p_company: S.company.id, p_from: fw, p_to: tw, p_date: val('req_date') || today(), p_items: lines.map(l => l.item_id) });
+    (data || []).forEach(x => { bal[x.item_id] = { src: num(x.src_qty), dst: num(x.dest_qty), min: x.min_qty == null ? null : num(x.min_qty), max: x.max_qty == null ? null : num(x.max_qty) }; });
     draw();
   };
   const draw = () => {
@@ -95,13 +90,13 @@ async function openReq(ctx, r, whs, docs) {
         <td>${editable ? `<input data-nt="${n}" value="${esc(l.note || '')}">` : esc(l.note || '')}</td>
         ${editable ? `<td><button type="button" class="btn sm danger" data-rm="${n}">✕</button></td>` : ''}</tr>`; }).join('') || '<tr><td colspan="9" class="empty">أضف الأصناف أو استعمل «تعبئة للحد الأدنى»</td></tr>';
   };
-  el.querySelectorAll('[name=from_warehouse_id],[name=to_warehouse_id]').forEach(s => s.addEventListener('change', loadBal));
+  el.querySelectorAll('[name=from_warehouse_id],[name=to_warehouse_id],[name=req_date]').forEach(s => s.addEventListener('change', loadBal));
   loadBal();
   el.querySelector('#pick')?.addEventListener('change', (e) => {
     const t = e.target.value.split('—')[0].trim(), it = items.find(x => x.code === t) || items.find(x => x.name === e.target.value.trim() || x.barcode === e.target.value.trim());
     if (!it) return toast('الصنف مش موجود', 'err');
     if (lines.some(l => l.item_id === it.id)) toast('الصنف موجود بالطلب', 'err'); else lines.push({ item_id: it.id, qty: 1 });
-    e.target.value = ''; draw();
+    e.target.value = ''; loadBal();
   });
   tb.addEventListener('input', (e) => { const a = e.target.dataset.q, b = e.target.dataset.nt; if (a != null) lines[+a].qty = e.target.value; if (b != null) lines[+b].note = e.target.value; });
   tb.addEventListener('change', (e) => { if (e.target.dataset.q != null) draw(); });
@@ -116,17 +111,21 @@ async function openReq(ctx, r, whs, docs) {
     const STL = { ok: ['متوفر', 'ok'], partial: ['جزئي', 'warn'], unavailable: ['رصيد المصدر ما بيكفي', 'bad'], covered: ['واصل للحد الأدنى', ''] };
     const rows = (data || []).map(x => ({ ...x, inCart: lines.some(l => l.item_id === x.item_id) }));
     const toAdd = rows.filter(x => !x.inCart && num(x.suggest) > 0);
-    const m = modal({ title: '📈 التعبئة للحد الأدنى', size: 'lg', body: `<p class="muted">مواد للإضافة: <b>${toAdd.length}</b> · غير متاحة: <b>${rows.filter(x => x.state === 'unavailable').length}</b> · مغطاة مسبقاً: <b>${rows.filter(x => x.state === 'covered').length}</b></p>
+    const box = el.querySelector('#fillbox');
+    box.innerHTML = `<div class="card" style="padding:10px;margin:8px 0;border:2px solid var(--brand)"><b>📈 مراجعة التعبئة للحد الأدنى</b>
+      <p class="muted" style="margin:4px 0">مواد للإضافة: <b>${toAdd.length}</b> · غير متاحة: <b>${rows.filter(x => x.state === 'unavailable').length}</b> · مغطاة مسبقاً: <b>${rows.filter(x => x.state === 'covered').length}</b></p>
       <div class="table-wrap"><table class="t"><thead><tr><th>الصنف</th><th>رصيد الوجهة</th><th>الحد الأدنى</th><th>رصيد المصدر</th><th>المطلوب</th><th>المقترح</th><th>الحالة</th></tr></thead><tbody>
       ${rows.map(x => `<tr><td><b>${esc(x.code)}</b> ${esc(x.name)}${x.inCart ? ' <span class="badge">بالطلب</span>' : ''}</td><td class="n">${fmtNum(x.dest_qty)}</td><td class="n">${fmtNum(x.min_qty)}</td><td class="n">${fmtNum(x.src_qty)}</td><td class="n">${fmtNum(x.need)}</td><td class="n"><b>${fmtNum(x.suggest)}</b></td><td><span class="badge ${STL[x.state][1]}">${STL[x.state][0]}</span></td></tr>`).join('')
-        || '<tr><td colspan="7" class="empty">ما في حدود معرّفة لمستودع الوجهة. عرّفها من تبويب «الحد الأدنى والأعلى».</td></tr>'}</tbody></table></div>`,
-      foot: `<button class="btn primary" data-apply ${toAdd.length ? '' : 'disabled'}>تطبيق (${toAdd.length})</button><button class="btn" data-close>إلغاء</button>` });
-    m.el.querySelector('[data-apply]').onclick = () => { m.close(); toAdd.forEach(x => lines.push({ item_id: x.item_id, qty: num(x.suggest) })); openAgain(); };
-    m.el.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => setTimeout(openAgain, 0)));
+        || '<tr><td colspan="7" class="empty">ما في حدود معرّفة لمستودع الوجهة. عرّفها من تبويب «الحد الأدنى والأعلى».</td></tr>'}</tbody></table></div>
+      <div style="display:flex;gap:8px;margin-top:6px"><button type="button" class="btn primary" data-apply ${toAdd.length ? '' : 'disabled'}>تطبيق (${toAdd.length})</button><button type="button" class="btn" data-fclose>إخفاء</button></div></div>`;
+    box.querySelector('[data-apply]').onclick = () => { toAdd.forEach(x => lines.push({ item_id: x.item_id, qty: num(x.suggest) })); box.innerHTML = ''; loadBal(); };
+    box.querySelector('[data-fclose]').onclick = () => { box.innerHTML = ''; };
   });
+  // تأكيد بيستبدل النافذة؛ إذا انلغى بنرجع نفتح الطلب
+  const ask = async (msg) => { if (await confirmBox(msg)) return true; openAgain(); return false; };
   // التعبئة بتفتح نافذة فوق؛ بعد الإغلاق بنرجع نفتح الطلب بنفس السطور
-  const openAgain = () => { const f = editable ? formData(el.querySelector('#f')) : {}; openReq(ctx, { ...r, ...f, _lines: lines }, whs, docs); };
-  if (r._lines) { lines = r._lines; delete r._lines; draw(); }
+  const openAgain = () => { const f = editable ? formData(el.querySelector('#f')) : {}; if (!r.id && !lines.length) return; openReq(ctx, { ...r, ...f, _lines: lines }, whs, docs); };
+  if (r._lines) { lines = r._lines; delete r._lines; loadBal(); }
 
   const done = (msg) => { toast(msg, 'ok'); md.close(); ctx.rerender(); };
   el.querySelector('[data-save]')?.addEventListener('click', async () => {
@@ -138,19 +137,19 @@ async function openReq(ctx, r, whs, docs) {
   });
   el.querySelectorAll('[data-st]').forEach(b => b.onclick = async () => {
     const to = b.dataset.st, msg = { confirmed: 'تثبيت طلب التزويد؟', rejected: 'رفض الطلب؟', cancelled: 'إلغاء الطلب؟', pending: 'إرجاع الطلب للانتظار؟' }[to];
-    if (!(await confirmBox(msg))) return;
+    if (!(await ask(msg))) return;
     const { error } = await sb.rpc('supply_set_status', { p_id: r.id, p_status: to }); if (error) return toast(arError(error), 'err'); done('تغيّرت الحالة');
   });
   el.querySelector('[data-out]')?.addEventListener('click', async () => {
-    if (!(await confirmBox('إصدار سند الإخراج من مستودع المصدر؟ (بينعمل مسودة، رحّله من سندات المخزون)'))) return;
+    if (!(await ask('إصدار سند الإخراج من مستودع المصدر؟ (بينعمل مسودة، رحّله من سندات المخزون)'))) return;
     const { error } = await sb.rpc('supply_issue_out', { p_id: r.id }); if (error) return toast(arError(error), 'err'); done('انصدر سند الإخراج');
   });
   el.querySelector('[data-in]')?.addEventListener('click', async () => {
-    if (!(await confirmBox('إصدار سند الإدخال لمستودع الوجهة؟ الكميات والكلفة من سند الإخراج.'))) return;
+    if (!(await ask('إصدار سند الإدخال لمستودع الوجهة؟ الكميات والكلفة من سند الإخراج.'))) return;
     const { error } = await sb.rpc('supply_issue_in', { p_id: r.id }); if (error) return toast(arError(error), 'err'); done('انصدر سند الإدخال');
   });
   el.querySelector('[data-del]')?.addEventListener('click', async () => {
-    if (!(await confirmBox('حذف الطلب؟'))) return;
+    if (!(await ask('حذف الطلب؟'))) return;
     const { error } = await sb.rpc('supply_delete', { p_id: r.id }); if (error) return toast(arError(error), 'err'); done('انحذف');
   });
   el.querySelector('[data-prn]')?.addEventListener('click', () => {
