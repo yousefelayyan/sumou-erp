@@ -45,6 +45,17 @@ begin
   if exists (select 1 from public.items where company_id = new.company_id and barcode = new.barcode) then raise exception 'الباركود «%» مستعمل لصنف (الباركود الأساسي)', new.barcode; end if;
   return new;
 end $$;
+create or replace function public.ab_items_barcode_alt_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.barcode is not null and trim(new.barcode) <> '' and (tg_op = 'INSERT' or new.barcode is distinct from old.barcode)
+     and exists (select 1 from public.item_barcodes where company_id = new.company_id and barcode = trim(new.barcode) and item_id <> new.id) then
+    raise exception 'الباركود «%» مستعمل كباركود إضافي لصنف ثاني', new.barcode;
+  end if;
+  return new;
+end $$;
+drop trigger if exists ab_items_barcode_alt_check on public.items;
+create trigger ab_items_barcode_alt_check before insert or update of barcode on public.items for each row execute function public.ab_items_barcode_alt_check();
 drop trigger if exists ab_item_barcode_check on public.item_barcodes;
 create trigger ab_item_barcode_check before insert or update on public.item_barcodes for each row execute function public.ab_item_barcode_check();
 alter table public.item_barcodes enable row level security;
@@ -83,12 +94,16 @@ create or replace function public.serial_validate(p_company uuid, p_item uuid, p
 language plpgsql security definer set search_path = public as $$
 declare r record; nm text;
 begin
-  for r in select serial, warehouse_id, sum(qty) q, sum(sum(qty)) over (partition by serial) t
-             from public.serial_moves where company_id = p_company and item_id = p_item and serial = any (p_serials)
-            group by serial, warehouse_id loop
+  -- الرصيد التراكمي حسب التاريخ: بكل مستودع بين 0 و1، وبالشركة كلها ≤ 1 (يعني ما بيطلع قبل ما يدخل)
+  for r in select serial, w, run_w, run_all from (
+             select serial, warehouse_id w,
+                    sum(qty) over (partition by serial, warehouse_id order by move_date, created_at, id) run_w,
+                    sum(qty) over (partition by serial order by move_date, created_at, id) run_all
+               from public.serial_moves where company_id = p_company and item_id = p_item and serial = any (p_serials)) x
+            where run_w < 0 or run_w > 1 or run_all > 1 or run_all < 0 limit 1 loop
     select name into nm from public.items where id = p_item;
-    if r.q < 0 then raise exception 'السيريال «%» (%) مش موجود بالمستودع', r.serial, nm; end if;
-    if r.q > 1 or r.t > 1 then raise exception 'السيريال «%» (%) موجود بالمخزون من قبل', r.serial, nm; end if;
+    if r.run_w < 0 or r.run_all < 0 then raise exception 'السيريال «%» (%) مش موجود بالمستودع بتاريخ الحركة', r.serial, nm; end if;
+    raise exception 'السيريال «%» (%) موجود بالمخزون من قبل', r.serial, nm;
   end loop;
 end $$;
 
@@ -105,6 +120,10 @@ begin
               where l.invoice_id = p_id and it.item_type = 'goods' and it.track_stock and it.serial_tracked order by l.line_no loop
       n := coalesce(array_length(r.serials, 1), 0);
       if r.qty <> n then raise exception 'السطر %: عدد السيريالات (%) لازم يساوي الكمية (%)', r.line_no, n, r.qty; end if;
+      if i.inv_type = 'sale_return' and exists (select 1 from unnest(r.serials) x where not exists (
+           select 1 from public.serial_moves m where m.company_id = i.company_id and m.item_id = r.item_id and m.serial = x and m.qty = -1 and m.move_date <= i.inv_date)) then
+        raise exception 'السطر %: مرتجع البيع لازم يكون بسيريال انباع من قبل', r.line_no;
+      end if;
       insert into public.serial_moves (company_id, item_id, serial, warehouse_id, move_date, qty, source_type, source_id, line_id)
       select i.company_id, r.item_id, x, w, i.inv_date, sgn, 'invoice', p_id, r.id from unnest(r.serials) x;
       perform public.serial_validate(i.company_id, r.item_id, r.serials);
@@ -207,8 +226,11 @@ begin
   if not (public.can(p_company, 'inventory', 'view') or public.can(p_company, 'items', 'view')) then raise exception 'ما عندك صلاحية'; end if;
   return query
     select m.item_id, m.warehouse_id, m.move_date, m.qty, m.source_type, m.source_id,
-           coalesce(i.doc_code, i.inv_no::text, s.doc_code, s.doc_no::text), coalesce(i.inv_type, 'stock_' || s.doc_type),
-           coalesce(p.name, i.party_name)
+           case when i.id is null or (public.can(p_company, case when i.inv_type in ('sale','sale_return') then 'sales_invoices' else 'purchase_invoices' end, 'view')
+                                       and public.dept_ok(p_company, i.department_id)) then coalesce(i.doc_code, i.inv_no::text, s.doc_code, s.doc_no::text) end,
+           coalesce(i.inv_type, 'stock_' || s.doc_type),
+           case when i.id is not null and public.can(p_company, case when i.inv_type in ('sale','sale_return') then 'sales_invoices' else 'purchase_invoices' end, 'view')
+                     and public.dept_ok(p_company, i.department_id) then coalesce(p.name, i.party_name) end
       from public.serial_moves m
       left join public.invoices i on m.source_type in ('invoice', 'invoice_cancel') and i.id = m.source_id
       left join public.parties p on p.id = i.party_id
@@ -216,7 +238,7 @@ begin
      where m.company_id = p_company and m.serial = trim(p_serial) order by m.move_date, m.created_at;
 end $$;
 
-revoke execute on function public.ab_line_serials(), public.ab_item_barcode_check(), public.serial_validate(uuid, uuid, text[]), public.serial_sync(text, uuid),
+revoke execute on function public.ab_line_serials(), public.ab_item_barcode_check(), public.ab_items_barcode_alt_check(), public.serial_validate(uuid, uuid, text[]), public.serial_sync(text, uuid),
   public.serial_unsync(uuid, text[]), public.zc_invoice_serials(), public.zc_stock_doc_serials() from public, anon, authenticated;
 revoke execute on function public.serial_balances(uuid, uuid, uuid), public.serial_history(uuid, text) from public, anon;
 grant execute on function public.serial_balances(uuid, uuid, uuid), public.serial_history(uuid, text) to authenticated;
