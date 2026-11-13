@@ -29,7 +29,7 @@ async function reportTab(v, head, lk) {
   v.innerHTML = `${head}<div class="card no-print filters">
       <div class="field"><label>من</label><input type="date" id="c-from" value="${from0}"></div><div class="field"><label>إلى</label><input type="date" id="c-to" value="${to0}"></div>
       <div class="field"><label>المندوب</label><select id="c-rep"><option value="">الكل</option>${reps(lk).map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>العرض</label><select id="c-mode"><option value="month">كل شهر</option><option value="sum">مجموع الفترة لكل مندوب</option></select></div>
+      <div class="field"><label>العرض</label><select id="c-mode"><option value="month">كل شهر</option><option value="sum">مجموع الفترة لكل مندوب</option><option value="team">حسب المشرف (الفريق)</option></select></div>
       <div class="field" style="justify-content:flex-end"><button class="btn primary" id="c-run">عرض</button></div>
       <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px">${can('reports', 'print') || can('rep_commissions', 'print') ? '<button class="btn" id="c-print">🖨️ طباعة</button>' : ''}<button class="btn" id="c-csv">⬇️ Excel</button></div></div>
     <div id="c-out"></div>`;
@@ -39,7 +39,12 @@ async function reportTab(v, head, lk) {
     const { data, error } = await sb.rpc('rep_commissions', { p_company: S.company.id, p_from: from, p_to: to });
     if (error) return void (v.querySelector('#c-out').innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
     let rows = (data || []).filter(r => !rep || r.rep_id === rep);
-    if (mode === 'sum') {
+    if (mode === 'team') {   // كل مندوب بيتجمّع تحت مشرفه المباشر (أو تحت حاله إذا ما إله مشرف)
+      const lead = (id) => R[id]?.supervisor_id || id;
+      const by = {}; rows.forEach(r => { const k = lead(r.rep_id), g = (by[k] ||= { rep_id: k, basis: '', target: 0, net_sales: 0, collections: 0, base: 0, commission: 0, bonus: 0, total: 0, hasT: false, members: new Set() });
+        ['net_sales', 'collections', 'base', 'commission', 'bonus', 'total'].forEach(x => g[x] += num(r[x])); if (r.target != null) { g.target += num(r.target); g.hasT = true; } g.members.add(r.rep_id); });
+      rows = Object.values(by).map(g => ({ ...g, team: g.members.size, target: g.hasT ? g.target : null, achieved_pct: g.hasT && g.target > 0 ? g.base * 100 / g.target : null, rate: g.base ? g.commission * 100 / g.base : 0 }));
+    } else if (mode === 'sum') {
       const by = {}; rows.forEach(r => { const g = (by[r.rep_id] ||= { rep_id: r.rep_id, basis: r.basis, target: 0, net_sales: 0, collections: 0, base: 0, commission: 0, bonus: 0, total: 0, months: 0, hasT: false });
         ['net_sales', 'collections', 'base', 'commission', 'bonus', 'total'].forEach(k => g[k] += num(r[k])); if (r.target != null) { g.target += num(r.target); g.hasT = true; } g.months++; });
       rows = Object.values(by).map(g => ({ ...g, target: g.hasT ? g.target : null, achieved_pct: g.hasT && g.target > 0 ? g.base * 100 / g.target : null, rate: g.base ? g.commission * 100 / g.base : 0 }));
@@ -47,7 +52,7 @@ async function reportTab(v, head, lk) {
     const T = rows.reduce((a, r) => { ['net_sales', 'collections', 'commission', 'bonus', 'total'].forEach(k => a[k] = (a[k] || 0) + num(r[k])); return a; }, {});
     const pct = (x) => x == null ? '<span class="muted">بدون هدف</span>' : `<span class="badge ${x >= 100 ? 'ok' : x >= 80 ? 'warn' : 'bad'}">${(Math.round(x * 10) / 10)}%</span>`;
     const table = `<table class="t pt rep"><thead><tr>${mode === 'month' ? '<th>الشهر</th>' : ''}<th>المندوب</th><th>الأساس</th><th>الهدف</th><th>صافي المبيعات</th><th>التحصيل</th><th>نسبة التحقيق</th><th>نسبة العمولة</th><th>العمولة</th><th>المكافأة</th><th>المستحق</th></tr></thead><tbody>
-      ${rows.map(r => `<tr>${mode === 'month' ? `<td>${mName(r.month)}</td>` : ''}<td><b>${esc(R[r.rep_id]?.name || '')}</b></td><td style="font-size:12px">${r.basis === 'collections' ? 'التحصيل' : 'المبيعات'}</td>
+      ${rows.map(r => `<tr>${mode === 'month' ? `<td>${mName(r.month)}</td>` : ''}<td><b>${esc(R[r.rep_id]?.name || '')}</b>${mode === 'team' ? ` <small class="muted">(فريق ${r.team})</small>` : ''}</td><td style="font-size:12px">${mode === 'team' ? 'الفريق' : r.basis === 'collections' ? 'التحصيل' : 'المبيعات'}</td>
         <td class="n">${r.target != null ? fmtNum(r.target) : '—'}</td><td class="n">${fmtNum(r.net_sales)}</td><td class="n">${fmtNum(r.collections)}</td><td>${pct(r.achieved_pct)}</td>
         <td class="n">${Math.round(num(r.rate) * 100) / 100}%</td><td class="n">${fmtNum(r.commission)}</td><td class="n">${num(r.bonus) ? fmtNum(r.bonus) : ''}</td><td class="n"><b>${fmtNum(r.total)}</b></td></tr>`).join('')
         || `<tr><td colspan="11" class="empty">ما في مبيعات أو أهداف للمندوبين بالفترة</td></tr>`}</tbody>

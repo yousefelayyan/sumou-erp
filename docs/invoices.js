@@ -377,7 +377,7 @@ async function invoiceEditor(type, inv, ctx) {
     const prev = rows[rows.length - 1];
     if (l.is_bonus && prev && prev.itemId === l.item_id && !prev.bonus) { prev.bonus = num(l.qty); prev.manualBonus = true; continue; }
     rows.push({ itemId: l.item_id, item: itemLabel(itById[l.item_id]), desc: l.is_bonus ? '' : l.description || '', details: l.details || '', qty: l.is_bonus ? 0 : num(l.qty), bonus: l.is_bonus ? num(l.qty) : 0, manualBonus: !!l.is_bonus,
-      price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '' });
+      price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '', rep: l.sales_rep_id || '' });
   }
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
@@ -432,7 +432,7 @@ async function invoiceEditor(type, inv, ctx) {
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="item-list" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${lpHint(r, i)}</td>
-      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}${batchCell(r, i)}</td>
+      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}${batchCell(r, i)}${repCell(r, i)}</td>
       <td><input class="cell n" data-i="${i}" data-k="qty" value="${r.qty || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="bonus" value="${r.bonus || ''}" inputmode="decimal" ${ro} ${r.bonus ? 'style="color:var(--ok,#15803d);font-weight:700"' : ''}></td>
       <td><input class="cell n" data-i="${i}" data-k="price" value="${r.price || ''}" inputmode="decimal" ${ro}></td>
@@ -453,6 +453,9 @@ async function invoiceEditor(type, inv, ctx) {
       <datalist id="bl-${i}">${opts.map(x => `<option value="${esc(x.batch_no)}">${fmtQty(x.qty)}${x.expiry_date ? ' · ينتهي ' + fmtDate(x.expiry_date) : ''}</option>`).join('')}</datalist>
       ${inbound && exp ? `<input class="cell" type="date" data-i="${i}" data-k="exp" value="${esc(r.exp)}" title="تاريخ الانتهاء" ${ro}>` : ''}
       ${!inbound && r.batch ? (() => { const b = opts.find(x => x.batch_no === r.batch); return b ? `<small class="${b.days_left != null && b.days_left < 0 ? 'bad-txt' : 'muted'}">${fmtQty(b.qty)}${b.expiry_date ? ' · ' + fmtDate(b.expiry_date) : ''}</small>` : '<small class="bad-txt">مش موجودة</small>'; })() : ''}</div>`; };
+  // مندوب السطر (المرحلة 77): بيبيّن بس إذا في مندوبين، أو السطر إله مندوب
+  const repCell = (r, i) => (!isSale || !(hasReps() || r.rep)) ? '' : `<div class="batch-cell"><span title="مندوب السطر">👤</span><select class="cell" data-i="${i}" data-k="rep" ${ro} style="font-size:12px">
+      <option value="">مندوب الفاتورة</option>${repOptions(r.rep || null)}</select></div>`;
   // سجل أسعار الصنف للطرف: آخر سعر تحت الصنف، وكبسة بتفتح السجل
   let lastPx = {};
   const lpHint = (r, i) => { const it = resolveItem(items, r.item), x = it && lastPx[it.id]; if (!x) return '';
@@ -560,10 +563,10 @@ async function invoiceEditor(type, inv, ctx) {
       const bm = it?.batch_mode && it.batch_mode !== 'none';
       if (bm && inbound && !(r.batch || '').trim()) return toast(`السطر ${k + 1}: ${it.name} بده رقم دفعة`, 'err');
       if (bm && inbound && it.batch_mode === 'expiry' && !r.exp) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
-      out.push({ batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate),
+      out.push({ ...(isSale ? { sales_rep_id: r.rep || null } : {}), batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: taxOff() ? 0 : num(r.rate),
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
       if (num(r.qty) === 0) out.pop();
-      if (bq > 0) out.push({ batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it.id, description: `${r.desc || it.name} — 🎁 بونص`, details: null,
+      if (bq > 0) out.push({ ...(isSale ? { sales_rep_id: r.rep || null } : {}), batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it.id, description: `${r.desc || it.name} — 🎁 بونص`, details: null,
         qty: bq, unit_price: 0, discount: 0, tax_rate: 0, is_bonus: true, account_id: (isSale ? it.sales_account_id : it.purchase_account_id) || null, subtotal: 0, tax_amount: 0, line_total: 0 });
     }
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');

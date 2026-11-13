@@ -91,6 +91,8 @@ async function viewLookups(v) {
         <div class="field"><label>حساب العمولة (مصروف)</label><select name="commission_account_id"><option value="">—</option>${leafAll.map(a => `<option value="${a.id}" ${a.id === r.commission_account_id ? 'selected' : ''}>${esc(accLabel(a))}</option>`).join('')}</select></div>` : ''}
       ${kind === 'loyalty_type' ? `<div class="field"><label>نقاط لكل دينار</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? 1}"></div>` : ''}
       ${kind === 'sales_rep' ? `<div class="field"><label>نسبة العمولة %</label><input name="rate" dir="ltr" inputmode="decimal" value="${r.rate ?? ''}"></div>
+        <div class="field"><label>الدور</label><select name="rep_role"><option value="">—</option>${[['rep', 'مندوب'], ['supervisor', 'مشرف'], ['manager', 'مدير مبيعات']].map(([k, l]) => `<option value="${k}" ${k === r.rep_role ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>المشرف / الرئيس المباشر</label><select name="supervisor_id"><option value="">—</option>${rows.filter(x => x.kind === 'sales_rep' && x.id !== r.id && (x.is_active || x.id === r.supervisor_id)).map(x => `<option value="${x.id}" ${x.id === r.supervisor_id ? 'selected' : ''}>${esc(x.code)} — ${esc(x.name)}</option>`).join('')}</select></div>
         <div class="field"><label>مستخدم البرنامج (لتطبيق المندوب و«زبائني»)</label><select name="user_id"><option value="">—</option>${(users || []).map(u => `<option value="${u.id}" ${u.id === r.user_id ? 'selected' : ''}>${esc(u.full_name || u.username || '')}</option>`).join('')}</select></div>` : ''}
       ${kind === 'route' ? `<div class="field"><label>أيام المسار</label><div style="display:flex;gap:10px;flex-wrap:wrap">${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].map((dn, i) => `<label class="check"><input type="checkbox" name="wd${i}" ${(r.weekdays || []).includes(i) ? 'checked' : ''}> ${dn}</label>`).join('')}</div></div>` : ''}
       <div class="field"><label>ملاحظات</label><input name="notes" value="${esc(r.notes || '')}"></div>
@@ -101,7 +103,7 @@ async function viewLookups(v) {
       if (!d.code?.trim() || !d.name?.trim()) return toast('الرمز والاسم مطلوبين', 'err');
       if (kind === 'payment_method' && !d.account_id) return toast('اختار الحساب', 'err');
       const rec = { code: d.code.trim(), name: d.name.trim(), name2: d.name2 || null, parent_id: d.parent_id || null, account_id: d.account_id || null, notes: d.notes || null, is_active: !d.inactive, ...(kind === 'sales_rep' || kind === 'loyalty_type' ? { rate: d.rate === '' || d.rate == null ? null : Number(d.rate) } : {}),
-        ...(kind === 'sales_rep' ? { user_id: d.user_id || null } : {}), ...(kind === 'route' ? { weekdays: [0, 1, 2, 3, 4, 5, 6].filter(i => d['wd' + i]) } : {}),
+        ...(kind === 'sales_rep' ? { user_id: d.user_id || null, supervisor_id: d.supervisor_id || null, rep_role: d.rep_role || null } : {}), ...(kind === 'route' ? { weekdays: [0, 1, 2, 3, 4, 5, 6].filter(i => d['wd' + i]) } : {}),
         ...(kind === 'payment_method' ? { rate: d.rate === '' || d.rate == null ? null : num(d.rate), commission_account_id: d.commission_account_id || null, pos_label: (d.pos_label || '').trim() || null, use_sales: !!d.use_sales, use_purchases: !!d.use_purchases, use_pos: !!d.use_pos } : {}) };
       e.target.disabled = true;
       const res = isNew ? await sb.from('lookups').insert({ ...rec, company_id: S.company.id, kind }) : await sb.from('lookups').update(rec).eq('id', r.id);
