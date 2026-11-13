@@ -382,3 +382,8 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .lp-hint{font-size:11.5px;color:var(--ink2,#555);margin-top:2px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lp-hint:hover{color:var(--brand);text-decoration:underline}
 .lp-hint.diff b{color:#b45309}
+/* الدفعات بسطر المستند (المرحلة 64) */
+.batch-cell{display:flex;gap:6px;align-items:center;margin-top:3px;font-size:12px}
+.batch-cell input.cell{font-size:12px;min-width:0;flex:1}
+.batch-cell input[type=date]{flex:0 0 140px}
+.bad-txt{color:var(--bad,#b91c1c)}

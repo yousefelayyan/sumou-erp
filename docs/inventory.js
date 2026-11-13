@@ -150,7 +150,7 @@ async function docEditor(type, doc, whs, ctx) {
     postFlag(K, 'gl') || doc.entry_id ? { key: 'gl', posted: !!doc.entry_id, canPost: doc.status === 'posted' && !doc.entry_id && can('inventory', 'post') && postFlag(K, 'gl'),
       canUnpost: !!doc.entry_id && can('inventory', 'unpost'), note: doc.status !== 'posted' && !doc.entry_id ? 'بعد الترحيل للمخزون' : '' } : null]) : '';
   const d0 = doc || { doc_date: today(), warehouse_id: whs[0]?.id };
-  let rows = lines.map(l => ({ item: itemLabel(byId[l.item_id]), qty: num(l.qty), counted: l.counted_qty == null ? '' : num(l.counted_qty), cost: num(l.unit_cost) }));
+  let rows = lines.map(l => ({ item: itemLabel(byId[l.item_id]), qty: num(l.qty), counted: l.counted_qty == null ? '' : num(l.counted_qty), cost: num(l.unit_cost), batch: l.batch_no || '', exp: l.expiry_date || '' }));
   if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 });
   const isCount = type === 'count';
   const dept = await deptField(doc?.department_id, ro, !doc); const dtf = await docTypeField('stock_' + type, doc?.doc_type_id, ro);
@@ -177,18 +177,29 @@ async function docEditor(type, doc, whs, ctx) {
   const tb = m.el.querySelector('#sdl tbody');
   if (doc) { attachAudit(m.el, doc); attachFollow(m.el, 'stock_docs', doc, 'stock', 'inventory'); }
   attachDocNav(m, doc, { key: 'sd:' + type, open: (r) => docEditor(type, r, whs, ctx), onNew: can('inventory', 'add') ? () => docEditor(type, null, whs, ctx) : null, table: 'stock_docs', canFreeze: can('inventory', 'edit'), editable: !readOnly });
+  // الدفعات (المرحلة 64): الإدخال بيكتب الدفعة وتاريخها، والإخراج/التحويل بيختار من أرصدة المستودع (فاضي = الأقرب انتهاء)، والجرد اختياري
+  const inbound = type === 'in' || isCount;
+  let bal = [];
+  const loadBal = async () => { if (!items.some(x => x.batch_mode && x.batch_mode !== 'none')) return;
+    const { data } = await sb.rpc('batch_balances', { p_company: S.company.id, p_warehouse: m.el.querySelector('[name=warehouse_id]').value || null, p_item: null, p_all: false });
+    bal = (data || []).filter(x => x.batch_id); draw(); };
+  const batchCell = (r, i) => { const it = resolveItem(items, r.item); if (!it || !it.batch_mode || it.batch_mode === 'none') return '';
+    const opts = bal.filter(x => x.item_id === it.id);
+    return `<div class="batch-cell"><span>🧪</span><input class="cell" data-i="${i}" data-k="batch" value="${esc(r.batch)}" list="sbl-${i}" placeholder="${inbound ? 'رقم الدفعة' : 'الدفعة (فاضي = الأقرب انتهاء)'}" ${ro}>
+      <datalist id="sbl-${i}">${opts.map(x => `<option value="${esc(x.batch_no)}">${fmtQty(x.qty)}${x.expiry_date ? ' · ينتهي ' + fmtDate(x.expiry_date) : ''}</option>`).join('')}</datalist>
+      ${inbound && it.batch_mode === 'expiry' ? `<input class="cell" type="date" data-i="${i}" data-k="exp" value="${esc(r.exp)}" title="تاريخ الانتهاء" ${ro}>` : ''}</div>`; };
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
-      <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td>
+      <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${batchCell(r, i)}</td>
       <td><input class="cell n" data-i="${i}" data-k="${isCount ? 'counted' : 'qty'}" value="${isCount ? r.counted : (r.qty || '')}" inputmode="decimal" ${ro}></td>
       ${isCount && doc?.status === 'posted' ? `<td class="n" style="color:${r.qty < 0 ? 'var(--bad)' : 'var(--ok)'}">${r.qty ? fmtQty(r.qty) : '—'}</td>` : ''}
       <td><input class="cell n" data-i="${i}" data-k="cost" value="${r.cost || ''}" inputmode="decimal" ${ro}></td>
       <td>${!readOnly ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('');
   };
-  draw();
+  draw(); loadBal(); m.el.querySelector('[name=warehouse_id]')?.addEventListener('change', loadBal);
   tb.addEventListener('input', (e) => { const t = e.target; if (t.dataset.k) rows[+t.dataset.i][t.dataset.k] = t.value; });
   tb.addEventListener('change', (e) => { const t = e.target; if (t.dataset.k !== 'item') return; const it = resolveItem(items, t.value); t.classList.toggle('bad', !!t.value && !it);
-    if (it) { t.value = itemLabel(it); rows[+t.dataset.i].item = t.value; if (!num(rows[+t.dataset.i].cost)) { rows[+t.dataset.i].cost = num(it.purchase_price); draw(); } } });
+    if (it) { t.value = itemLabel(it); rows[+t.dataset.i].item = t.value; if (!num(rows[+t.dataset.i].cost)) rows[+t.dataset.i].cost = num(it.purchase_price); draw(); } });
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', qty: 0, counted: '', cost: 0 }); draw(); });
   m.el.querySelector('#sd-add')?.addEventListener('click', () => { rows.push({ item: '', qty: 0, counted: '', cost: 0 }); draw(); });
   const save = async (post) => {
@@ -198,8 +209,12 @@ async function docEditor(type, doc, whs, ctx) {
     for (const [k, r] of rows.entries()) {
       if (!r.item) continue;
       const it = resolveItem(items, r.item); if (!it) return toast(`السطر ${k + 1}: الصنف مش موجود`, 'err');
-      if (isCount) { if (r.counted === '' || num(r.counted) < 0) return toast(`السطر ${k + 1}: اكتب الكمية الفعلية`, 'err'); out.push({ item_id: it.id, counted_qty: num(r.counted), qty: 0, unit_cost: num(r.cost) }); }
-      else { if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err'); out.push({ item_id: it.id, qty: num(r.qty), unit_cost: num(r.cost) }); }
+      const bm = it.batch_mode && it.batch_mode !== 'none', bx = bm ? { batch_no: (r.batch || '').trim() || null, expiry_date: inbound && r.exp ? r.exp : null } : { batch_no: null, expiry_date: null };
+      const sys = doc?.supply_request_id || doc?.production_id;
+      if (bm && type === 'in' && !sys && !bx.batch_no) return toast(`السطر ${k + 1}: ${it.name} بده رقم دفعة`, 'err');
+      if (bm && type === 'in' && !sys && it.batch_mode === 'expiry' && !bx.expiry_date) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
+      if (isCount) { if (r.counted === '' || num(r.counted) < 0) return toast(`السطر ${k + 1}: اكتب الكمية الفعلية`, 'err'); out.push({ item_id: it.id, counted_qty: num(r.counted), qty: 0, unit_cost: num(r.cost), ...bx }); }
+      else { if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err'); out.push({ item_id: it.id, qty: num(r.qty), unit_cost: num(r.cost), ...bx }); }
     }
     if (!out.length) return toast('أضف صنف واحد على الأقل', 'err');
     const mn = readManual(m.el.querySelector('#sd-form'), manual);
@@ -234,7 +249,7 @@ async function docEditor(type, doc, whs, ctx) {
     printDoc(`${D.label} رقم ${docNo(doc)}`, `<table class="meta"><tr><td><b>التاريخ:</b> ${fmtDate(doc.doc_date)}</td><td><b>المستودع:</b> ${esc(wn[doc.warehouse_id] || '')}</td>${type === 'transfer' ? `<td><b>إلى:</b> ${esc(wn[doc.to_warehouse_id] || '')}</td>` : ''}</tr>
       ${doc.notes ? `<tr><td colspan="3"><b>ملاحظات:</b> ${esc(doc.notes)}</td></tr>` : ''}</table>
       <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>الصنف</th><th>${isCount ? 'الفعلي' : 'الكمية'}</th>${isCount ? '<th>التسوية</th>' : ''}<th>الكلفة</th></tr></thead><tbody>
-      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itemLabel(byId[l.item_id]))}</td><td class="n">${fmtQty(isCount ? l.counted_qty : l.qty)}</td>${isCount ? `<td class="n">${fmtQty(l.qty)}</td>` : ''}<td class="n">${fmtPrice(l.unit_cost)}</td></tr>`).join('')}</tbody></table>
+      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(itemLabel(byId[l.item_id]))}${l.batch_no ? `<br><small>دفعة ${esc(l.batch_no)}${l.expiry_date ? ' · ينتهي ' + fmtDate(l.expiry_date) : ''}</small>` : ''}</td><td class="n">${fmtQty(isCount ? l.counted_qty : l.qty)}</td>${isCount ? `<td class="n">${fmtQty(l.qty)}</td>` : ''}<td class="n">${fmtPrice(l.unit_cost)}</td></tr>`).join('')}</tbody></table>
 ${isCount && docCommittee(doc.doc_type_id) ? `<div style="margin-top:18px"><b>لجنة الجرد:</b><div class="signs">${docCommittee(doc.doc_type_id).split(/[،,]/).map(x => x.trim()).filter(Boolean).map(x => `<div>${esc(x)}</div>`).join('')}</div></div>` : ''}
 `, { kind: 'stock', copies: docCopies(doc.doc_type_id) });
   });

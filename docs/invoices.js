@@ -103,7 +103,7 @@ export function shrinkImage(file, max = 320) {
 export async function loadItems(force = false) {
   if (!force && S.items && S.itemsCompany === S.company.id) return S.items;
   // بدون الصورة (ثقيلة)؛ محرر الصنف بيجيبها لحاله
-  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,category_id,brand_id,origin_id,model,color,size,min_price,max_discount_pct,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
+  const { data, error } = await sb.from('items').select('id,company_id,code,name,item_type,unit,barcode,sale_price,purchase_price,tax_rate,sales_account_id,purchase_account_id,is_active,notes,created_at,track_stock,qty_check_ignore,batch_mode,category_id,brand_id,origin_id,model,color,size,min_price,max_discount_pct,created_by,updated_by,updated_at,extra').eq('company_id', S.company.id).order('code').limit(5000);
   if (error) throw error;
   S.items = data; S.itemsCompany = S.company.id; return data;
 }
@@ -158,6 +158,8 @@ async function viewSettings(v, ctx) {
         <option value="block" ${st.credit_limit_mode === 'block' ? 'selected' : ''}>منع الترحيل فوق السقف (إلا لمين إله صلاحية «تجاوز سقف الائتمان»)</option></select></div>
       <label class="check"><input type="checkbox" name="block_below_cost" ${st.block_below_cost ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع بسعر أقل من الكلفة (إلا لمين إله صلاحية «تجاوز ضوابط الأسعار»)</label>
       <label class="check"><input type="checkbox" name="use_last_price" ${st.use_last_price ? 'checked' : ''} ${editable ? '' : 'disabled'}> 🕘 الفاتورة بتاخذ آخر سعر بعته للزبون (أو اشتريته من المورد) لما تختار الصنف — قائمة الأسعار أولى</label>
+      <div class="grid cols-2" style="max-width:640px;margin:6px 0"><div class="field"><label>🧪 نبّهني قبل انتهاء الدفعة بـ (يوم)</label><input type="number" name="expiry_warn_days" min="0" max="730" value="${st.expiry_warn_days ?? 60}" ${editable ? '' : 'disabled'}></div><div></div></div>
+      <label class="check"><input type="checkbox" name="block_expired_sale" ${st.block_expired_sale ? 'checked' : ''} ${editable ? '' : 'disabled'}> 🧪 منع بيع دفعة منتهية (والبيع التلقائي دايماً بيتخطّى المنتهي)</label>
       <label class="check"><input type="checkbox" name="block_negative_stock" ${st.block_negative_stock ? 'checked' : ''} ${editable ? '' : 'disabled'}> منع البيع والإخراج بأكثر من الكمية المتوفرة بالمستودع (البيع بالسالب)</label>
       <p class="muted" style="font-size:12px;margin:2px 0 0">الصنف اللي مأشّر عليه «تجاهل تتبع الكمية» بنوع المستند ما بيتفحص.</p>
       <h3 style="margin:16px 0 6px">🔢 الخانات العشرية بالعرض والطباعة</h3>
@@ -169,7 +171,7 @@ async function viewSettings(v, ctx) {
         .map(([k, l]) => `<div class="field"><label>${l}</label><input data-ctpl="${k}" value="${esc((st.cheque_templates || {})[k] || '')}" placeholder="${k === 'deposit' ? 'إيداع شيك وارد رقم: [رقم الشيك] / [البنك] حق [الاستحقاق]' : ''}" ${editable ? '' : 'disabled'}></div>`).join('')}</div></form>`;
   v.querySelector('#save')?.addEventListener('click', async () => {
     const d = formData(v.querySelector('#st-form')); d.default_tax_rate = num(d.default_tax_rate);
-    d.block_negative_stock = !!d.block_negative_stock; d.block_below_cost = !!d.block_below_cost; d.use_last_price = !!d.use_last_price; d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
+    d.block_negative_stock = !!d.block_negative_stock; d.block_below_cost = !!d.block_below_cost; d.use_last_price = !!d.use_last_price; d.block_expired_sale = !!d.block_expired_sale; d.expiry_warn_days = Math.max(0, Math.min(730, Math.round(num(d.expiry_warn_days ?? 60)))); d.credit_limit_mode = d.credit_limit_mode === 'block' ? 'block' : 'warn';
     d.decimals = Object.fromEntries([...v.querySelectorAll('[data-dec]')].map(i => [i.dataset.dec, +i.value]));
     d.cheque_templates = Object.fromEntries([...v.querySelectorAll('[data-ctpl]')].map(i => [i.dataset.ctpl, i.value.trim()]).filter(([, x]) => x));
     ['ss_employee_rate', 'ss_employer_rate', 'ss_ceiling'].forEach(k => d[k] = num(d[k])); d.company_id = S.company.id; d.updated_at = new Date().toISOString();
@@ -250,6 +252,8 @@ async function viewItems(v, ctx) {
         <label class="btn sm">اختيار صورة<input type="file" accept="image/*" id="i-img" hidden></label>
         <button type="button" class="btn sm" id="i-img-rm" ${it.image ? '' : 'hidden'}>شيل الصورة</button></div></div>
       ${cfFieldsHTML('item', it.extra) ? `<h4 style="margin:12px 0 6px">🧩 حقول إضافية</h4>${cfFieldsHTML('item', it.extra)}` : ''}
+      <div class="field" style="max-width:420px"><label>🧪 الدفعات وتاريخ الانتهاء</label><select name="batch_mode">
+        ${[['none', 'بدون دفعات'], ['batch', 'رقم دفعة'], ['expiry', 'رقم دفعة + تاريخ انتهاء']].map(([k, l]) => `<option value="${k}" ${(it.batch_mode || 'none') === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       <details style="margin:8px 0"><summary style="cursor:pointer;font-weight:700">📦 تجاهل تتبع الكمية</summary>
         <p class="muted" style="font-size:12px;margin:4px 0">بالمستندات المأشّرة ما بيتفحص رصيد هالصنف (ما بيطلع تنبيه نقص ولا بيمنع البيع بالسالب). مفيد للخدمات والتركيب.</p>
         <div style="display:flex;flex-wrap:wrap;gap:6px 16px">${[['sale', 'فواتير المبيعات'], ['sale_return', 'مردودات المبيعات'], ['pos', 'نقطة البيع'], ['sales_order', 'طلبات المبيعات'], ['purchase', 'فواتير المشتريات'], ['purchase_return', 'مردودات المشتريات'], ['stock_out', 'سندات الإخراج'], ['stock_transfer', 'سندات التحويل'], ['production', 'سندات الإنتاج']].map(([k, l]) => `<label class="check" style="margin:0"><input type="checkbox" data-qi="${k}" ${(it.qty_check_ignore || []).includes(k) ? 'checked' : ''}> ${l}</label>`).join('')}</div></details>
@@ -367,7 +371,7 @@ async function invoiceEditor(type, inv, ctx) {
     original_invoice_id: pre && !pre.fromOrder ? pre.inv.id : null, sales_rep_id: pre?.inv.sales_rep_id || null, department_id: pre?.inv.department_id || null, notes: pre?.inv.notes || '', project: pre?.inv.project || '' };
   if (pre) lines = pre.lines;
   const pById = Object.fromEntries(parties.map(p => [p.id, p])), itById = Object.fromEntries(items.map(i => [i.id, i]));
-  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate) }));
+  let rows = lines.map(l => ({ item: itemLabel(itById[l.item_id]), desc: l.description || '', details: l.details || '', qty: num(l.qty), price: num(l.unit_price), disc: num(l.discount), rate: num(l.tax_rate), batch: l.batch_no || '', exp: l.expiry_date || '' }));
   if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: num(st.default_tax_rate ?? 16) });
   const cashAccs = leafAccounts(accs).filter(a => ['cash', 'bank'].includes(a.account_type)).concat(leafAccounts(accs).filter(a => !['cash', 'bank'].includes(a.account_type)));
   const dept = await deptField(inv?.department_id, ro, !inv); await loadLookups(); const dtf = await docTypeField(type, inv?.doc_type_id, ro);
@@ -419,7 +423,7 @@ async function invoiceEditor(type, inv, ctx) {
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="item-list" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}>${lpHint(r, i)}</td>
-      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}</td>
+      <td><input class="cell" data-i="${i}" data-k="desc" value="${esc(r.desc)}" ${ro}>${!readOnly || r.details ? `<textarea class="cell" data-i="${i}" data-k="details" rows="${Math.max(1, (r.details || '').split('\n').length)}" placeholder="تفاصيل (أسطر إضافية، اختياري)" style="font-size:12px;resize:vertical;min-height:26px;margin-top:2px" ${ro}>${esc(r.details || '')}</textarea>` : ''}${batchCell(r, i)}</td>
       <td><input class="cell n" data-i="${i}" data-k="qty" value="${r.qty || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="price" value="${r.price || ''}" inputmode="decimal" ${ro}></td>
       <td><input class="cell n" data-i="${i}" data-k="disc" value="${r.disc || ''}" inputmode="decimal" ${ro}></td>
@@ -427,6 +431,18 @@ async function invoiceEditor(type, inv, ctx) {
       <td class="n" data-tot="${i}"></td><td>${!readOnly ? `<button class="x" type="button" data-rm="${i}">×</button>` : ''}</td></tr>`).join('');
     totals();
   };
+  // الدفعات وتاريخ الانتهاء (المرحلة 64): الداخل بيكتب الدفعة (وتاريخها)، والطالع بيختار من أرصدة المستودع أو بيتركها للأقرب انتهاء
+  const inbound = ['purchase', 'sale_return'].includes(type);
+  let bal = [];
+  const loadBal = async () => { if (!items.some(x => x.batch_mode && x.batch_mode !== 'none')) return;
+    const wh = f.warehouse_id?.value || whs[0]?.id || null;
+    const { data } = await sb.rpc('batch_balances', { p_company: S.company.id, p_warehouse: wh, p_item: null, p_all: false }); bal = (data || []).filter(x => x.batch_id); draw(); };
+  const batchCell = (r, i) => { const it = resolveItem(items, r.item); if (!it || !it.batch_mode || it.batch_mode === 'none') return '';
+    const opts = bal.filter(x => x.item_id === it.id), exp = it.batch_mode === 'expiry';
+    return `<div class="batch-cell"><span>🧪</span><input class="cell" data-i="${i}" data-k="batch" value="${esc(r.batch)}" list="bl-${i}" placeholder="${inbound ? 'رقم الدفعة' : 'الدفعة (فاضي = الأقرب انتهاء)'}" ${ro}>
+      <datalist id="bl-${i}">${opts.map(x => `<option value="${esc(x.batch_no)}">${fmtQty(x.qty)}${x.expiry_date ? ' · ينتهي ' + fmtDate(x.expiry_date) : ''}</option>`).join('')}</datalist>
+      ${inbound && exp ? `<input class="cell" type="date" data-i="${i}" data-k="exp" value="${esc(r.exp)}" title="تاريخ الانتهاء" ${ro}>` : ''}
+      ${!inbound && r.batch ? (() => { const b = opts.find(x => x.batch_no === r.batch); return b ? `<small class="${b.days_left != null && b.days_left < 0 ? 'bad-txt' : 'muted'}">${fmtQty(b.qty)}${b.expiry_date ? ' · ' + fmtDate(b.expiry_date) : ''}</small>` : '<small class="bad-txt">مش موجودة</small>'; })() : ''}</div>`; };
   // سجل أسعار الصنف للطرف: آخر سعر تحت الصنف، وكبسة بتفتح السجل
   let lastPx = {};
   const lpHint = (r, i) => { const it = resolveItem(items, r.item), x = it && lastPx[it.id]; if (!x) return '';
@@ -465,6 +481,7 @@ async function invoiceEditor(type, inv, ctx) {
   };
   tb.addEventListener('change', (e) => { const t = e.target, r = rows[+t.dataset.i]; if (!r) return;
     if (t.dataset.k === 'disc') { r.manualDisc = true; r.promo = 0; return; }
+    if (t.dataset.k === 'batch' && !inbound) { const b = bal.find(x => x.batch_no === t.value.trim() && x.item_id === resolveItem(items, r.item)?.id); r.exp = b?.expiry_date || ''; draw(); return; }
     if (['qty', 'price'].includes(t.dataset.k) && applyPromo(r, resolveItem(items, r.item), false)) draw(); });
   f.inv_date.addEventListener('change', () => { let ch = false; rows.forEach(r => { ch = applyPromo(r, resolveItem(items, r.item), false) || ch; }); if (ch) draw(); });
   tb.addEventListener('click', (e) => { const h = e.target.closest("[data-lph]"); if (!h) return;
@@ -477,6 +494,7 @@ async function invoiceEditor(type, inv, ctx) {
   const loadListPrices = async (p) => { listPrice = {}; if (!isSale || !p?.price_list_id) return;
     const { data } = await sb.rpc('party_item_prices', { p_company: S.company.id, p_party: p.id }); (data || []).forEach(x => listPrice[x.item_id] = num(x.price)); };
   const partyInput = m.el.querySelector('#party');
+  loadBal(); f.warehouse_id?.addEventListener('change', loadBal);
   if (inv?.party_id || pre?.inv?.party_id) { const p0 = myParties.find(x => x.id === (inv?.party_id || pre?.inv?.party_id)); loadListPrices(p0); loadLastPrices(p0); }
   const docWarn = async (p) => {   // وثائق الطرف الناقصة أو المنتهية
     m.el.querySelector('#pdoc-warn')?.remove(); if (!p) return;
@@ -510,7 +528,10 @@ async function invoiceEditor(type, inv, ctx) {
       if (num(r.qty) <= 0) return toast(`السطر ${k + 1}: الكمية لازم تكون أكبر من صفر`, 'err');
       if (num(r.disc) > num(r.qty) * num(r.price)) return toast(`السطر ${k + 1}: الخصم أكبر من قيمة السطر`, 'err');
       const c = calc(r);
-      out.push({ item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate),
+      const bm = it?.batch_mode && it.batch_mode !== 'none';
+      if (bm && inbound && !(r.batch || '').trim()) return toast(`السطر ${k + 1}: ${it.name} بده رقم دفعة`, 'err');
+      if (bm && inbound && it.batch_mode === 'expiry' && !r.exp) return toast(`السطر ${k + 1}: ${it.name} بده تاريخ انتهاء`, 'err');
+      out.push({ batch_no: bm ? (r.batch || '').trim() || null : null, expiry_date: bm && r.exp && (inbound || r.batch) ? r.exp : null, item_id: it?.id || null, description: r.desc || it?.name || null, details: (r.details || '').trim() || null, qty: num(r.qty), unit_price: num(r.price), discount: num(r.disc), tax_rate: num(r.rate),
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
     }
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
@@ -626,7 +647,7 @@ async function printInvoice(type, inv, lines, party, st) {
       ${party?.address || party?.phone ? `<tr><td colspan="3">${esc([party.address, party.city, party.mobile || party.phone].filter(Boolean).join(' — '))}</td></tr>` : ''}
       ${inv.reference ? `<tr><td colspan="3"><b>المرجع:</b> ${esc(inv.reference)}</td></tr>` : ''}</table>
     <table class="pt" style="margin-top:10px"><thead><tr><th>#</th><th>البيان</th><th>الكمية</th><th>السعر</th><th>الخصم</th><th>قبل الضريبة</th><th>ض%</th><th>الضريبة</th><th>الإجمالي</th></tr></thead><tbody>
-      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:90px;max-height:80px;margin-inline-start:6px;object-fit:contain">` : ''}${esc(l.description || '')}${l.details ? `<div style="font-size:11px;color:#555">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
+      ${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:90px;max-height:80px;margin-inline-start:6px;object-fit:contain">` : ''}${esc(l.description || '')}${l.details ? `<div style="font-size:11px;color:#555">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}${l.batch_no ? `<div style="font-size:11px;color:#555">دفعة ${esc(l.batch_no)}${l.expiry_date ? ' · ينتهي ' + fmtDate(l.expiry_date) : ''}</div>` : ''}</td><td class="n">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${num(l.discount) ? fmtNum(l.discount) : ''}</td>
         <td class="n">${fmtNum(l.subtotal)}</td><td class="n">${num(l.tax_rate)}%</td><td class="n">${fmtNum(l.tax_amount)}</td><td class="n">${fmtNum(l.line_total)}</td></tr>`).join('')}</tbody></table>
     <table class="pt" style="width:45%;margin:10px 0 0 auto;margin-inline-start:auto"><tr><td>المجموع قبل الضريبة</td><td class="n">${fmtNum(inv.subtotal)}</td></tr>
       ${num(inv.discount_total) ? `<tr><td>الخصومات</td><td class="n">${fmtNum(inv.discount_total)}</td></tr>` : ''}
@@ -661,7 +682,7 @@ export function bilingualDoc({ cfg, titleAr, titleEn, no, date, pay, orderNo, pr
   const L = (ar, en) => `<span class="ar">${ar}</span><span class="en">${en}</span>`;
   const rows = lines.map((l, i) => { const it = itBy[l.item_id] || {};
     return `<tr><td class="c">${i + 1}</td><td class="c">${esc(it.code || '')}</td>
-      <td class="desc">${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:120px;max-height:110px;margin:2px 0 2px 8px;object-fit:contain">` : ''}<b>${esc(l.description || '')}</b>${l.details ? `<div class="det">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}</td>
+      <td class="desc">${imgOk(images[l.item_id]) ? `<img src="${images[l.item_id]}" style="float:left;max-width:120px;max-height:110px;margin:2px 0 2px 8px;object-fit:contain">` : ''}<b>${esc(l.description || '')}</b>${l.details ? `<div class="det">${esc(l.details).replace(/\n/g, '<br>')}</div>` : ''}${l.batch_no ? `<div class="det">Batch / دفعة ${esc(l.batch_no)}${l.expiry_date ? ' · Exp ' + fmtDate(l.expiry_date) : ''}</div>` : ''}</td>
       <td class="c">${esc(it.unit || '')}</td><td class="c">${num(l.qty)}</td><td class="n">${fmtPrice(l.unit_price)}</td><td class="n">${fmtNum(num(l.qty) * num(l.unit_price) - num(l.discount))}</td></tr>`; }).join('');
   const filler = `<tr class="fill"><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
   const html = `<div class="bl">
