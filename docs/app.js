@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — الهيكل الرئيسي وشاشات المرحلة 1
 // =====================================================================
-import { LANG, initLang, setLang } from './i18n.js';
+import { LANG, initLang, setLang, tr } from './i18n.js';
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
@@ -463,6 +463,7 @@ function renderShell() {
     <div class="layout">
       <aside class="sidebar" id="sidebar">
         <div class="side-brand"><img src="icons/icon.svg" alt=""><b>${APP_NAME}</b></div>
+        ${screenSearchHTML('side')}
         <nav class="nav">
           ${NAV().map(g => {
             const items = g.items.filter(it => it.soon || !it.show || it.show() || (DEMO() && it.r));
@@ -504,6 +505,7 @@ function renderShell() {
       </div>
     </div>`;
   updateWatermark();
+  wireScreenSearch(document.getElementById('sidebar'));
   document.querySelector('.side-tools').addEventListener('click', async (e) => {
     const t = e.target.closest('[data-tool]')?.dataset.tool; if (!t) return;
     if (t === 'home') location.hash = '#/home';
@@ -701,6 +703,72 @@ window.addEventListener('hashchange', () => { document.getElementById('modal-roo
 // ---------------------------------------------------------------------
 //  لوحة التحكم
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+//  البحث عن شاشة (تحت الشعار وتحت اسم الشركة)
+// ---------------------------------------------------------------------
+const normAr = (t) => String(t || '').toLowerCase().replace(/[ً-ْـ]/g, '')
+  .replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/\s+/g, ' ').trim();
+function screenIndex() {
+  const out = [];
+  for (const g of NAV()) for (const it of g.items) {
+    if (it.soon || !(it.r || it.href || it.act)) continue;
+    if (it.show && !it.show() && !(DEMO() && it.r)) continue;
+    out.push({ ...it, g: g.title });
+  }
+  return out;
+}
+function screenSearchHTML(where) {
+  return `<div class="scr-search ${where}" data-scr-search>
+    <input type="search" placeholder="${where === 'side' ? '🔍 دوّر على شاشة…' : '🔍 دوّر على شاشة… مثلاً وسائل الدفع، الدوائر'}" autocomplete="off">
+    <div class="scr-res" hidden></div></div>`;
+}
+function screenSearchFind(q) {
+  const w = normAr(q).split(' ').filter(Boolean); if (!w.length) return [];
+  const words = w.map(x => x.replace(/^ال(?=..)/, ''));   // «الدوائر» = «دوائر»
+  const res = [];
+  for (const it of screenIndex()) {
+    const l = normAr(it.l), g = normAr(it.g), en = normAr(tr(it.l));
+    const hay = l + ' ' + g + ' ' + en;
+    if (!words.every(x => hay.includes(x))) continue;
+    const score = (l.startsWith(normAr(q)) ? 0 : l.includes(words[0]) ? 1 : 2);
+    res.push({ it, score });
+  }
+  return res.sort((a, b) => a.score - b.score).slice(0, 12).map(x => x.it);
+}
+function wireScreenSearch(root) {
+  root.querySelectorAll('[data-scr-search]').forEach(box => {
+    if (box.dataset.wired) return; box.dataset.wired = '1';
+    const inp = box.querySelector('input'), res = box.querySelector('.scr-res');
+    let list = [], sel = 0;
+    const go = (it) => {
+      if (!it) return;
+      res.hidden = true; inp.value = '';
+      if (it.href) return window.open(it.href, '_blank', 'noopener');
+      if (it.act === 'year') return switchYearDialog();
+      location.hash = '#/' + it.r;
+      document.getElementById('sidebar')?.classList.remove('open');
+    };
+    const draw = () => {
+      list = screenSearchFind(inp.value); sel = 0;
+      if (!inp.value.trim()) { res.hidden = true; return; }
+      res.innerHTML = list.length ? list.map((it, i) => `<button type="button" data-i="${i}" class="${i === sel ? 'on' : ''}"><span class="ico">${it.i || '📄'}</span><b>${esc(it.l)}</b><small>${esc(it.g)}</small></button>`).join('')
+        : '<div class="muted" style="padding:8px 10px">ما لقيت شاشة بهالاسم</div>';
+      res.hidden = false;
+    };
+    const mark = () => res.querySelectorAll('button').forEach((b, i) => b.classList.toggle('on', i === sel));
+    inp.addEventListener('input', draw);
+    inp.addEventListener('focus', () => { if (inp.value.trim()) draw(); });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); sel = Math.min(sel + 1, list.length - 1); mark(); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(sel - 1, 0); mark(); }
+      else if (e.key === 'Enter') { e.preventDefault(); go(list[sel]); }
+      else if (e.key === 'Escape') { res.hidden = true; inp.blur(); }
+    });
+    res.addEventListener('mousedown', (e) => { const b = e.target.closest('[data-i]'); if (b) { e.preventDefault(); go(list[+b.dataset.i]); } });
+    inp.addEventListener('blur', () => setTimeout(() => { res.hidden = true; }, 150));
+  });
+}
+
 // الواجهة الرئيسية: مجموعات القائمة كأزرار كبيرة، والكبسة بتفتح فروعها
 function launcherHTML() {
   const gsel = new URLSearchParams(location.hash.split('?')[1] || '').get('g');
@@ -713,6 +781,7 @@ function launcherHTML() {
   return `<div class="launch-grid">${groups.map(x => `<a class="launch-tile" href="#/home?g=${encodeURIComponent(x.title)}"><span class="li">${GROUP_ICONS[x.title] || '📁'}</span><b>${esc(x.title)}</b><small>${x.items.length} شاشة</small></a>`).join('')}</div>`;
 }
 function wireLauncher(v) {
+  wireScreenSearch(v);
   v.querySelectorAll('.launch-tile[data-act]').forEach(a => a.onclick = (e) => { e.preventDefault(); if (a.dataset.act === 'year') switchYearDialog(); });
 }
 
@@ -723,7 +792,7 @@ async function viewHome(v) {
         ? 'ما في شركات لسا. ابدأ بإضافة أول شركة من <a href="#/companies">الشركات</a>.'
         : 'ما عندك صلاحية على أي شركة لسا. تواصل مع مدير النظام.'}</div>
       ${isAdmin() ? '<button class="btn primary" id="first-co" style="margin-top:12px;font-size:17px;padding:12px 22px">➕ إضافة شركة جديدة</button>' : ''}
-      <div style="margin-top:16px">${launcherHTML()}</div>`;
+      <div style="margin-top:16px">${screenSearchHTML('home')}${launcherHTML()}</div>`;
     v.querySelector('#first-co')?.addEventListener('click', () => openCompanyForm(null)); wireLauncher(v);
     return;
   }
@@ -741,6 +810,7 @@ async function viewHome(v) {
   if (new URLSearchParams(location.hash.split('?')[1] || '').get('g')) { v.innerHTML = launcherHTML(); wireLauncher(v); return; }
   v.innerHTML = `
     <div class="page-head"><h2>${esc(c.name)}</h2><span class="badge brand">${esc(c.code)}</span></div>
+    ${screenSearchHTML('home')}
     ${launcherHTML()}
     <div class="grid cols-4" style="margin-top:16px">
       <div class="card stat"><span class="k">السنة المالية الحالية</span><span class="v" style="font-size:18px">${esc(S.fy ? (S.fy.name || S.fy.code) : '—')}</span>

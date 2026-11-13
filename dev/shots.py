@@ -16,6 +16,7 @@ async def main():
       await pg.goto('about:blank'); await pg.goto(f'http://localhost:8766/index.html#/{name}'); await pg.wait_for_timeout(800)
       for a in [x for x in action.split('@') if x]:
         if a.startswith('+'): sel,_,fp=a[1:].partition('='); await pg.set_input_files(sel, fp)   # رفع ملف: +#sel=/path
+        elif a.startswith('~'): sel,_,txt=a[1:].partition('='); await pg.fill(sel, txt)   # كتابة: ~#sel=نص
         else: await pg.click(a)
         await pg.wait_for_timeout(600)
       await pg.screenshot(path=f'/tmp/v_{re.sub(r"[^a-z0-9]","_",r)}.png')

@@ -4278,3 +4278,4 @@ The serial number is too long (max 60 characters
 Employee balances need payroll view permission
 You don't have permission to view parties
 Account balances need reports permission
+No screen found with that name

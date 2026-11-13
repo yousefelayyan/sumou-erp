@@ -398,3 +398,18 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 /* شريط حالة الطلب (المرحلة 67) */
 .ord-strip{display:flex;flex-wrap:wrap;gap:8px 18px;align-items:center;margin:-6px 0 12px;padding:8px 12px;background:var(--tint,#f5f3ff);border-radius:10px}
 .ord-strip .check{display:inline-flex;align-items:center;gap:6px}
+
+/* البحث عن شاشة */
+.scr-search{position:relative}
+.scr-search input{width:100%;box-sizing:border-box;border-radius:10px;padding:9px 12px;font-size:14px}
+.scr-search.side{padding:10px 12px 6px}
+.scr-search.side input{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff}
+.scr-search.side input::placeholder{color:rgba(255,255,255,.6)}
+.scr-search.home{max-width:520px;margin:0 0 14px}
+.scr-search.home input{border:1px solid var(--tint-2);background:#fff;padding:11px 14px;font-size:15px}
+.scr-res{position:absolute;inset-inline:12px;top:100%;z-index:60;background:#fff;color:#222;border:1px solid var(--tint-2);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.18);max-height:360px;overflow:auto;padding:4px}
+.scr-search.home .scr-res{inset-inline:0}
+.scr-res button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:8px 10px;border-radius:8px;text-align:start;cursor:pointer;font:inherit;color:inherit}
+.scr-res button b{font-weight:600;flex:1}
+.scr-res button small{color:#888;font-size:12px}
+.scr-res button.on,.scr-res button:hover{background:var(--tint)}
