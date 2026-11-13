@@ -281,8 +281,8 @@ small.cr{color:#a03030}
 .pb-user{opacity:.85;font-size:14px}.pos-bar .btn{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.2)}
 .pos-content{max-width:none;padding:12px;flex:1;display:flex;flex-direction:column}
 .content:has(.pos){max-width:none}
-.pos{display:grid;grid-template-columns:1fr 380px;gap:12px;height:calc(100vh - 150px);min-height:520px;user-select:none;-webkit-user-select:none}
-.pos-shell .pos{height:calc(100vh - 80px)}
+.pos{display:grid;grid-template-columns:1fr 380px;gap:12px;height:calc(100vh - 200px);min-height:520px;user-select:none;-webkit-user-select:none}
+.pos-shell .pos{height:calc(100vh - 130px)}
 .pos-left{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
 .pos-top{display:flex;gap:8px}
 .pos-search{flex:1;width:100%;font-size:17px;padding:12px 16px;border-radius:14px;border:1px solid var(--line);background:#fff}
@@ -330,6 +330,12 @@ small.cr{color:#a03030}
 .pp-quick{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:6px}
 .pp-quick button{background:#fff8e6;border-color:#f0dca8}
 .pp-keys{direction:ltr;display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.pos-cust{display:flex;align-items:center;gap:6px;margin:0 12px 6px;padding:8px 12px;border-radius:12px;border:1px dashed var(--tint);background:var(--tint-2);font-family:inherit;font-size:14px;cursor:pointer;text-align:start}
+.pos-cust small{color:var(--muted)}.pos-cust .x{margin-inline-start:auto;color:var(--bad)}
+.pos-info{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:10px;padding:8px 14px;border-radius:12px;background:#fff;border:1px solid var(--line);font-size:14px}
+.pos-repgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.pos-repgrid button{min-height:56px;border-radius:12px;border:1px solid var(--tint);background:#fff;font-family:inherit;font-size:15px;cursor:pointer}
+.pos-repgrid button.on{background:var(--brand-soft);border-color:var(--brand);font-weight:700}
 .pos-save{min-height:54px;font-size:18px;flex:1}
 @media (max-width:900px){.pos{grid-template-columns:1fr;height:auto}.pos-cart{min-height:60vh}.pos-grid{max-height:50vh}}
 

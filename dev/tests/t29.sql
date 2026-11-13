@@ -87,3 +87,24 @@ select i.cash_account_id = l.account_id as debit_is_method_acc from invoices i j
 \echo == method not enabled for POS (expected ERROR)
 select pos_checkout(jsonb_build_object('company_id','c0000000-0000-0000-0000-000000000001','fiscal_year_id',:'fy2','method_id',(select id from lookups where code='POS2'),'lines',jsonb_build_array(jsonb_build_object('item_id',:'item','qty',1))));
 reset role;
+
+-- ===== credit, invoice discount, sales rep
+set role authenticated; select set_config('request.jwt.claim.sub','11111111-1111-1111-1111-111111111111',false) \g /dev/null
+\set cust `psql -h /tmp -p 5433 -U postgres -Atqc "select id from parties where company_id='c0000000-0000-0000-0000-000000000001' and party_type='customer' and is_active order by code limit 1"`
+\echo == credit without customer (expected ERROR)
+select pos_checkout(jsonb_build_object('company_id','c0000000-0000-0000-0000-000000000001','fiscal_year_id',:'fy2','method','credit','lines',jsonb_build_array(jsonb_build_object('item_id',:'item','qty',1))));
+select r ->> 'method' as m, (r ->> 'paid')::numeric as paid, (r ->> 'total')::numeric as total, (r ->> 'discount')::numeric as disc
+  from (select pos_checkout(jsonb_build_object('company_id','c0000000-0000-0000-0000-000000000001','fiscal_year_id',:'fy2','method','credit','party_id',:'cust','discount',3.2,
+       'lines',jsonb_build_array(jsonb_build_object('item_id',:'item','qty',2)))) r) x;
+select payment_type, party_id = :'cust' as cust_ok, cash_account_id is null as no_cash, status, total from invoices where pos order by created_at desc limit 1;
+\echo == discount bigger than total (expected ERROR)
+select pos_checkout(jsonb_build_object('company_id','c0000000-0000-0000-0000-000000000001','fiscal_year_id',:'fy2','discount',999,'lines',jsonb_build_array(jsonb_build_object('item_id',:'item','qty',1))));
+reset role;
+insert into lookups(company_id,kind,code,name,rate) values ('c0000000-0000-0000-0000-000000000001','sales_rep','RP9','فراس',1) on conflict do nothing;
+set role authenticated;
+select (pos_checkout(jsonb_build_object('company_id','c0000000-0000-0000-0000-000000000001','fiscal_year_id',:'fy2','sales_rep_id',(select id from lookups where code='RP9'),'lines',jsonb_build_array(jsonb_build_object('item_id',:'item','qty',1))))) is not null as with_rep;
+select l.name as rep from invoices i join lookups l on l.id = i.sales_rep_id where i.pos order by i.created_at desc limit 1;
+\echo == cashier discount without pos edit (expected ERROR)
+select set_config('request.jwt.claim.sub','22222222-2222-2222-2222-222222222222',false) \g /dev/null
+select pos_checkout(jsonb_build_object('company_id','c0000000-0000-0000-0000-000000000001','fiscal_year_id',:'fy2','discount',1,'lines',jsonb_build_array(jsonb_build_object('item_id',:'item','qty',1))));
+reset role;

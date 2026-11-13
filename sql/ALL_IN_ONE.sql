@@ -7075,7 +7075,8 @@ declare
   st public.company_settings; cfg jsonb; iid uuid; l jsonb; it public.items; n int := 0;
   qty numeric; price numeric; disc numeric; rate numeric; gross numeric; sub numeric; tax numeric; paid numeric;
   s_sub numeric := 0; s_tax numeric := 0; s_disc numeric := 0; incl boolean; meth text; acc uuid; wh uuid; inv public.invoices;
-  can_edit boolean; pm public.lookups; is_cash boolean; mname text; prev text := current_setting('sumou.pos', true); lines jsonb;
+  can_edit boolean; can_disc boolean; inv_disc numeric := 0; tot_g numeric; share numeric; left_d numeric; xl record; k int;
+  pty public.parties; pay_type text := 'cash'; rep_id uuid; pm public.lookups; is_cash boolean; mname text; prev text := current_setting('sumou.pos', true); lines jsonb;
 begin
   begin
     cid := (p ->> 'company_id')::uuid; fy := (p ->> 'fiscal_year_id')::uuid; paid := nullif(p ->> 'paid', '')::numeric;
@@ -7088,11 +7089,31 @@ begin
     raise exception 'لازم تكون على السنة المالية المفتوحة اللي فيها تاريخ اليوم';
   end if;
   can_edit := public.can(cid, 'sales_invoices', 'edit');
+  can_disc := can_edit or public.can(cid, 'pos', 'edit');   -- الخصم: صلاحية «تعديل» على نقطة البيع
+  begin inv_disc := round(greatest(coalesce(nullif(p ->> 'discount', '')::numeric, 0), 0), 3);
+  exception when others then raise exception 'الخصم مش صحيح'; end;
+  if inv_disc > 0 and not can_disc then raise exception 'ما عندك صلاحية تعمل خصم'; end if;
+  -- مندوب المبيعات (اختياري)
+  if nullif(p ->> 'sales_rep_id', '') is not null then
+    begin rep_id := (p ->> 'sales_rep_id')::uuid; exception when invalid_text_representation then raise exception 'المندوب مش صحيح'; end;
+    if not exists (select 1 from public.lookups r where r.id = rep_id and r.company_id = cid and r.kind = 'sales_rep' and r.is_active) then raise exception 'المندوب مش موجود'; end if;
+  end if;
+  -- الزبون (بطاقة عميل) اختياري للنقدي، ولازم للآجل
+  if nullif(p ->> 'party_id', '') is not null then
+    begin select * into pty from public.parties where id = (p ->> 'party_id')::uuid;
+    exception when invalid_text_representation then raise exception 'الزبون مش صحيح'; end;
+    if pty.id is null or pty.company_id <> cid or pty.party_type <> 'customer' or not pty.is_active then raise exception 'الزبون مش موجود'; end if;
+  end if;
   perform public.ensure_company_settings(cid);
   select * into st from public.company_settings where company_id = cid;
   cfg := coalesce(st.pos, '{}'::jsonb);
   incl := coalesce((cfg ->> 'prices_include_tax')::boolean, true);
-  if nullif(p ->> 'method_id', '') is not null then
+  if p ->> 'method' = 'credit' then
+    -- آجل: على حساب الزبون
+    if pty.id is null then raise exception 'البيع الآجل لازم تختار الزبون'; end if;
+    if coalesce((cfg ->> 'allow_credit')::boolean, true) is false then raise exception 'البيع الآجل مسكّر بإعدادات نقطة البيع'; end if;
+    meth := 'credit'; pay_type := 'credit'; acc := null; mname := 'آجل';
+  elsif nullif(p ->> 'method_id', '') is not null then
     -- وسيلة دفع من «إعداد ← وسائل الدفع» (مأشّر عليها «نقطة البيع»)، وحسابها هو الطرف المدين
     begin select * into pm from public.lookups where id = (p ->> 'method_id')::uuid;
     exception when invalid_text_representation then raise exception 'وسيلة الدفع مش صحيحة'; end;
@@ -7115,18 +7136,17 @@ begin
     end if;
   end if;
   -- الباقي بس للوسائل اللي حسابها صندوق نقدي
-  is_cash := exists (select 1 from public.accounts a where a.id = acc and a.account_type = 'cash') or (meth = 'cash');
+  is_cash := meth <> 'credit' and (exists (select 1 from public.accounts a where a.id = acc and a.account_type = 'cash') or meth = 'cash');
   wh := nullif(cfg ->> 'warehouse_id', '')::uuid;
   if wh is not null and not exists (select 1 from public.warehouses w where w.id = wh and w.company_id = cid) then
     raise exception 'مستودع نقطة البيع مش من نفس الشركة';
   end if;
-  if nullif(p ->> 'party_id', '') is not null then raise exception 'البيع من نقطة البيع نقدي بدون بطاقة عميل'; end if;
 
   perform set_config('sumou.pos', public.internal_token() || ':' || cid::text, true);
-  insert into public.invoices (company_id, fiscal_year_id, inv_type, inv_date, payment_type, party_name, cash_account_id,
-                               prices_include_tax, warehouse_id, notes, reference, pos, pos_method)
-  values (cid, fy, 'sale', d, 'cash', left(nullif(trim(p ->> 'party_name'), ''), 120), acc,
-          incl, wh, left(nullif(trim(p ->> 'notes'), ''), 500), 'نقطة بيع', true, mname)
+  insert into public.invoices (company_id, fiscal_year_id, inv_type, inv_date, payment_type, party_id, party_name, cash_account_id,
+                               prices_include_tax, warehouse_id, notes, reference, pos, pos_method, sales_rep_id)
+  values (cid, fy, 'sale', d, pay_type, pty.id, case when pay_type = 'cash' then coalesce(left(nullif(trim(p ->> 'party_name'), ''), 120), pty.name) end, acc,
+          incl, wh, left(nullif(trim(p ->> 'notes'), ''), 500), 'نقطة بيع', true, mname, rep_id)
   returning id into iid;
 
   for l in select * from jsonb_array_elements(p -> 'lines') loop
@@ -7141,7 +7161,8 @@ begin
     if it.id is null then raise exception 'صنف مش موجود أو موقوف (سطر %)', n; end if;
     if qty <= 0 or qty > 100000 then raise exception 'الكمية مش منطقية (%)', it.name; end if;
     -- السعر والخصم من الصنف إلا إذا معه صلاحية تعديل الفواتير
-    if not can_edit then price := it.sale_price; disc := 0; end if;
+    if not can_edit then price := it.sale_price; end if;
+    if not can_disc then disc := 0; end if;
     if price < 0 then raise exception 'السعر سالب (%)', it.name; end if;
     rate := it.tax_rate;
     gross := round(qty * price - disc, 3);
@@ -7151,10 +7172,27 @@ begin
     values (iid, n, it.id, it.name, qty, price, disc, rate, it.sales_account_id, sub, tax, sub + tax);
     s_sub := s_sub + sub; s_tax := s_tax + tax; s_disc := s_disc + disc;
   end loop;
+  -- خصم على الفاتورة كلها: بيتوزّع على السطور حسب قيمتها
+  if inv_disc > 0 then
+    select sum(round(x.qty * x.unit_price - x.discount, 3)) into tot_g from public.invoice_lines x where x.invoice_id = iid;
+    if inv_disc > tot_g then raise exception 'الخصم (%) أكبر من مجموع الفاتورة (%)', inv_disc, tot_g; end if;
+    left_d := inv_disc; k := 0; s_sub := 0; s_tax := 0; s_disc := 0;
+    for xl in select * from public.invoice_lines x where x.invoice_id = iid order by x.line_no loop
+      k := k + 1;
+      gross := round(xl.qty * xl.unit_price - xl.discount, 3);
+      share := case when k = n then left_d else least(left_d, round(inv_disc * gross / nullif(tot_g, 0), 3)) end;
+      share := least(share, gross); left_d := left_d - share;
+      gross := gross - share;
+      if incl then sub := round(gross / (1 + xl.tax_rate / 100), 3); tax := gross - sub; else sub := gross; tax := round(sub * xl.tax_rate / 100, 3); end if;
+      update public.invoice_lines set discount = xl.discount + share, subtotal = sub, tax_amount = tax, line_total = sub + tax where id = xl.id;
+      s_sub := s_sub + sub; s_tax := s_tax + tax; s_disc := s_disc + xl.discount + share;
+    end loop;
+  end if;
   update public.invoices set pos_method_id = pm.id where id = iid and pm.id is not null;
   if is_cash then
     paid := coalesce(paid, s_sub + s_tax);
     if paid + 0.0005 < s_sub + s_tax then raise exception 'المدفوع (%) أقل من المطلوب (%)', paid, s_sub + s_tax; end if;
+  elsif meth = 'credit' then paid := 0;
   else paid := s_sub + s_tax; end if;
   update public.invoices set subtotal = s_sub, tax_total = s_tax, discount_total = s_disc, total = s_sub + s_tax, pos_paid = paid where id = iid;
 
@@ -7166,7 +7204,7 @@ begin
     into lines from public.invoice_lines x where x.invoice_id = iid;
   return jsonb_build_object('id', inv.id, 'no', inv.inv_no, 'doc_code', inv.doc_code, 'total', inv.total, 'subtotal', inv.subtotal,
     'tax', inv.tax_total, 'discount', inv.discount_total, 'paid', inv.pos_paid, 'change', inv.pos_paid - inv.total,
-    'stock_posted', inv.stock_posted, 'method', inv.pos_method, 'created_at', inv.created_at, 'lines', lines);
+    'stock_posted', inv.stock_posted, 'method', inv.pos_method, 'customer', pty.name, 'customer_phone', coalesce(pty.mobile, pty.phone), 'created_at', inv.created_at, 'lines', lines);
 end $$;
 revoke execute on function public.pos_checkout(jsonb) from public, anon;
 grant execute on function public.pos_checkout(jsonb) to authenticated;
