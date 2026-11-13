@@ -2,6 +2,7 @@
 //  السمو ERP — المخزون والجرد
 // =====================================================================
 import { attachAudit } from './audit.js';
+import { attachDocNav, setNavList } from './docnav.js';
 import { deptField, deptValue } from './departments.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
@@ -125,7 +126,7 @@ async function viewStockDocs(v, ctx) {
         ${type === 'transfer' ? `<td>${esc(wn[d.to_warehouse_id] || '')}</td>` : ''}<td>${esc(d.notes || '')}</td>
         <td>${d.status === 'posted' ? '<span class="badge ok">مرحّل</span>' : '<span class="badge warn">مسودة</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">ما في سندات</td></tr>'}</tbody></table></div>`;
   v.querySelector('#add')?.addEventListener('click', () => docEditor(type, null, whs, ctx));
-  v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) docEditor(type, data.find(x => x.id === r.dataset.open), whs, ctx); };
+  v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { setNavList('sd:' + type, [...v.querySelectorAll('#rows [data-open]')].map(tr => data.find(x => x.id === tr.dataset.open)).filter(Boolean)); docEditor(type, data.find(x => x.id === r.dataset.open), whs, ctx); } };
 }
 
 async function docEditor(type, doc, whs, ctx) {
@@ -173,6 +174,7 @@ async function docEditor(type, doc, whs, ctx) {
   m.el.querySelector('.modal').style.maxWidth = '900px';
   const tb = m.el.querySelector('#sdl tbody');
   if (doc) attachAudit(m.el, doc);
+  attachDocNav(m, doc, { key: 'sd:' + type, open: (r) => docEditor(type, r, whs, ctx), onNew: can('inventory', 'add') ? () => docEditor(type, null, whs, ctx) : null, table: 'stock_docs', canFreeze: can('inventory', 'edit'), editable: !readOnly });
   const draw = () => {
     tb.innerHTML = rows.map((r, i) => `<tr><td class="muted">${i + 1}</td>
       <td><input class="cell" list="sd-items" data-i="${i}" data-k="item" value="${esc(r.item)}" ${ro}></td>

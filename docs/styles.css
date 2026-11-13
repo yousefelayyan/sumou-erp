@@ -350,3 +350,9 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .theme-sw button{display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;border:2px solid var(--line);background:#fff;cursor:pointer;font-size:13px}
 .theme-sw button.on{border-color:var(--brand);font-weight:700}
 .theme-sw i{width:18px;height:18px;border-radius:50%;display:inline-block}
+
+/* شريط التنقّل الموحّد بالمستندات (docnav.js) */
+.docnav{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:6px 8px;margin:-4px 0 10px;background:var(--tint);border:1px solid var(--tint-2);border-radius:10px;position:sticky;top:-16px;z-index:5}
+.docnav .dn-sep{width:1px;height:22px;background:var(--tint-2);margin:0 4px}
+.docnav .dn-pos{min-width:56px;text-align:center;font-size:13px;color:var(--ink2);font-weight:700}
+.docnav .btn[disabled]{opacity:.4;cursor:not-allowed}

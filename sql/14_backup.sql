@@ -73,8 +73,11 @@ begin
     rows := coalesce(p_data -> 'tables' -> r.tbl, '[]'::jsonb);
     if jsonb_array_length(rows) = 0 then continue; end if;
     -- الروابط الذاتية والحالات اللي بتمنع الإدخال بتنحط بعدين
+    if r.tbl in ('invoices', 'stock_docs', 'orders') then   -- التجميد بيرجع بالآخر
+      rows := (select jsonb_agg(x - 'is_frozen') from jsonb_array_elements(rows) x);
+    end if;
     if r.tbl = 'journal_entries' then
-      rows := (select jsonb_agg(x - 'reversal_of' - 'reversed_by') from jsonb_array_elements(rows) x);
+      rows := (select jsonb_agg(x - 'reversal_of' - 'reversed_by' - 'is_frozen') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'invoices' then
       rows := (select jsonb_agg(x - 'original_invoice_id') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'supply_requests' then   -- سنداته بتنرجع بعد ما تنضاف سندات المخزون
@@ -101,6 +104,13 @@ begin
   update public.invoices i set original_invoice_id = (x ->> 'original_invoice_id')::uuid
     from jsonb_array_elements(p_data -> 'tables' -> 'invoices') x
    where i.id = (x ->> 'id')::uuid and x ->> 'original_invoice_id' is not null;
+  -- علامة التجميد بالآخر (عشان ما تمنع إرجاع الروابط والسطور)
+  for r in select * from (values ('journal_entries'), ('invoices'), ('stock_docs'), ('orders')) v(tbl) loop
+    if exists (select 1 from pg_attribute where attrelid = ('public.' || r.tbl)::regclass and attname = 'is_frozen' and not attisdropped) then
+      execute format('update public.%I t set is_frozen = true from jsonb_array_elements(coalesce($1, ''[]''::jsonb)) x where t.id = (x ->> ''id'')::uuid and (x ->> ''is_frozen'')::boolean', r.tbl)
+        using p_data -> 'tables' -> r.tbl;
+    end if;
+  end loop;
   if to_regclass('public.supply_requests') is not null then
     update public.supply_requests q set out_doc_id = (x ->> 'out_doc_id')::uuid, in_doc_id = (x ->> 'in_doc_id')::uuid
       from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'supply_requests', '[]'::jsonb)) x

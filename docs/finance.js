@@ -3,6 +3,7 @@
 //  دليل الحسابات، الأرصدة الافتتاحية، سندات القيد والقبض والصرف
 // =====================================================================
 import { attachAudit } from './audit.js';
+import { attachDocNav, setNavList } from './docnav.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
 import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log } from './core.js';
@@ -281,7 +282,7 @@ function voucherList(type) {
     draw();
     v.querySelector('#q').oninput = draw; v.querySelector('#st').onchange = draw;
     v.querySelector('#add')?.addEventListener('click', () => voucherEditor(type, null, ctx));
-    v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) voucherEditor(type, data.find(x => x.id === r.dataset.open), ctx); };
+    v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { setNavList('je:' + type, [...v.querySelectorAll('#rows [data-open]')].map(tr => data.find(x => x.id === tr.dataset.open)).filter(Boolean)); voucherEditor(type, data.find(x => x.id === r.dataset.open), ctx); } };
   };
 }
 
@@ -361,6 +362,7 @@ async function voucherEditor(type, entry, ctx) {
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = ccs.length || curs.length ? '1320px' : '1000px';
   if (entry) attachAudit(m.el, entry);
+  attachDocNav(m, entry, { key: 'je:' + type, open: (r) => voucherEditor(type, r, ctx), onNew: can(T.screen, 'add') ? () => voucherEditor(type, null, ctx) : null, table: 'journal_entries', canFreeze: can(T.screen, 'edit'), editable: !readOnly });
   const tb = m.el.querySelector('#lines tbody');
 
   const drawRows = () => {

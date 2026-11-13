@@ -127,4 +127,94 @@ async function viewCheques(v, ctx) {
     <tfoot><tr class="tot"><td colspan="4">المجموع</td><td class="n">${fmtNum(shown.reduce((s, c) => s + num(c.amount), 0))}</td><td></td></tr></tfoot></table>`, { subtitle: `بتاريخ ${fmtDate(today())}` });
 }
 
-export const CHEQUE_ROUTES = { 'cheques': viewCheques };
+// ---------------------------------------------------------------------
+//  لوحة الشيكات (واردة/صادرة): بطاقات، رسم شهري، تقويم الاستحقاق، فلاتر
+// ---------------------------------------------------------------------
+const AR_M = ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول'];
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const CDS = {};
+async function viewChequesDash(v, ctx) {
+  if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
+  const qs = new URLSearchParams(location.hash.split('?')[1] || '');
+  const dir = qs.get('dir') === 'out' ? 'out' : 'in', openSt = dir === 'in' ? 'portfolio' : 'issued', doneSt = dir === 'in' ? 'collected' : 'paid';
+  let [{ data, error }, parties] = await Promise.all([sb.from('cheques').select('*').eq('company_id', S.company.id).eq('direction', dir).order('due_date').limit(10000), loadParties()]);
+  if (error) throw error;
+  data = data.filter(c => c.status !== 'cancelled');
+  const pName = Object.fromEntries(parties.map(p => [p.id, p.name]));
+  const st = CDS[dir] || (CDS[dir] = { party: '', from: '', to: '', flt: { open: true, done: false, returned: false }, mode: 'month', cur: today().slice(0, 7) + '-01', day: today() });
+  const cls = (c) => c.status === openSt ? (c.due_date < today() ? 'late' : c.due_date === today() ? 'today' : daysTo(c.due_date) <= 7 ? 'soon' : 'open') : c.status === doneSt ? 'done' : 'ret';
+  const CL = { late: ['متأخر', '#dc2626'], today: ['مستحق اليوم', '#d97706'], soon: ['قريباً', '#7c3aed'], open: ['بالمحفظة', '#2563eb'], done: [dir === 'in' ? 'محصّل' : 'مصروف', '#059669'], ret: ['مرجع', '#64748b'] };
+  const rows = () => data.filter(c => (!st.party || c.party_id === st.party) && (!st.from || c.due_date >= st.from) && (!st.to || c.due_date <= st.to)
+    && ((st.flt.open && c.status === openSt) || (st.flt.done && c.status === doneSt) || (st.flt.returned && c.status === 'returned')));
+  const draw = () => {
+    const R = rows(), open = R.filter(c => c.status === openSt), sum = (a) => a.reduce((s, c) => s + num(c.amount), 0);
+    const late = open.filter(c => c.due_date < today()), wk = open.filter(c => c.due_date >= today() && daysTo(c.due_date) <= 7);
+    // الرسم الشهري: آخر 6 شهور وأول 6 جاية
+    const base = new Date(today()); const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(base.getFullYear(), base.getMonth() - 5 + i, 1); return iso(d).slice(0, 7); });
+    const byM = Object.fromEntries(months.map(m => [m, { late: 0, open: 0, done: 0, ret: 0 }]));
+    R.forEach(c => { const m = c.due_date.slice(0, 7); if (!byM[m]) return; const k = cls(c); byM[m][k === 'today' || k === 'soon' ? 'open' : k] += num(c.amount); });
+    const mx = Math.max(1, ...months.map(m => Object.values(byM[m]).reduce((a, b) => a + b, 0)));
+    // التقويم
+    const cur = new Date(st.cur), y = cur.getFullYear(), mo = cur.getMonth();
+    let days;
+    if (st.mode === 'month') { const first = new Date(y, mo, 1), pad = first.getDay(), n = new Date(y, mo + 1, 0).getDate(); days = [...Array(pad).fill(null), ...Array.from({ length: n }, (_, i) => iso(new Date(y, mo, i + 1)))]; }
+    else { const d0 = new Date(st.day); d0.setDate(d0.getDate() - d0.getDay()); days = Array.from({ length: 7 }, (_, i) => iso(new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + i))); }
+    const byDay = {}; R.forEach(c => (byDay[c.due_date] ||= []).push(c));
+    const dayList = byDay[st.day] || [];
+    v.querySelector('#body').innerHTML = `
+      <div class="ckpi">
+        <div><span>قيمة المستحق</span><b>${fmtNum(sum(open))}</b><small>بالفترة والفلاتر</small></div>
+        <div><span>عدد الشيكات المستحقة</span><b>${open.length}</b><small>غير محصّلة بعد</small></div>
+        <div class="bad"><span>متأخر</span><b>${late.length}</b><small>${fmtNum(sum(late))}</small></div>
+        <div class="warn"><span>مستحق خلال 7 أيام</span><b>${wk.length}</b><small>${fmtNum(sum(wk))}</small></div></div>
+      <div class="grid cols-2" style="gap:14px;align-items:start">
+        <div class="card"><h3 style="margin-top:0">📊 النظرة الشهرية <small class="muted">(القيمة حسب شهر الاستحقاق)</small></h3>
+          <div class="cbars">${months.map(m => { const b = byM[m], t = Object.values(b).reduce((a, x) => a + x, 0);
+            return `<div class="cb" title="${m}: ${fmtNum(t)}"><div class="v">${t ? fmtNum(t) : ''}</div><div class="stack" style="height:${Math.round(t / mx * 150)}px">${['ret', 'done', 'open', 'late'].map(k => b[k] ? `<i style="flex:${b[k]};background:${CL[k][1]}"></i>` : '').join('')}</div><div class="m">${AR_M[+m.slice(5) - 1]}</div></div>`; }).join('')}</div>
+          <div class="cleg">${['late', 'open', 'done', 'ret'].map(k => `<span><i style="background:${CL[k][1]}"></i>${CL[k][0]}</span>`).join('')}</div></div>
+        <div class="card"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><h3 style="margin:0">📅 تقويم تاريخ الاستحقاق</h3><div class="spacer"></div>
+            <button class="btn sm ${st.mode === 'month' ? 'primary' : ''}" data-mode="month">شهر</button><button class="btn sm ${st.mode === 'week' ? 'primary' : ''}" data-mode="week">أسبوع</button>
+            <button class="btn sm" data-nav="-1">→</button><b>${st.mode === 'month' ? `${AR_M[mo]} ${y}` : fmtDate(days[0]) + ' - ' + fmtDate(days[6])}</b><button class="btn sm" data-nav="1">←</button></div>
+          <div class="ccal">${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].map(d => `<div class="h">${d}</div>`).join('')}
+            ${days.map(d => d ? `<div class="d ${d === st.day ? 'sel' : ''} ${d === today() ? 'tdy' : ''}" data-day="${d}"><span>${+d.slice(8)}</span><div>${[...new Set((byDay[d] || []).map(cls))].map(k => `<i style="background:${CL[k][1]}"></i>`).join('')}</div></div>` : '<div></div>').join('')}</div>
+          <h4 style="margin:10px 0 4px">مستحق في ${fmtDate(st.day)} ${dayList.length ? `<span class="badge brand">${dayList.length}</span>` : ''}</h4>
+          ${dayList.map(c => `<div class="cday"><div><b>${fmtNum(c.amount)}</b> <span class="badge" style="background:${CL[cls(c)][1]};color:#fff">${CL[cls(c)][0]}</span></div>
+            <div>${esc(pName[c.party_id] || c.drawer_name || '')}</div><div class="muted" style="font-size:12px">رقم الشيك: ${esc(c.cheque_no)} · ${esc(c.bank_name || '')} · تاريخ الإصدار ${fmtDate(c.issue_date)}</div></div>`).join('') || '<div class="empty">ما في شيكات بهاليوم</div>'}</div></div>`;
+    v.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => { st.mode = b.dataset.mode; draw(); });
+    v.querySelectorAll('[data-nav]').forEach(b => b.onclick = () => { const k = +b.dataset.nav;
+      if (st.mode === 'month') { const d = new Date(st.cur); st.cur = iso(new Date(d.getFullYear(), d.getMonth() + k, 1)); }
+      else { const d = new Date(st.day); d.setDate(d.getDate() + 7 * k); st.day = iso(d); st.cur = st.day.slice(0, 7) + '-01'; } draw(); });
+    v.querySelectorAll('[data-day]').forEach(b => b.onclick = () => { st.day = b.dataset.day; draw(); });
+  };
+  const custs = parties.filter(p => p.party_type === (dir === 'in' ? 'customer' : 'supplier'));
+  v.innerHTML = `<style>
+    .ckpi{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}.ckpi>div{background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:12px}
+    .ckpi span{display:block;color:var(--ink2);font-size:13px}.ckpi b{display:block;font-size:24px;margin:4px 0}.ckpi small{color:var(--ink2)}.ckpi .bad b{color:#dc2626}.ckpi .warn b{color:#d97706}
+    .cbars{display:flex;align-items:flex-end;gap:6px;height:200px;padding-top:10px}.cb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0}
+    .cb .stack{width:70%;display:flex;flex-direction:column-reverse;border-radius:4px 4px 0 0;overflow:hidden;min-height:2px;background:var(--tint)}.cb .stack i{display:block}
+    .cb .v{font-size:10px;color:var(--ink2);writing-mode:vertical-rl;transform:rotate(180deg);max-height:60px;overflow:hidden}.cb .m{font-size:10px;margin-top:4px;text-align:center;line-height:1.2;height:26px}
+    .cleg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;margin-top:6px}.cleg i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-inline-end:4px}
+    .ccal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:8px}.ccal .h{font-size:11px;color:var(--ink2);text-align:center}
+    .ccal .d{border:1px solid var(--line,#e5e7eb);border-radius:8px;padding:4px;min-height:44px;cursor:pointer;text-align:center}.ccal .d.sel{background:var(--brand);color:#fff}.ccal .d.tdy{outline:2px solid var(--brand)}
+    .ccal .d div{display:flex;gap:2px;justify-content:center;margin-top:2px}.ccal .d i{width:7px;height:7px;border-radius:50%;display:block}
+    .cday{border:1px solid var(--line,#e5e7eb);border-inline-start:4px solid var(--brand);border-radius:10px;padding:8px;margin-bottom:6px}
+    @media(max-width:800px){.ckpi{grid-template-columns:1fr 1fr}}</style>
+    <div class="page-head"><h2>📈 لوحة ${dir === 'in' ? 'شيكات العملاء الواردة' : 'الشيكات الصادرة'}</h2><div class="spacer"></div>
+      <a class="btn sm" href="#/cheques-dash?dir=${dir === 'in' ? 'out' : 'in'}">${dir === 'in' ? '📤 الصادرة' : '📥 الواردة'}</a> <a class="btn sm" href="#/cheques?dir=${dir}">💳 محفظة الشيكات</a></div>
+    <div class="card no-print filters" style="display:flex;gap:10px;flex-wrap:wrap;align-items:end">
+      <div class="field"><label>${dir === 'in' ? 'العميل' : 'المورد'}</label><select id="f-p"><option value="">— الكل —</option>${custs.map(p => `<option value="${p.id}" ${p.id === st.party ? 'selected' : ''}>${esc(partyLabel(p))}</option>`).join('')}</select></div>
+      <div class="field"><label>الاستحقاق من</label><input type="date" id="f-from" value="${st.from}"></div><div class="field"><label>إلى</label><input type="date" id="f-to" value="${st.to}"></div>
+      <label class="check"><input type="checkbox" data-f="open" ${st.flt.open ? 'checked' : ''}> بالمحفظة</label>
+      <label class="check"><input type="checkbox" data-f="done" ${st.flt.done ? 'checked' : ''}> ${dir === 'in' ? 'محصّل' : 'مصروف'}</label>
+      <label class="check"><input type="checkbox" data-f="returned" ${st.flt.returned ? 'checked' : ''}> مرجع</label>
+      <button class="btn" id="f-reset">مسح الفلاتر</button></div>
+    <div id="body"></div>`;
+  v.querySelector('#f-p').onchange = (e) => { st.party = e.target.value; draw(); };
+  v.querySelector('#f-from').onchange = (e) => { st.from = e.target.value; draw(); };
+  v.querySelector('#f-to').onchange = (e) => { st.to = e.target.value; draw(); };
+  v.querySelectorAll('[data-f]').forEach(c => c.onchange = () => { st.flt[c.dataset.f] = c.checked; draw(); });
+  v.querySelector('#f-reset').onclick = () => { CDS[dir] = null; viewChequesDash(v, ctx); };
+  draw();
+}
+
+export const CHEQUE_ROUTES = { 'cheques': viewCheques, 'cheques-dash': viewChequesDash };

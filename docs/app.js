@@ -26,6 +26,7 @@ import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { ASSET_ROUTES } from './assets.js';
 import { SUPPLY_ROUTES } from './supply.js';
+import { ASK_ROUTES } from './ask.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
@@ -168,6 +169,7 @@ const NAV = () => [
     { r: 'receipts', i: '📥', l: 'سندات القبض', show: () => S.company && can('receipt_vouchers', 'view') },
     { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
     { r: 'cheques', i: '💳', l: 'محفظة الشيكات', show: () => S.company && can('cheques', 'view') },
+    { r: 'cheques-dash', i: '📈', l: 'لوحة الشيكات', show: () => S.company && can('cheques', 'view') },
     { r: 'pending', i: '⏳', l: 'بانتظار الترحيل', show: () => S.company },
     { r: 'recurring', i: '🔁', l: 'القيود المتكررة', show: () => S.company && can('journal_entries', 'view') },
     { r: 'bank-recon', i: '🏦', l: 'التسوية البنكية', show: () => S.company && can('bank_recon', 'view') },
@@ -232,6 +234,7 @@ const NAV = () => [
     { r: 'rep-sales-reps', i: '📈', l: 'مبيعات وتحصيلات المندوبين', show: () => S.company && can('reports', 'view') },
   ]},
   { title: 'التقارير', items: [
+    { r: 'ask', i: '💬', l: 'اسأل السمو (تقارير بالكلام)', show: () => S.company && (can('sales_invoices', 'view') || can('reports', 'view')) },
     { r: 'rep-ledger', i: '📄', l: 'كشف حساب', show: () => S.company && can('reports', 'view') },
     { r: 'rep-journal', i: '📚', l: 'اليومية العامة', show: () => S.company && can('reports', 'view') },
     { r: 'rep-trial', i: '⚖️', l: 'ميزان المراجعة', show: () => S.company && can('reports', 'view') },
@@ -502,7 +505,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
@@ -757,7 +760,15 @@ async function viewCompanies(v) {
     if (ed) open(data.find(x => x.id === ed.dataset.edit));
     if (dl) {
       const c = data.find(x => x.id === dl.dataset.del);
-      if (!(await confirmBox(`متأكد بدك تحذف «${c.name}»؟ كل بياناتها رح تنحذف ومش رح ترجع. الأفضل توقفها بدل الحذف.`))) return;
+      const { data: act, error: ae } = await sb.rpc('company_activity', { p_company: c.id });
+      if (ae) return toast(arError(ae), 'err');
+      const keys = Object.entries(act || {});
+      if (keys.length) {
+        modal({ title: `ما بتنحذف: ${c.name}`, size: 'sm', body: `<p>الشركة فيها حركات، فما بتنحذف. إذا ما عاد بدك ياها <b>أوقفها</b> من «تعديل» (بتختفي من القوائم وبتضل بياناتها محفوظة).</p>
+          <ul>${keys.map(([k, n]) => `<li>${esc(k)}: <b>${n}</b></li>`).join('')}</ul>`, foot: '<button class="btn" data-close>تمام</button>' });
+        return;
+      }
+      if (!(await confirmBox(`الشركة «${c.name}» ما فيها ولا حركة. متأكد بدك تحذفها نهائياً؟ (دليل الحسابات والبطاقات اللي فيها بتنحذف معها)`))) return;
       const { error } = await sb.from('companies').delete().eq('id', c.id);
       if (error) return toast(arError(error), 'err');
       await log('حذف', 'companies', c.id, { code: c.code, name: c.name });

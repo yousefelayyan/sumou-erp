@@ -8,6 +8,7 @@ import { printDoc, amountToWords } from './print.js';
 import { loadLookups, repOptions, hasReps } from './lookups.js';
 import { downloadCSV } from './finance.js';
 import { attachAudit } from './audit.js';
+import { attachDocNav, setNavList } from './docnav.js';
 
 const r3 = (x) => Math.round(x * 1000) / 1000;
 const amt = (x) => Math.abs(x) < 0.0005 ? '' : fmtNum(x);
@@ -45,7 +46,7 @@ async function viewOrders(v, ctx) {
   draw();
   v.querySelector('#fs').onchange = draw; v.querySelector('#q').oninput = draw;
   v.querySelector('#add')?.addEventListener('click', () => orderEditor(type, null, ctx));
-  v.querySelector('#tb').onclick = (e) => { const tr = e.target.closest('[data-open]'); if (tr) orderEditor(type, rows.find(o => o.id === tr.dataset.open), ctx); };
+  v.querySelector('#tb').onclick = (e) => { const tr = e.target.closest('[data-open]'); if (tr) { setNavList('ord:' + type, [...v.querySelectorAll('#tb [data-open]')].map(x => rows.find(o => o.id === x.dataset.open)).filter(Boolean)); orderEditor(type, rows.find(o => o.id === tr.dataset.open), ctx); } };
 }
 
 function printOrder(type, ord, lines, party, items) {
@@ -115,6 +116,7 @@ async function orderEditor(type, ord, ctx) {
   tb.addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (!b) return; rows.splice(+b.dataset.rm, 1); if (!rows.length) rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
   m.el.querySelector('#add-line')?.addEventListener('click', () => { rows.push({ item: '', desc: '', qty: 1, price: 0, disc: 0, rate: 16 }); draw(); });
   if (ord) attachAudit(m.el, ord);
+  attachDocNav(m, ord, { key: 'ord:' + type, open: (r) => orderEditor(type, r, ctx), onNew: can(O.screen, 'add') ? () => orderEditor(type, null, ctx) : null, table: 'orders', canFreeze: can(O.screen, 'edit'), editable: !ro });
   m.el.querySelector('[data-print]')?.addEventListener('click', () => printOrder(type, ord, lines, pById[ord.party_id], items));
   const collect = () => {
     const out = [];

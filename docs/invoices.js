@@ -3,6 +3,7 @@
 //  حسابات الربط، الأصناف والخدمات، فواتير البيع والشراء والمرتجعات، تقرير الإقرار
 // =====================================================================
 import { attachAudit } from './audit.js';
+import { attachDocNav, setNavList } from './docnav.js';
 import { deptField, deptValue } from './departments.js';
 import { loadLookups, pmOptions, repOptions, hasReps } from './lookups.js';
 import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
@@ -290,7 +291,7 @@ function invoiceList(group) {
     };
     draw(); ['#q', '#ft', '#fs'].forEach(s => v.querySelector(s).addEventListener('input', draw));
     v.querySelectorAll('[data-new]').forEach(b => b.onclick = () => invoiceEditor(b.dataset.new, null, ctx));
-    v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { const i = data.find(x => x.id === r.dataset.open); invoiceEditor(i.inv_type, i, ctx); } };
+    v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { setNavList('inv', [...v.querySelectorAll('#rows [data-open]')].map(tr => data.find(x => x.id === tr.dataset.open)).filter(Boolean)); const i = data.find(x => x.id === r.dataset.open); invoiceEditor(i.inv_type, i, ctx); } };
   };
 }
 
@@ -351,7 +352,7 @@ async function invoiceEditor(type, inv, ctx) {
     ${!readOnly ? '<button class="btn sm" id="add-line" type="button" style="margin-top:6px">➕ سطر</button>' : ''}
     <div class="inv-totals"><div><span>المجموع قبل الضريبة</span><b id="t-sub" dir="ltr"></b></div><div><span>الخصومات</span><b id="t-disc" dir="ltr"></b></div>
       <div><span>ضريبة المبيعات</span><b id="t-tax" dir="ltr"></b></div><div class="big"><span>الإجمالي</span><b id="t-tot" dir="ltr"></b></div><div class="muted" id="t-words" style="font-size:13px"></div></div>
-    <div class="field" style="margin-top:10px"><label>ملاحظات</label><input form="inv-form" name="notes" value="${esc(i0.notes)}" ${ro}></div>`,
+    <div class="field" style="margin-top:10px"><label>ملاحظات</label><input form="inv-form" name="notes" value="${esc(i0.notes)}" ${ro}></div><div id="stock-warn"></div>`,
     foot: `${!readOnly ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}
       ${inv?.status === 'posted' && can(T.screen, 'post') ? '<button class="btn danger" data-cancel>⛔ إلغاء الفاتورة</button>' : ''}
       ${inv?.status === 'posted' && !type.endsWith('return') && can(T.screen, 'add') ? `<button class="btn" data-return>↩️ ${type === 'sale' ? 'مرتجع بيع' : 'مرتجع شراء'} منها</button>` : ''}
@@ -360,6 +361,7 @@ async function invoiceEditor(type, inv, ctx) {
       ${inv?.status === 'draft' && !inv.stock_posted && can(T.screen, 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}
       <button class="btn" data-close>إغلاق</button>` });
   m.el.querySelector('.modal').style.maxWidth = '1100px';
+  attachDocNav(m, inv, { key: 'inv', open: (r) => invoiceEditor(r.inv_type, r, ctx), onNew: can(T.screen, 'add') ? () => invoiceEditor(type, null, ctx) : null, table: 'invoices', canFreeze: can(T.screen, 'edit'), editable: !readOnly });
   if (inv) attachAudit(m.el, inv);
   const f = m.el.querySelector('#inv-form'), tb = m.el.querySelector('#il tbody');
   const incl = () => f.prices_include_tax.checked;
@@ -437,6 +439,27 @@ async function invoiceEditor(type, inv, ctx) {
                  account_id: (isSale ? it?.sales_account_id : it?.purchase_account_id) || null, subtotal: c.sub, tax_amount: c.tax, line_total: c.tot });
     }
     if (!out.length) return toast('أضف سطر واحد على الأقل', 'err');
+    // تنبيه: الكمية المطلوبة أكبر من المتوفرة بالمستودع (فاتورة البيع)
+    if (type === 'sale' && !stockAck) {
+      const need = {}; out.forEach(l => { if (l.item_id) need[l.item_id] = (need[l.item_id] || 0) + l.qty; });
+      const ids = Object.keys(need);
+      if (ids.length) {
+        const { data: av } = await sb.rpc('items_available', { p_company: S.company.id, p_warehouse: h.warehouse_id || null, p_date: h.inv_date, p_items: ids });
+        // الكمية الموجودة بنفس الفاتورة لو كانت مرحّلة للمخزون من قبل ما بتنحسب (التعديل ممنوع بعد الترحيل أصلاً)
+        const short = (av || []).filter(x => need[x.item_id] > num(x.available) + 0.0005);
+        if (short.length) {
+          const box = m.el.querySelector('#stock-warn');
+          box.innerHTML = `<div class="notice" style="border:2px solid #d97706;background:#fff7ed;margin-top:10px"><b>⚠️ تنبيهات فاتورة المبيعات: الكمية المطلوبة أكبر من الكمية المتوفرة</b>
+            <table class="t" style="margin:6px 0"><thead><tr><th>الصنف</th><th>المطلوب</th><th>المتوفر</th><th>النقص</th></tr></thead><tbody>
+            ${short.map(x => `<tr><td>${esc(x.code)} — ${esc(x.name)}</td><td class="n">${fmtNum(need[x.item_id])}</td><td class="n">${fmtNum(x.available)}</td><td class="n" style="color:#b91c1c">${fmtNum(need[x.item_id] - num(x.available))}</td></tr>`).join('')}</tbody></table>
+            <button type="button" class="btn primary" id="sw-go">متابعة الحفظ رغم النقص</button> <button type="button" class="btn" id="sw-no">رجوع للتعديل</button></div>`;
+          box.scrollIntoView({ block: 'nearest' });
+          box.querySelector('#sw-go').onclick = () => { stockAck = true; box.innerHTML = ''; save(post); };
+          box.querySelector('#sw-no').onclick = () => { box.innerHTML = ''; };
+          return;
+        }
+      }
+    }
     const mn = readManual(m.el.querySelector('#inv-form'), manual);
     if (!mn.ok) return toast('الترقيم يدوي: اكتب رقم الفاتورة (رقم صحيح أكبر من صفر)', 'err');
     const header = { ...(mn.value ? { inv_no: mn.value } : {}), inv_date: h.inv_date, due_date: h.due_date, payment_type: h.payment_type, party_id: p?.id || null,
@@ -470,6 +493,8 @@ async function invoiceEditor(type, inv, ctx) {
     const { data } = await sb.from('invoices').select('*').eq('id', id).single();
     if (data) invoiceEditor(data.inv_type, data, ctx);
   };
+  let stockAck = false;
+  tb.addEventListener('input', () => { stockAck = false; });
   m.el.querySelector('[data-save]')?.addEventListener('click', () => save(false));
   // الترحيل من مسودة لسا بتنعدّل: بيحفظ التعديلات أول
   m.el.querySelectorAll('[data-postdo]').forEach(b => b.addEventListener('click', (ev) => { if (!readOnly) { ev.stopImmediatePropagation(); save(b.dataset.postdo); } }));

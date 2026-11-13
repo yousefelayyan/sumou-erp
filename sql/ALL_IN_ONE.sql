@@ -3589,8 +3589,11 @@ begin
     rows := coalesce(p_data -> 'tables' -> r.tbl, '[]'::jsonb);
     if jsonb_array_length(rows) = 0 then continue; end if;
     -- الروابط الذاتية والحالات اللي بتمنع الإدخال بتنحط بعدين
+    if r.tbl in ('invoices', 'stock_docs', 'orders') then   -- التجميد بيرجع بالآخر
+      rows := (select jsonb_agg(x - 'is_frozen') from jsonb_array_elements(rows) x);
+    end if;
     if r.tbl = 'journal_entries' then
-      rows := (select jsonb_agg(x - 'reversal_of' - 'reversed_by') from jsonb_array_elements(rows) x);
+      rows := (select jsonb_agg(x - 'reversal_of' - 'reversed_by' - 'is_frozen') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'invoices' then
       rows := (select jsonb_agg(x - 'original_invoice_id') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'supply_requests' then   -- سنداته بتنرجع بعد ما تنضاف سندات المخزون
@@ -3617,6 +3620,13 @@ begin
   update public.invoices i set original_invoice_id = (x ->> 'original_invoice_id')::uuid
     from jsonb_array_elements(p_data -> 'tables' -> 'invoices') x
    where i.id = (x ->> 'id')::uuid and x ->> 'original_invoice_id' is not null;
+  -- علامة التجميد بالآخر (عشان ما تمنع إرجاع الروابط والسطور)
+  for r in select * from (values ('journal_entries'), ('invoices'), ('stock_docs'), ('orders')) v(tbl) loop
+    if exists (select 1 from pg_attribute where attrelid = ('public.' || r.tbl)::regclass and attname = 'is_frozen' and not attisdropped) then
+      execute format('update public.%I t set is_frozen = true from jsonb_array_elements(coalesce($1, ''[]''::jsonb)) x where t.id = (x ->> ''id'')::uuid and (x ->> ''is_frozen'')::boolean', r.tbl)
+        using p_data -> 'tables' -> r.tbl;
+    end if;
+  end loop;
   if to_regclass('public.supply_requests') is not null then
     update public.supply_requests q set out_doc_id = (x ->> 'out_doc_id')::uuid, in_doc_id = (x ->> 'in_doc_id')::uuid
       from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'supply_requests', '[]'::jsonb)) x
@@ -8470,3 +8480,276 @@ alter table public.invoices add column if not exists project text;
 alter table public.orders add column if not exists project text;
 alter table public.invoice_lines add column if not exists details text;
 alter table public.order_lines add column if not exists details text;
+
+
+-- #################### 37_ask_reports.sql ####################
+-- =====================================================================
+--  السمو ERP — المرحلة 37: «اسأل السمو» (تقارير المبيعات بالكلام) + رصيد الأصناف للتنبيه بالفاتورة
+-- =====================================================================
+
+-- الرصيد المتوفر لأصناف بمستودع (لتنبيه «الكمية المطلوبة أكبر من المتوفرة»)
+create or replace function public.items_available(p_company uuid, p_warehouse uuid, p_date date, p_items uuid[])
+returns table (item_id uuid, code text, name text, available numeric)
+language plpgsql stable security definer set search_path = public as $$
+declare w uuid := p_warehouse;
+begin
+  if not (public.can(p_company, 'items', 'view') or public.can(p_company, 'inventory', 'view') or public.can(p_company, 'sales_invoices', 'add') or public.can(p_company, 'sales_invoices', 'edit')) then
+    raise exception 'ما عندك صلاحية';
+  end if;
+  if w is null then select x.id into w from public.warehouses x where x.company_id = p_company and x.is_active order by x.code limit 1; end if;
+  if w is null or not exists (select 1 from public.warehouses x where x.id = w and x.company_id = p_company) then return; end if;
+  return query
+  select i.id, i.code, i.name, public.stock_qty(i.id, w, coalesce(p_date, public.local_today()))
+    from public.items i where i.company_id = p_company and i.id = any(p_items) and i.item_type = 'goods' and i.track_stock;
+end $$;
+revoke execute on function public.items_available(uuid, uuid, date, uuid[]) from public, anon;
+grant execute on function public.items_available(uuid, uuid, date, uuid[]) to authenticated;
+
+-- تجميع المبيعات المرحّلة (البيع ناقص المرتجع) حسب بُعد، مع فلاتر.
+-- p_group: customer | item | item_category | customer_category | rep | department | warehouse | month | day | none
+-- p_filters: {rep_id, party_id, item_id, item_category_id, party_category_id, department_id}
+create or replace function public.ask_sales(p_company uuid, p_from date, p_to date, p_group text, p_filters jsonb default '{}'::jsonb, p_top int default null, p_group2 text default null)
+returns table (k1 text, k2 text, label1 text, label2 text, qty numeric, net numeric, tax numeric, invoices bigint)
+language plpgsql stable security definer set search_path = public as $$
+declare f jsonb := coalesce(p_filters, '{}'::jsonb);
+begin
+  if not (public.can(p_company, 'sales_invoices', 'view') or public.can(p_company, 'reports', 'view')) then raise exception 'ما عندك صلاحية تقارير المبيعات'; end if;
+  if coalesce(p_group, 'none') not in ('customer','item','item_category','customer_category','rep','department','warehouse','month','day','none')
+     or coalesce(p_group2, 'none') not in ('customer','item','item_category','customer_category','rep','department','warehouse','month','day','none') then
+    raise exception 'نوع التجميع مش معروف';
+  end if;
+  return query
+  with l as (
+    select v.id inv_id, v.inv_date, v.party_id, v.party_name, v.sales_rep_id, v.department_id, coalesce(v.warehouse_id, (select w.id from public.warehouses w where w.company_id = v.company_id and w.is_active order by w.code limit 1)) wh,
+           il.item_id, il.description,
+           case when v.inv_type = 'sale_return' then -1 else 1 end sgn, il.qty, il.subtotal, il.tax_amount
+      from public.invoices v join public.invoice_lines il on il.invoice_id = v.id
+     where v.company_id = p_company and v.inv_type in ('sale','sale_return') and v.status = 'posted'
+       and v.inv_date between p_from and p_to
+       and (f ->> 'rep_id' is null or v.sales_rep_id = (f ->> 'rep_id')::uuid)
+       and (f ->> 'party_id' is null or v.party_id = (f ->> 'party_id')::uuid)
+       and (f ->> 'department_id' is null or v.department_id = (f ->> 'department_id')::uuid)
+       and (f ->> 'item_id' is null or il.item_id = (f ->> 'item_id')::uuid)
+       and (f ->> 'item_category_id' is null or exists (select 1 from public.items i where i.id = il.item_id and i.category_id = (f ->> 'item_category_id')::uuid))
+       and (f ->> 'party_category_id' is null or exists (select 1 from public.parties p where p.id = v.party_id and p.category_id = (f ->> 'party_category_id')::uuid))
+  ), d as (
+    select l.*, p.name pname, p.code pcode, p.category_id pcat, i.name iname, i.code icode, i.category_id icat
+      from l left join public.parties p on p.id = l.party_id left join public.items i on i.id = l.item_id
+  ), g as (
+    select
+      case p_group when 'customer' then coalesce(d.party_id::text, 'cash:' || coalesce(d.party_name, '')) when 'item' then coalesce(d.item_id::text, 'd:' || coalesce(d.description, ''))
+        when 'item_category' then coalesce(d.icat::text, '-') when 'customer_category' then coalesce(d.pcat::text, '-') when 'rep' then coalesce(d.sales_rep_id::text, '-')
+        when 'department' then coalesce(d.department_id::text, '-') when 'warehouse' then d.wh::text when 'month' then to_char(d.inv_date, 'YYYY-MM') when 'day' then d.inv_date::text else 'all' end a1,
+      case p_group2 when 'customer' then coalesce(d.party_id::text, 'cash:' || coalesce(d.party_name, '')) when 'item' then coalesce(d.item_id::text, 'd:' || coalesce(d.description, ''))
+        when 'item_category' then coalesce(d.icat::text, '-') when 'customer_category' then coalesce(d.pcat::text, '-') when 'rep' then coalesce(d.sales_rep_id::text, '-')
+        when 'department' then coalesce(d.department_id::text, '-') when 'warehouse' then d.wh::text when 'month' then to_char(d.inv_date, 'YYYY-MM') when 'day' then d.inv_date::text else '' end a2,
+      d.*
+      from d
+  ), s as (
+    select a1, a2, sum(sgn * g.qty) q, sum(sgn * g.subtotal) n, sum(sgn * g.tax_amount) t, count(distinct inv_id) c from g group by a1, a2
+  ), lab as (
+    select s.*,
+      (select case p_group
+          when 'customer' then coalesce((select x.name from public.parties x where x.id::text = s.a1 and x.company_id = p_company), nullif(replace(s.a1, 'cash:', ''), ''), 'زبون نقدي')
+          when 'item' then coalesce((select x.code || ' — ' || x.name from public.items x where x.id::text = s.a1 and x.company_id = p_company), nullif(replace(s.a1, 'd:', ''), ''), 'بدون صنف')
+          when 'item_category' then coalesce((select x.name from public.item_categories x where x.id::text = s.a1 and x.company_id = p_company), 'بدون فئة')
+          when 'customer_category' then coalesce((select x.name from public.party_categories x where x.id::text = s.a1 and x.company_id = p_company), 'بدون فئة')
+          when 'rep' then coalesce((select x.name from public.lookups x where x.id::text = s.a1 and x.company_id = p_company), 'بدون مندوب')
+          when 'department' then coalesce((select x.name from public.departments x where x.id::text = s.a1 and x.company_id = p_company), 'بدون دائرة')
+          when 'warehouse' then coalesce((select x.name from public.warehouses x where x.id::text = s.a1 and x.company_id = p_company), '')
+          when 'none' then 'الإجمالي' else s.a1 end) l1,
+      (select case p_group2
+          when 'customer' then coalesce((select x.name from public.parties x where x.id::text = s.a2 and x.company_id = p_company), nullif(replace(s.a2, 'cash:', ''), ''), 'زبون نقدي')
+          when 'item' then coalesce((select x.code || ' — ' || x.name from public.items x where x.id::text = s.a2 and x.company_id = p_company), nullif(replace(s.a2, 'd:', ''), ''), 'بدون صنف')
+          when 'item_category' then coalesce((select x.name from public.item_categories x where x.id::text = s.a2 and x.company_id = p_company), 'بدون فئة')
+          when 'customer_category' then coalesce((select x.name from public.party_categories x where x.id::text = s.a2 and x.company_id = p_company), 'بدون فئة')
+          when 'rep' then coalesce((select x.name from public.lookups x where x.id::text = s.a2 and x.company_id = p_company), 'بدون مندوب')
+          when 'department' then coalesce((select x.name from public.departments x where x.id::text = s.a2 and x.company_id = p_company), 'بدون دائرة')
+          when 'warehouse' then coalesce((select x.name from public.warehouses x where x.id::text = s.a2 and x.company_id = p_company), '')
+          else s.a2 end) l2
+      from s
+  )
+  select a1, a2, l1, l2, round(q, 3), round(n, 3), round(t, 3), c from lab
+   order by case when p_group in ('month', 'day') then a1 end, n desc nulls last
+   limit coalesce(p_top, 5000);
+end $$;
+revoke execute on function public.ask_sales(uuid, date, date, text, jsonb, int, text) from public, anon;
+grant execute on function public.ask_sales(uuid, date, date, text, jsonb, int, text) to authenticated;
+
+-- سجل أسئلة المستخدم (لكل شركة)
+create table if not exists public.ask_history (
+  id         uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  user_id    uuid not null default auth.uid(),
+  question   text not null check (length(question) <= 500),
+  created_at timestamptz not null default now()
+);
+create index if not exists ask_history_user on public.ask_history (user_id, company_id, created_at desc);
+alter table public.ask_history enable row level security;
+grant select, insert, delete on public.ask_history to authenticated;
+drop policy if exists ah_select on public.ask_history;
+create policy ah_select on public.ask_history for select to authenticated using (user_id = auth.uid() and public.has_company(company_id));
+drop policy if exists ah_insert on public.ask_history;
+create policy ah_insert on public.ask_history for insert to authenticated with check (user_id = auth.uid() and public.has_company(company_id));
+drop policy if exists ah_delete on public.ask_history;
+create policy ah_delete on public.ask_history for delete to authenticated using (user_id = auth.uid());
+
+-- ---------------------------------------------------------------------
+--  حذف الشركة: مسموح بس إذا ما فيها ولا حركة (قيود، فواتير، سندات مخزون، شيكات، رواتب، أصول، طلبات…)
+-- ---------------------------------------------------------------------
+create or replace function public.company_activity_raw(p_company uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r jsonb := '{}'::jsonb; n bigint; t record;
+begin
+  for t in select * from (values ('journal_entries', 'قيود وسندات'), ('invoices', 'فواتير'), ('stock_docs', 'سندات مخزون'), ('cheques', 'شيكات'),
+             ('payroll_runs', 'مسيّرات رواتب'), ('depreciation_runs', 'دورات استهلاك'), ('orders', 'طلبات بيع/شراء'), ('asset_movements', 'حركات أصول'),
+             ('custody_docs', 'مستندات عهد'), ('supply_requests', 'طلبات تزويد'), ('service_tickets', 'بطاقات صيانة'), ('productions', 'أوامر إنتاج'),
+             ('stock_moves', 'حركات مخزون')) v(tbl, label) loop
+    if to_regclass('public.' || t.tbl) is null then continue; end if;
+    execute format('select count(*) from public.%I where company_id = $1', t.tbl) into n using p_company;
+    if n > 0 then r := r || jsonb_build_object(t.label, n); end if;
+  end loop;
+  return r;
+end $$;
+revoke execute on function public.company_activity_raw(uuid) from public, anon, authenticated;
+create or replace function public.company_activity(p_company uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.has_company(p_company) then raise exception 'ما عندك صلاحية'; end if;
+  return public.company_activity_raw(p_company);
+end $$;
+revoke execute on function public.company_activity(uuid) from public, anon;
+grant execute on function public.company_activity(uuid) to authenticated;
+
+create or replace function public.ab_company_delete_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare a jsonb;
+begin
+  if public.is_internal() then return old; end if;
+  a := public.company_activity_raw(old.id);
+  if a <> '{}'::jsonb then
+    raise exception 'الشركة «%» فيها حركات (%)، ما بتنحذف. أوقفها بدل الحذف', old.name,
+      (select string_agg(key || ': ' || value, '، ') from jsonb_each_text(a));
+  end if;
+  return old;
+end $$;
+drop trigger if exists ab_company_delete_guard on public.companies;
+create trigger ab_company_delete_guard before delete on public.companies for each row execute function public.ab_company_delete_guard();
+
+-- سطر الفاتورة: الصنف لازم من نفس الشركة
+create or replace function public.ad_invoice_line_item_check() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.item_id is not null and (tg_op = 'INSERT' or new.item_id is distinct from old.item_id)
+     and not exists (select 1 from public.items i join public.invoices v on v.id = new.invoice_id where i.id = new.item_id and i.company_id = v.company_id) then
+    raise exception 'الصنف مش من نفس الشركة';
+  end if;
+  return new;
+end $$;
+drop trigger if exists ad_invoice_line_item_check on public.invoice_lines;
+create trigger ad_invoice_line_item_check before insert or update on public.invoice_lines for each row execute function public.ad_invoice_line_item_check();
+
+
+-- #################### 38_doc_freeze.sql ####################
+-- =====================================================================
+--  السمو ERP — المرحلة 38: تجميد المستندات
+--  المستند المجمّد ما بينعدّل ولا بينحذف ولا بيترحّل (ولا سطوره) لحد ما ينفك تجميده.
+--  التجميد وفكّه من set_doc_frozen بس، بصلاحية edit على شاشة المستند.
+-- =====================================================================
+alter table public.journal_entries add column if not exists is_frozen boolean not null default false;
+alter table public.invoices        add column if not exists is_frozen boolean not null default false;
+alter table public.stock_docs      add column if not exists is_frozen boolean not null default false;
+alter table public.orders          add column if not exists is_frozen boolean not null default false;
+
+-- الرأس: الحقل is_frozen من الدالة بس، والمجمّد ما بيتغيّر/بينحذف (حتى الترحيل الداخلي)
+create or replace function public.ab_doc_frozen_guard() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare flip boolean := coalesce(current_setting('sumou.freeze', true), '') = public.internal_token();
+begin
+  if tg_op = 'INSERT' then
+    if not public.is_internal() then new.is_frozen := false; end if;
+    return new;
+  end if;
+  if tg_op = 'DELETE' then
+    if old.is_frozen then raise exception 'المستند مجمّد، فك التجميد أول عشان تحذفه'; end if;
+    return old;
+  end if;
+  if new.is_frozen is distinct from old.is_frozen and not flip and not public.is_internal() then
+    raise exception 'التجميد بيصير من كبسة «تجميد» بس';
+  end if;
+  if old.is_frozen and new.is_frozen and not flip then
+    raise exception 'المستند مجمّد، ما بينعدّل ولا بيترحّل. فك التجميد أول';
+  end if;
+  return new;
+end $$;
+do $$ declare t text; begin
+  foreach t in array array['journal_entries','invoices','stock_docs','orders'] loop
+    execute format('drop trigger if exists ab_doc_frozen_guard on public.%I', t);
+    execute format('create trigger ab_doc_frozen_guard before insert or update or delete on public.%I for each row execute function public.ab_doc_frozen_guard()', t);
+  end loop;
+end $$;
+
+-- السطور: ممنوعة إذا الرأس مجمّد
+create or replace function public.ab_doc_lines_frozen() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare pid uuid; fr boolean;
+begin
+  if public.is_internal() then return case when tg_op = 'DELETE' then old else new end; end if;
+  -- النقل من مستند مجمّد لمستند ثاني ممنوع كمان
+  if tg_op = 'UPDATE' then
+    if tg_table_name = 'journal_lines' then
+      if old.entry_id is distinct from new.entry_id then select is_frozen into fr from public.journal_entries where id = old.entry_id; end if;
+    elsif tg_table_name = 'invoice_lines' then
+      if old.invoice_id is distinct from new.invoice_id then select is_frozen into fr from public.invoices where id = old.invoice_id; end if;
+    elsif tg_table_name = 'stock_doc_lines' then
+      if old.doc_id is distinct from new.doc_id then select is_frozen into fr from public.stock_docs where id = old.doc_id; end if;
+    else
+      if old.order_id is distinct from new.order_id then select is_frozen into fr from public.orders where id = old.order_id; end if;
+    end if;
+    if coalesce(fr, false) then raise exception 'المستند مجمّد، ما بتتعدّل سطوره'; end if;
+  end if;
+  if tg_table_name = 'journal_lines' then
+    pid := case when tg_op = 'DELETE' then old.entry_id else new.entry_id end;
+    select is_frozen into fr from public.journal_entries where id = pid;
+  elsif tg_table_name = 'invoice_lines' then
+    pid := case when tg_op = 'DELETE' then old.invoice_id else new.invoice_id end;
+    select is_frozen into fr from public.invoices where id = pid;
+  elsif tg_table_name = 'stock_doc_lines' then
+    pid := case when tg_op = 'DELETE' then old.doc_id else new.doc_id end;
+    select is_frozen into fr from public.stock_docs where id = pid;
+  else
+    pid := case when tg_op = 'DELETE' then old.order_id else new.order_id end;
+    select is_frozen into fr from public.orders where id = pid;
+  end if;
+  if coalesce(fr, false) then raise exception 'المستند مجمّد، ما بتتعدّل سطوره'; end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end $$;
+do $$ declare t text; begin
+  foreach t in array array['journal_lines','invoice_lines','stock_doc_lines','order_lines'] loop
+    execute format('drop trigger if exists ab_doc_lines_frozen on public.%I', t);
+    execute format('create trigger ab_doc_lines_frozen before insert or update or delete on public.%I for each row execute function public.ab_doc_lines_frozen()', t);
+  end loop;
+end $$;
+
+create or replace function public.set_doc_frozen(p_table text, p_id uuid, p_frozen boolean) returns void
+language plpgsql security definer set search_path = public as $$
+declare cid uuid; scr text; t text; st text; no text;
+begin
+  if p_table = 'journal_entries' then select company_id, public.entry_screen(entry_type), coalesce(doc_code, entry_no::text) into cid, scr, no from public.journal_entries where id = p_id;
+  elsif p_table = 'invoices' then select company_id, public.invoice_screen(inv_type), coalesce(doc_code, inv_no::text) into cid, scr, no from public.invoices where id = p_id;
+  elsif p_table = 'stock_docs' then select company_id, 'inventory', coalesce(doc_code, doc_no::text) into cid, scr, no from public.stock_docs where id = p_id;
+  elsif p_table = 'orders' then select company_id, case order_type when 'sales_order' then 'sales_orders' else 'purchase_orders' end, order_no::text into cid, scr, no from public.orders where id = p_id;
+  else raise exception 'نوع مستند مش معروف'; end if;
+  if cid is null then raise exception 'المستند مش موجود'; end if;
+  if not public.can(cid, scr, 'edit') then raise exception 'ما عندك صلاحية تجميد هالمستند'; end if;
+  -- داخلي عشان أقفال المستند المرحّل ما تمنع تغيير علامة التجميد بس
+  perform set_config('sumou.freeze', public.internal_token(), true);
+  perform set_config('sumou.internal', public.internal_token(), true);
+  execute format('update public.%I set is_frozen = $1 where id = $2', p_table) using p_frozen, p_id;
+  perform set_config('sumou.internal', '', true);
+  perform set_config('sumou.freeze', '', true);
+  insert into public.activity_log (user_id, company_id, action, entity, entity_id, details)
+  values (auth.uid(), cid, 'تعديل', p_table, p_id::text, jsonb_build_object('no', no, 'frozen', p_frozen));
+end $$;
+revoke execute on function public.set_doc_frozen(text, uuid, boolean) from public, anon;
+grant execute on function public.set_doc_frozen(text, uuid, boolean) to authenticated;
