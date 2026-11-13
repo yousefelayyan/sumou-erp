@@ -28,6 +28,8 @@ select kind, from_name, to_name, location, ended from custody_history('fa330000-
 select custody_set_status((select id from custody_docs where kind='transfer'),'pending');
 select c.name, a.location from fixed_assets a join asset_custodians c on c.id=a.custodian_id where a.code='M2';
 select custody_set_status((select id from custody_docs where kind='handover'),'closed');
+\echo == closing keeps the custodian
+select c.name, a.location from fixed_assets a join asset_custodians c on c.id=a.custodian_id where a.code='M2';
 \echo == closed doc cannot change (expected ERROR)
 select custody_set_status((select id from custody_docs where kind='handover'),'pending');
 \echo == delete done/closed (expected ERROR)

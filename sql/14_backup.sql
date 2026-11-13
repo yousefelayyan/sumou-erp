@@ -77,6 +77,8 @@ begin
       rows := (select jsonb_agg(x - 'reversal_of' - 'reversed_by') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'invoices' then
       rows := (select jsonb_agg(x - 'original_invoice_id') from jsonb_array_elements(rows) x);
+    elsif r.tbl = 'supply_requests' then   -- سنداته بتنرجع بعد ما تنضاف سندات المخزون
+      rows := (select jsonb_agg(x - 'out_doc_id' - 'in_doc_id') from jsonb_array_elements(rows) x);
     elsif r.tbl = 'bank_recons' then
       rows := (select jsonb_agg(jsonb_set(x, '{status}', '"open"')) from jsonb_array_elements(rows) x);
     elsif r.tbl = 'companies' then   -- المستخدم اللي أنشأها ممكن ما يكون موجود بقاعدة جديدة
@@ -99,6 +101,11 @@ begin
   update public.invoices i set original_invoice_id = (x ->> 'original_invoice_id')::uuid
     from jsonb_array_elements(p_data -> 'tables' -> 'invoices') x
    where i.id = (x ->> 'id')::uuid and x ->> 'original_invoice_id' is not null;
+  if to_regclass('public.supply_requests') is not null then
+    update public.supply_requests q set out_doc_id = (x ->> 'out_doc_id')::uuid, in_doc_id = (x ->> 'in_doc_id')::uuid
+      from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'supply_requests', '[]'::jsonb)) x
+     where q.id = (x ->> 'id')::uuid and (x ->> 'out_doc_id' is not null or x ->> 'in_doc_id' is not null);
+  end if;
   update public.bank_recons b set status = x ->> 'status'
     from jsonb_array_elements(coalesce(p_data -> 'tables' -> 'bank_recons', '[]'::jsonb)) x where b.id = (x ->> 'id')::uuid;
   -- فحص: كل سطر بالنسخة لازم يكون تابع لهالشركة، وكل رابط لجدول شركات لازم يأشّر على نفس الشركة

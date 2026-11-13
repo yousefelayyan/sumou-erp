@@ -251,7 +251,7 @@ async function openCustody(ctx, d, custs, assets) {
     <div class="table-wrap"><table class="t" id="ln"><thead><tr><th>الأصل</th><th>بعهدة</th><th>الحالة عند ${k === 'return' ? 'الإرجاع' : 'التسليم'}</th><th>الملحقات</th><th>ملاحظات</th>${editable ? '<th></th>' : ''}</tr></thead><tbody></tbody></table></div>
     ${editable ? '<select id="pick" style="margin-top:8px"></select>' : ''}
     ${st !== 'cancelled' && !isNew ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;align-items:center"><b>الحالة:</b>
-      ${['pending', 'confirmed', 'done', 'closed'].map(x => `<button class="btn sm ${x === st ? 'primary' : ''}" data-st="${x}" ${x === st || st === 'closed' ? 'disabled' : ''}>${CUST_ST[x][0]}</button>`).join(' ← ')}
+      ${['pending', 'confirmed', 'done', 'closed'].map(x => `<button class="btn sm ${x === st ? 'primary' : ''}" data-st="${x}" ${x === st || st === 'closed' || (x === 'closed' && st !== 'done') ? 'disabled' : ''}>${CUST_ST[x][0]}</button>`).join(' ← ')}
       ${st === 'pending' || st === 'confirmed' ? '<button class="btn sm danger" data-st="cancelled">إلغاء</button>' : ''}</div>` : ''}`,
     foot: `${editable ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}${!isNew ? '<button class="btn" data-prn>🖨️ إقرار استلام</button>' : ''}
       ${!isNew && (st === 'pending' || st === 'cancelled') && can('asset_custody', 'delete') ? '<button class="btn danger" data-del style="margin-inline-start:auto">حذف</button>' : ''}<button class="btn" data-close>إغلاق</button>` });

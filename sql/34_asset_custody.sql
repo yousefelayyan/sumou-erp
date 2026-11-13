@@ -91,6 +91,11 @@ create table if not exists public.custody_doc_lines (
   prev_since    date,
   unique (doc_id, asset_id)
 );
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'custody_doc_lines_prev_custodian_fk') then
+    alter table public.custody_doc_lines add constraint custody_doc_lines_prev_custodian_fk foreign key (prev_custodian_id) references public.asset_custodians(id) on delete set null;
+  end if;
+end $$;
 create index if not exists custody_lines_asset on public.custody_doc_lines (asset_id);
 alter table public.custody_docs enable row level security;
 alter table public.custody_doc_lines enable row level security;
@@ -202,7 +207,7 @@ begin
       if d.kind = 'handover' and r.custodian_id is not null then raise exception 'الأصل «%» بعهدة حدا، استعمل «نقل»', r.name; end if;
       if d.kind in ('transfer', 'return') and r.custodian_id is distinct from d.from_custodian_id then raise exception 'الأصل «%» مش بعهدة المسلِّم', r.name; end if;
       if exists (select 1 from public.custody_doc_lines x join public.custody_docs y on y.id = x.doc_id
-                 where x.asset_id = r.id and y.id <> p_id and y.status = 'done' and y.done_at is not null and y.doc_date > d.doc_date) then
+                 where x.asset_id = r.id and y.id <> p_id and y.status in ('done', 'closed') and y.doc_date > d.doc_date) then
         raise exception 'الأصل «%» عليه مستند عهدة بتاريخ أحدث', r.name;
       end if;
       update public.custody_doc_lines set prev_custodian_id = r.custodian_id, prev_location = r.location, prev_since = r.custody_since where id = r.lid;
@@ -212,13 +217,16 @@ begin
        where id = r.id;
     end loop;
     update public.custody_docs set status = 'done', done_at = now() where id = p_id;
-  elsif d.status = 'done' then   -- رجوع من «انتهاء العمل»
-    for r in select l.*, a.name, a.custodian_id cur from public.custody_doc_lines l join public.fixed_assets a on a.id = l.asset_id where l.doc_id = p_id for update of a loop
+  elsif d.status = 'done' and p_status <> 'closed' then   -- رجوع من «انتهاء العمل»
+    for r in select l.*, a.name, a.custodian_id cur, a.status astatus, a.location aloc from public.custody_doc_lines l join public.fixed_assets a on a.id = l.asset_id where l.doc_id = p_id for update of a loop
+      if r.astatus <> 'active' then raise exception 'الأصل «%» مستبعد، ما بينرجع عن عهدته', r.name; end if;
       if exists (select 1 from public.custody_doc_lines x join public.custody_docs y on y.id = x.doc_id
                  where x.asset_id = r.asset_id and y.id <> p_id and y.status in ('done', 'closed') and y.done_at > d.done_at) then
         raise exception 'على الأصل «%» حركة عهدة لاحقة، ارجع عنها أول', r.name;
       end if;
-      update public.fixed_assets set custodian_id = r.prev_custodian_id, location = r.prev_location, custody_since = r.prev_since where id = r.asset_id;
+      update public.fixed_assets set custodian_id = r.prev_custodian_id, custody_since = r.prev_since,
+             location = case when d.location is not null and r.aloc is not distinct from d.location then r.prev_location else r.aloc end
+       where id = r.asset_id;
     end loop;
     update public.custody_docs set status = p_status, done_at = null where id = p_id;
     update public.custody_doc_lines set prev_custodian_id = null, prev_location = null, prev_since = null where doc_id = p_id;

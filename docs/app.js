@@ -25,6 +25,7 @@ import { MFG_ROUTES, enhanceReportTables } from './mfg.js';
 import { EXTRA_ROUTES, dashboardPanel } from './extras.js';
 import { PAYROLL_ROUTES } from './payroll.js';
 import { ASSET_ROUTES } from './assets.js';
+import { SUPPLY_ROUTES } from './supply.js';
 import { TOOLS_ROUTES, autoBackup } from './tools.js';
 import { TENANT_ROUTES, subBannerHTML } from './tenants.js';
 import { POS_ROUTES } from './pos.js';
@@ -193,6 +194,7 @@ const NAV = () => [
     { r: 'stock', i: '📦', l: 'رصيد المخزون', show: () => S.company && can('inventory', 'view') },
     { r: 'stock-docs?type=in', i: '📥', l: 'سندات الإدخال والإخراج', show: () => S.company && can('inventory', 'view') },
     { r: 'stock-docs?type=count', i: '📋', l: 'الجرد والتسوية', show: () => S.company && can('inventory', 'view') },
+    { r: 'supply', i: '🚚', l: 'طلبات التزويد', show: () => S.company && (can('supply_requests', 'view') || can('inventory', 'view')) },
     { r: 'item-card', i: '🗂️', l: 'بطاقة صنف', show: () => S.company && can('inventory', 'view') },
     { r: 'warehouses', i: '🏬', l: 'المستودعات', show: () => S.company && can('inventory', 'view') },
   ]},
@@ -499,7 +501,7 @@ function updateWatermark() {
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
 
 const ROUTES = {
-  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
+  ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
   'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
 };
