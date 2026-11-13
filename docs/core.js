@@ -33,6 +33,7 @@ export const S = {
 export const SCREENS = [
   { key: 'companies',        label: 'بيانات الشركة',       group: 'ملف' },
   { key: 'fiscal_years',     label: 'السنوات المالية والفترات', group: 'ملف' },
+  { key: 'fy_unavailable',   label: 'الوصول للسنوات المالية «غير المتاحة»', group: 'ملف' },
   { key: 'departments',      label: 'الدوائر',             group: 'ملف' },
   { key: 'lookups',          label: 'قوائم الإعداد (وسائل الدفع، البنوك، الدول…)', group: 'إعداد' },
   { key: 'accounts',         label: 'دليل الحسابات ومراكز الكلفة', group: 'المالية' },
@@ -188,6 +189,7 @@ export async function log(action, entity, entity_id = null, details = null) {
 //  الصلاحيات (للواجهة فقط — الحماية الحقيقية بقاعدة البيانات)
 // ---------------------------------------------------------------------
 export const isAdmin = () => !!(S.profile?.is_admin && S.profile?.is_active);
+export const canHiddenYears = () => isAdmin() || can('fy_unavailable', 'view');
 export const isSuper = () => !!(S.profile?.is_super && S.profile?.is_active);
 
 // الأقسام (حسب الاشتراك) — لازم تطابق screen_module() بقاعدة البيانات
@@ -255,13 +257,18 @@ export async function loadContext() {
 export async function loadFiscalYears() {
   S.fiscalYears = []; S.fy = null;
   if (!S.company) return;
+  // السنة «غير المتاحة» اللي بدأ تاريخها بتصير متاحة لحالها
+  try { await sb.rpc('fy_release_started', { p_company: S.company.id }); } catch {}
   const { data } = await sb.from('fiscal_years').select('*').eq('company_id', S.company.id).order('start_date', { ascending: false });
-  S.fiscalYears = data || [];
+  S.fiscalYearsAll = data || [];
+  // «غير متاحة» = مفتوحة بدري؛ بتبيّن بس لمين إله صلاحية، وما بتنختار تلقائياً
+  S.fiscalYears = canHiddenYears() ? S.fiscalYearsAll : S.fiscalYearsAll.filter(y => !y.unavailable);
   const saved = localStorageGet('sumou.fy.' + S.company.id);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA');
+  const usable = S.fiscalYears.filter(y => !y.unavailable);
   S.fy = S.fiscalYears.find(x => x.id === saved)
-      || S.fiscalYears.find(x => x.start_date <= today && x.end_date >= today)
-      || S.fiscalYears[0] || null;
+      || usable.find(x => x.start_date <= today && x.end_date >= today)
+      || usable[0] || S.fiscalYears[0] || null;
 }
 
 export function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }

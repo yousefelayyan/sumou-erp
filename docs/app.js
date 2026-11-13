@@ -4,7 +4,7 @@
 import { AUDIT_ENTITIES, AUDIT_COLS } from './audit.js';
 import { downloadCSV } from './finance.js';
 import { APP_NAME, APP_VERSION } from './config.js';
-import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, THEMES, applyTheme, canTheme, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
+import { ACTIONS, ACTIVITY_TYPES, COMPANY_TYPES, INSTANCE, signOutHere, S, SCREENS, arError, can, confirmBox, esc, fmtDate, fmtDateTime, fmtNum, formData, hasUnsavedModal, canHiddenYears, THEMES, applyTheme, canTheme, isAdmin, isSuper, loadContext, loadFiscalYears, loadProfile, localStorageGet, localStorageSet, log, modal, num, sb, setupTabs, toast, today } from './core.js';
 import { FINANCE_ROUTES } from './finance.js';
 import { REPORT_ROUTES } from './reports.js';
 import { PARTY_ROUTES } from './parties.js';
@@ -388,7 +388,7 @@ function switchYearDialog() {
   if (!S.company) return;
   const m = modal({ title: '📅 تبديل السنة المالية', size: 'sm', body: `<div class="notice" style="margin:0 0 10px;font-size:13.5px">⚠️ <b>تنبيه:</b> أنت هلّق على <b>${esc(S.fy ? (S.fy.name || S.fy.code) : '—')}</b>. لما تبدّل، كل شاشات «${esc(S.company.name)}» بتصير على السنة اللي بتختارها.</div><div style="display:grid;gap:6px">${S.fiscalYears.map(y => `
       <button type="button" class="btn ${y.id === S.fy?.id ? 'primary' : ''}" data-fy="${y.id}" style="justify-content:space-between">
-        <b>${esc(y.name || y.code)}</b><span class="muted" style="font-size:12px">${fmtDate(y.start_date)} ← ${fmtDate(y.end_date)}${y.is_closed ? ' · مغلقة' : ''}</span></button>`).join('')
+        <b>${esc(y.name || y.code)}${y.unavailable ? ' <span class="badge warn">غير متاح</span>' : ''}</b><span class="muted" style="font-size:12px">${fmtDate(y.start_date)} ← ${fmtDate(y.end_date)}${y.is_closed ? ' · مغلقة' : ''}</span></button>`).join('')
       || '<div class="empty">ما في سنوات مالية لهالشركة</div>'}</div>`, foot: '<button class="btn" data-close>إلغاء</button>' });
   m.el.querySelector('.modal-body').addEventListener('click', (e) => {
     const b = e.target.closest('[data-fy]'); if (!b) return;
@@ -813,7 +813,7 @@ async function viewFiscalYears(v) {
       <thead><tr><th>الرمز</th><th>الاسم</th><th>من</th><th>إلى</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${rows.map(y => `
         <tr><td>${esc(y.code)}</td><td>${esc(y.name || '')}</td><td>${fmtDate(y.start_date)}</td><td>${fmtDate(y.end_date)}</td>
-        <td>${y.is_closed ? '<span class="badge bad">مغلقة</span>' : '<span class="badge ok">مفتوحة</span>'}</td>
+        <td>${y.is_closed ? '<span class="badge bad">مغلقة</span>' : '<span class="badge ok">مفتوحة</span>'}${y.unavailable ? ' <span class="badge warn" title="مفتوحة بدري: المستخدمين ما بينتقلوا لها لحد ما يبدأ تاريخها">غير متاح</span>' : ''}</td>
         <td class="actions">
           ${isAdmin() && !y.is_closed ? `<button class="btn sm primary" data-close-year="${y.id}">🔒 إغلاق وتدوير</button>` : ''}
           ${isAdmin() && y.is_closed ? `<button class="btn sm" data-reopen="${y.id}">🔓 إعادة فتح</button>` : ''}
@@ -821,7 +821,15 @@ async function viewFiscalYears(v) {
           ${can('fiscal_years', 'edit') && (!y.is_closed || isAdmin()) ? `<button class="btn sm" data-edit="${y.id}">تعديل</button>` : ''}
           ${can('fiscal_years', 'delete') && !y.is_closed ? `<button class="btn sm danger" data-del="${y.id}">حذف</button>` : ''}
         </td></tr>`).join('') || `<tr><td colspan="6" class="empty">ما في سنوات مالية لهالشركة</td></tr>`}</tbody></table></div>
-    <p class="muted" style="font-size:13px">إغلاق السنة بيمنع أي تعديل عليها. بس مدير النظام بيقدر يفتحها من جديد.</p>`;
+    <p class="muted" style="font-size:13px">إغلاق السنة بيمنع أي تعديل عليها. بس مدير النظام بيقدر يفتحها من جديد.<br>
+      «غير متاح» = السنة الجاية مفتوحة بدري (تجديد عقود، موازنات، أرصدة)، والمستخدمين بيضلّوا على السنة الحالية لحد ما يبدأ تاريخها.</p>
+    ${can('companies', 'edit') ? `<label class="check" style="font-size:13px"><input type="checkbox" id="fy-auto"> إتاحة السنة «غير المتاحة» تلقائياً لما يبدأ تاريخها</label>` : ''}`;
+  if (can('companies', 'edit')) {
+    const { data: cs } = await sb.from('company_settings').select('fy_auto_release').eq('company_id', S.company.id).maybeSingle();
+    const box = v.querySelector('#fy-auto'); box.checked = cs?.fy_auto_release !== false;
+    box.onchange = async () => { const { error } = await sb.from('company_settings').update({ fy_auto_release: box.checked }).eq('company_id', S.company.id);
+      if (error) { box.checked = !box.checked; return toast(arError(error), 'err'); } toast('تم الحفظ', 'ok'); };
+  }
   const open = (y) => {
     const yr = new Date().getFullYear();
     y = y || { code: String(yr), name: 'السنة المالية ' + yr, start_date: yr + '-01-01', end_date: yr + '-12-31' };
@@ -834,10 +842,17 @@ async function viewFiscalYears(v) {
           <div class="field"><label>إلى *</label><input type="date" name="end_date" required value="${esc(y.end_date)}"></div>
         </div>
         ${y.id ? `<label class="check"><input type="checkbox" name="is_closed" ${y.is_closed ? 'checked' : ''} ${y.is_closed && !isAdmin() ? 'disabled' : ''}> السنة مغلقة</label>` : ''}
+        ${canHiddenYears() ? `<label class="check"><input type="checkbox" name="unavailable" ${y.unavailable ? 'checked' : ''}> «غير متاح» (مفتوحة بدري، المستخدمين ما بينتقلوا لها)</label>` : ''}
       </form>`, foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>` });
     m.el.querySelector('[data-save]').onclick = async () => {
       const d = formData(m.el.querySelector('#fy-form'));
+      if (canHiddenYears()) d.unavailable = !!d.unavailable;
       if (!d.code || !d.start_date || !d.end_date) return toast('عبّي الحقول المطلوبة', 'err');
+      if (!y.id) {   // فراغ بين السنوات
+        const prev = S.fiscalYearsAll.filter(o => o.end_date < d.start_date).sort((a, b) => b.end_date.localeCompare(a.end_date))[0];
+        if (prev) { const nx = new Date(prev.end_date + 'T00:00:00Z'); nx.setUTCDate(nx.getUTCDate() + 1);
+          if (nx.toISOString().slice(0, 10) < d.start_date && !(await confirmBox(`في أيام بين نهاية «${prev.name || prev.code}» (${fmtDate(prev.end_date)}) وبداية هالسنة رح تضل بدون سنة مالية. بدك تكمّل؟`))) return; }
+      }
       if (d.end_date <= d.start_date) return toast('تاريخ النهاية لازم يكون بعد تاريخ البداية', 'err');
       const overlap = S.fiscalYears.find(o => o.id !== y.id && d.start_date <= o.end_date && d.end_date >= o.start_date);
       if (overlap && !(await confirmBox(`هالفترة متداخلة مع «${overlap.name || overlap.code}». بدك تكمّل؟`))) return;
