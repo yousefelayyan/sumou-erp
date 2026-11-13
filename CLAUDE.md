@@ -19,7 +19,7 @@
 
 ## البنية
 ```
-sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..79). كل ملف آمن يتشغّل أكثر من مرة
+sql/NN_*.sql        مراحل قاعدة البيانات بالترتيب (01..80). كل ملف آمن يتشغّل أكثر من مرة
 sql/ALL_IN_ONE.sql  تجميع كل المراحل — لا تعدّله بإيدك، ولّده بـ dev/build_all.py
 docs/               الواجهة (ES modules بدون build) + PWA
   config.js         رابط Supabase + المفتاح العام + APP_VERSION
@@ -116,7 +116,7 @@ dev/                أدوات الفحص (شوف تحت)
 2. **فحص قاعدة البيانات محلياً:**
    ```bash
    cd /tmp && bash /home/claude/sumou-erp/dev/testdb.sh     # قاعدة نظيفة على socket /tmp port 5433
-   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t65 t66 t67 t68 t69 t70 t71 t72 t73 t74 t75 t76 t77 t78 t79 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
+   for t in t2 t4 t5 t9 t11 t12 t13 t15 t16 t17 t18 t20 t21 t22 t23 t24 t25 t26 t27 t28 t29 t30 t31 t32 t33 t34 t35 t36 t37 t38 t39 t40 t41 t42 t43 t44 t45 t46 t47 t48 t49 t50 t51 t53 t54 t55 t56 t57 t58 t59 t60 t61 t62 t63 t64 t65 t66 t67 t68 t69 t70 t71 t72 t73 t74 t75 t76 t77 t78 t79 t80 t53; do psql -h /tmp -p 5433 -U postgres -q -f /home/claude/sumou-erp/dev/tests/$t.sql 2>&1 | grep ERROR; done
    ```
    - الأخطاء اللي بتطلع هون لازم تكون كلها **متوقعة**، يعني الفحوصات اللي قصدها تتأكد إنه البرنامج بيرفض.
    - المستخدم الأول بالقاعدة التجريبية بيصير مدير: `1111…`. والموظف: `2222…`.
@@ -140,7 +140,7 @@ dev/                أدوات الفحص (شوف تحت)
 8. **للشغل الكبير:** وكيل مراجعة مستقل بيفحص الأمان والحسابات قبل ما تعتمد. صلّح كل اللي بيلاقيه.
 9. ابعت ليوسف ملخص بالعربي، وذكّره يضغط مع بعض كنترول وشفت وحرف آر.
 
-## اللي انبنى (لحد النسخة 4.61.0)
+## اللي انبنى (لحد النسخة 4.62.0)
 - الشركات (رمزها تلقائي بخانتين 01، 02… وبينكتب يدوي كمان) والسنوات المالية، والعلامة المائية باسم الشركة والسنة.
 - المستخدمين: باسم مستخدم وكلمة سر، والمستخدم بيدخل بإيميل داخلي `username@sumou.local`، والصلاحيات لكل شاشة ولكل عملية.
 - المجموعات، وسجل النشاط.
@@ -254,6 +254,7 @@ dev/                أدوات الفحص (شوف تحت)
 - **مندوب لكل سطر وهيكل المندوبين (المرحلة 77):** `invoice_lines.sales_rep_id` (فاتورة بيع/مرتجع بيع بس؛ الفاضي = مندوب الفاتورة؛ `ab_line_rep_check`). `lookups.supervisor_id` (FK مؤجّل عشان الاسترجاع، مندوب من نفس الشركة، بدون دوائر، `ab_rep_hierarchy_check`) و`lookups.rep_role` rep|supervisor|manager. `rep_commissions` انعادت تعريفها بالمرحلة 77: صافي المبيعات على مستوى السطر (مندوب السطر ← الفاتورة ← الأصل)، والتحصيل بيضل حسب مندوب الفاتورة. الواجهة: «👤» تحت البيان بسطر فاتورة البيع (`repCell`، بيبيّن إذا في مندوبين)، الدور والمشرف بشاشة المندوب، وعرض «حسب المشرف (الفريق)» بالعمولات (المشرف المباشر بس). ناقص: «اسأل السمو» وتقرير مندوبي المبيعات القديم لسا على مندوب الفاتورة.
 - **ضوابط القروض وطلبات التأجيل والسلف من السندات (المرحلة 78):** `company_settings.loan_rules` {max_multiple, max_inst_pct, advance_max_pct, max_open, min_service_months, max_installments} (`loan_rules_get` payroll view أو الموظف المربوط، `loan_rules_save` payroll edit). `loan_rule_issues(loan)` → text[] (الراتب = الأساسي + العلاوات). constraint trigger `zb_loan_rules_after` (بعد الإدخال/تغيير الحالة): طلب الموظف لحاله المخالف بينرفض، واعتماد المخالف بينرفض إلا للمدير؛ الداخلي والسلفة من سند مستثنيين. `loan_installments.defer_request/defer_requested_at`: `loan_defer_request(inst, note)` (الموظف لأقساطه)، `loan_defer_reject` (payroll post)، والتأجيل/الدفع بيمسح الطلب (`ab_loan_inst_defer_clear`). `employee_loans.entry_id` + `loan_from_entry(entry, employee, n, first_month)` (payroll add+post؛ سند صرف/قيد مرحّل مش معكوس؛ المبلغ = مدين−دائن سطور الموظف على `advances_account_id`؛ بيعمل قرض/سلفة معتمدة بأقساطها؛ مرة وحدة لكل سند+موظف)، و`ab_loan_entry_guard` بيمنع عكس/إلغاء ترحيل سند مربوط بسلفة فعّالة. الواجهة: «⚙️ ضوابط القروض» بشاشة القروض، تنبيه المخالفات للمشرف، «⏸ اطلب تأجيل» للموظف و«رفض الطلب» للمشرف، وزر «👷 سلفة بالأقساط من الراتب» بسند الصرف/القيد المرحّل.
 - **استيراد أجهزة البصمة (المرحلة 79):** `employees.device_code` (رقم الموظف بالجهاز، فريد بالشركة؛ «رقم البصمة» ببطاقة الموظف، الفاضي = رمز الموظف). `attendance.source` صار فيه `device`. `attendance_import(company, rows [{code, ts محلي}], overwrite)` (payroll edit، ≤50000): الدخول = أول بصمة باليوم والانصراف = آخرها (بصمة وحدة = دخول بس)، بيندمج مع الموجود (الأبكر/الأخير)، سطر المشرف ما بيتغيّر إلا مع overwrite، بيتخطّى المستقبل والمش مفهوم، وبيرجّع الأرقام المش معروفة. الواجهة: تبويب «📥 استيراد البصمة» (attlog نص / CSV / إكسل؛ `cellDT`/`guessCols` بيخمّنوا الأعمدة والمستخدم بيغيّرها، معاينة لكل موظف، دفعات 20000). `xlsx()` صارت export من tools.js. `dev/shots.py` بيقبل رفع ملف: `"route@+#sel=/path"`. ناقص: المناوبة الليلية (البصمة بعد نص الليل بتنحسب على اليوم الجاي).
+- **قفل الفترة لكل قسم (المرحلة 80):** `fiscal_periods.locked_sections` text[] (sales, purchases, receipts, payments, journal, cheques, payroll, assets, stock_docs, orders؛ `fiscal_periods_sections_chk`). `fiscal_periods_before` انعادت تعريفها: شيل قسم = فتح (unpost أو المدير). `period_locked_(company, date, kind)`: kind = gl | stock | اسم القسم. `doc_section(table, row)` و`doc_section_date` و`section_lock_check` (داخلية) و`section_label`. trigger `ae_section_lock` على invoices/journal_entries/stock_docs/orders/payroll_runs (إضافة، حذف، وأي تعديل غير أعمدة النظام: is_frozen, updated_*, created_*, seq_key, doc_code, doc_type_id, posting_ready؛ القيود + reversal_of/reversed_by؛ الفواتير + original_invoice_id؛ الطلبات + invoice_id/status/delivered/closed)، والعكس/الإلغاء posted→reversed/cancelled مسموح (القيد الجديد بيتفحص على تاريخه)، و`ae_section_lock_line` على سطورها (بيفحص الرأس). أنواع القيود: journal/opening = journal، cheque = cheques، payroll، depreciation = assets؛ قيود الفواتير والمخزون والإقفال تحت قفل المالية. الواجهة: نافذة «📆 الفترات» بالسنوات المالية فيها عمود لكل قسم مع 🔒/🔓 للكل (`PERIOD_SECTIONS` بـ app.js).
 - **النسخة اليومية على جهاز المستخدم (4.52.1):** بشاشة النسخ الاحتياطي «🖥️ نسخة يومية تلقائية على جهازك»: `showDirectoryPicker` (كروم/إيدج)، مقبض المجلد بـ IndexedDB `sumou-local-backup` لكل مستخدم، `autoLocalBackup()` (مدير، مرة باليوم) بتكتب `نسخة السمو ERP YYYY-MM-DD.json` لكل الشركات وبتخلي آخر 60؛ إذا الإذن راح بعد إعادة تشغيل المتصفح بيطلع شريط «اسمح واحفظ» تحت.
 - **النوافذ فوق بعض:** `modal({ stack: true })` بتفتح نافذة فرعية فوق المفتوحة بدل ما تسكّرها (سجل الأسعار، فواتير الموردين). عنوان `modal` بيتعمله esc لحاله، فما تحط esc() بالعنوان.
 - قيود `lookups_kind_chk*`: أي مرحلة جديدة بتوسّع الأنواع لازم تضيف اسم قيدها لشرط `if not exists` بالمراحل 24 و25 و36 (آخر قيد هلأ `lookups_kind_chk4` بالمرحلة 54)، وإلا تشغيل ALL_IN_ONE مرة ثانية بيفشل.

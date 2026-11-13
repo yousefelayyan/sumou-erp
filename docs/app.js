@@ -939,36 +939,51 @@ async function viewCompanies(v) {
 // ---------------------------------------------------------------------
 //  السنوات المالية
 // ---------------------------------------------------------------------
-// فترات السنة: قفل للمالية/للمخزون
+// فترات السنة: قفل للمالية/للمخزون، وقفل لكل قسم (locked_sections)
+const PERIOD_SECTIONS = [['sales', 'المبيعات'], ['purchases', 'المشتريات'], ['receipts', 'القبض'], ['payments', 'الصرف'], ['journal', 'القيود'],
+  ['cheques', 'الشيكات'], ['payroll', 'الرواتب'], ['assets', 'الأصول'], ['stock_docs', 'سندات المخزون'], ['orders', 'الطلبات']];
 async function periodsDialog(y) {
   const load = async () => (await sb.from('fiscal_periods').select('*').eq('fiscal_year_id', y.id).order('start_date')).data || [];
   let rows = await load();
   const canLock = can('fiscal_years', 'edit'), canOpen = isAdmin() || can('fiscal_years', 'unpost');
   const m = modal({ title: `📆 فترات ${y.name || y.code}`, body: '<div id="pd"></div>', foot: '<button class="btn" data-close>إغلاق</button>' });
-  m.el.querySelector('.modal').style.maxWidth = '760px';
+  m.el.querySelector('.modal').style.maxWidth = '1180px';
   const box = m.el.querySelector('#pd');
+  const isOn = (p, k) => k.startsWith('s:') ? (p.locked_sections || []).includes(k.slice(2)) : !!p[k];
+  const patch = (p, k, on) => {
+    if (!k.startsWith('s:')) return { [k]: on };
+    const set = new Set(p.locked_sections || []); on ? set.add(k.slice(2)) : set.delete(k.slice(2));
+    return { locked_sections: [...set] };
+  };
+  const cols = [['gl_locked', 'المالية (الترحيل)'], ['stock_locked', 'حركات المخزون'], ...PERIOD_SECTIONS.map(([k, l]) => ['s:' + k, l])];
+  const cb = 'style="width:17px;height:17px;accent-color:var(--brand)"';
   const draw = () => {
     box.innerHTML = rows.length ? `
-      ${canLock ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
-        <button class="btn sm" data-all="gl_locked:1">🔒 قفل الكل للمالية</button><button class="btn sm" data-all="stock_locked:1">🔒 قفل الكل للمخزون</button>
-        ${canOpen ? '<button class="btn sm" data-all="gl_locked:0">🔓 فتح الكل للمالية</button><button class="btn sm" data-all="stock_locked:0">🔓 فتح الكل للمخزون</button>' : ''}</div>` : ''}
-      <div class="table-wrap"><table class="t"><thead><tr><th>#</th><th>رمز الفترة</th><th>من</th><th>إلى</th><th>مقفولة للمالية</th><th>مقفولة للمخزون</th><th>آخر تغيير</th></tr></thead>
-      <tbody>${rows.map((p, i) => `<tr><td class="muted">${i + 1}</td><td dir="ltr" style="text-align:right"><b>${esc(p.code)}</b></td><td>${fmtDate(p.start_date)}</td><td>${fmtDate(p.end_date)}</td>
-        ${['gl_locked', 'stock_locked'].map(k => `<td style="text-align:center"><input type="checkbox" data-id="${p.id}" data-k="${k}" ${p[k] ? 'checked' : ''}
-          ${(!canLock || (p[k] && !canOpen)) ? 'disabled' : ''} style="width:18px;height:18px;accent-color:var(--brand)"></td>`).join('')}
-        <td class="muted" style="font-size:12px">${p.locked_at ? fmtDateTime(p.locked_at) : ''}</td></tr>`).join('')}</tbody></table></div>
-      <p class="muted" style="font-size:12px;margin:8px 0 0">الفترة المقفولة للمالية: ما بينرحّل عليها قيد ولا بينلغى ترحيله. المقفولة للمخزون: ما بتنضاف ولا بتنشال حركة مخزون. الحفظ والمسودات عادي.
+      <div class="table-wrap"><table class="t" style="font-size:13px"><thead><tr><th>#</th><th>الفترة</th><th>من — إلى</th>
+        ${cols.map(([k, l], i) => { const all = rows.every(p => isOn(p, k)); return `<th style="text-align:center;white-space:normal;min-width:62px;${i === 2 ? 'border-inline-start:2px solid var(--line)' : ''}">${l}
+          ${canLock && (!all || canOpen) ? `<br><button class="btn sm" data-all="${k}" data-on="${all ? 0 : 1}" title="${all ? 'فتح كل الفترات' : 'قفل كل الفترات'}" style="padding:1px 6px;margin-top:3px">${all ? '🔓' : '🔒'}</button>` : ''}</th>`; }).join('')}
+        <th style="white-space:normal">آخر تغيير</th></tr></thead>
+      <tbody>${rows.map((p, i) => `<tr><td class="muted">${i + 1}</td><td dir="ltr" style="text-align:right"><b>${esc(p.code)}</b></td><td dir="ltr" style="font-size:12px;white-space:nowrap;text-align:right">${fmtDate(p.start_date).slice(0, 5)} — ${fmtDate(p.end_date).slice(0, 5)}</td>
+        ${cols.map(([k], j) => { const on = isOn(p, k); return `<td style="text-align:center;${j === 2 ? 'border-inline-start:2px solid var(--line);' : ''}${on ? 'background:var(--tint)' : ''}"><input type="checkbox" data-id="${p.id}" data-k="${k}" ${on ? 'checked' : ''}
+          ${(!canLock || (on && !canOpen)) ? 'disabled' : ''} ${cb}></td>`; }).join('')}
+        <td class="muted" style="font-size:11px">${p.locked_at ? fmtDateTime(p.locked_at) : ''}</td></tr>`).join('')}</tbody></table></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0;white-space:normal">«المالية»: ما بينرحّل قيد بالفترة ولا بينلغى ترحيله. «حركات المخزون»: ما بتنضاف ولا بتنشال حركة مخزون.
+        الأقسام: ما بينضاف ولا بينعدّل ولا بينحذف ولا بينرحّل مستند من القسم تاريخه بالفترة (حتى المسودات). القيد العكسي أو الإلغاء بتاريخ فترة مفتوحة مسموح.
         القفل بصلاحية «تعديل» على السنوات المالية، والفتح من جديد بصلاحية «إلغاء ترحيل» أو للمدير.</p>`
       : `<div class="empty">ما في فترات لهالسنة. <button class="btn sm primary" data-gen>توليد 12 فترة شهرية</button></div>`;
     box.querySelectorAll('[data-k]').forEach(c => c.onchange = async () => {
-      const { error } = await sb.from('fiscal_periods').update({ [c.dataset.k]: c.checked }).eq('id', c.dataset.id);
+      const p = rows.find(r => r.id === c.dataset.id);
+      const { error } = await sb.from('fiscal_periods').update(patch(p, c.dataset.k, c.checked)).eq('id', p.id);
       if (error) { c.checked = !c.checked; return toast(arError(error), 'err'); }
       rows = await load(); draw(); toast(c.checked ? 'انقفلت الفترة' : 'انفتحت الفترة', 'ok');
     });
     box.querySelectorAll('[data-all]').forEach(b => b.onclick = async () => {
-      const [k, on] = b.dataset.all.split(':');
-      const { error } = await sb.from('fiscal_periods').update({ [k]: on === '1' }).eq('fiscal_year_id', y.id);
-      if (error) return toast(arError(error), 'err');
+      const k = b.dataset.all, on = b.dataset.on === '1';
+      for (const p of rows) {
+        if (isOn(p, k) === on) continue;
+        const { error } = await sb.from('fiscal_periods').update(patch(p, k, on)).eq('id', p.id);
+        if (error) { toast(arError(error), 'err'); break; }
+      }
       rows = await load(); draw(); toast('تم', 'ok');
     });
     box.querySelector('[data-gen]')?.addEventListener('click', async () => {
