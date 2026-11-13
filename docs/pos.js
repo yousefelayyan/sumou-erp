@@ -129,6 +129,7 @@ async function viewPos(v, ctx) {
     const last = (() => { try { return JSON.parse(localStorageGet(lastKey) || 'null'); } catch { return null; } })();
     $('#pos-info').innerHTML = `<span>👨‍💼 ${esc(S.profile?.full_name || S.profile?.username || '')} / ${esc(S.company.name)}</span>
       ${reps.length ? `<button class="btn sm" id="pos-rep">🧑‍💼 المندوب: <b>${esc(rep?.name || 'بدون')}</b></button>` : ''}
+      <button class="btn sm" id="pos-close">🧾 إغلاق اليوم</button>
       ${last ? `<span>🧾 آخر فاتورة: <b>${esc(last.sale.doc_code || last.sale.no)}</b> — ${fmtNum(last.sale.total)}</span><button class="btn sm" id="pos-reprint">🖨️ إعادة طباعة آخر وصل</button>` : ''}`;
     $('#pos-sum').innerHTML = `${t.disc ? `<div><span>الخصم</span><b>${fmtNum(t.disc)}</b></div>` : ''}<div><span>قبل الضريبة</span><b>${fmtNum(t.sub)}</b></div><div><span>الضريبة</span><b>${fmtNum(t.tax)}</b></div>
       <div class="big"><span>المجموع</span><b>${fmtNum(t.total)}</b></div>`;
@@ -192,6 +193,7 @@ async function viewPos(v, ctx) {
   $('#pos-cust').onclick = (e) => { if (e.target.closest('.x')) { cust = null; return drawCart(); } custDialog(); };
   $('#pos-info').onclick = (e) => {
     if (e.target.closest('#pos-rep')) return repDialog();
+    if (e.target.closest('#pos-close')) return closeDayDialog(ctx, cart.length);
     if (!e.target.closest('#pos-reprint')) return;
     try { const last = JSON.parse(localStorageGet(lastKey)); printReceipt({ ...last, cfg }); } catch { toast('ما في وصل محفوظ', 'err'); } };
   function custDialog() {
@@ -355,4 +357,86 @@ async function posSettings(ctx) {
   };
 }
 
-export const POS_ROUTES = { pos: viewPos };
+// ===== ملخص نهاية اليوم وإغلاق الصندوق (المرحلة 83) =====
+const hmA = (t) => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Amman' });
+function daySummaryHTML(r) {
+  const row = (l, v, cls = '') => `<tr><th>${l}</th><td class="n ${cls}">${v}</td></tr>`;
+  return `<table class="t" style="font-size:14px">
+    ${row('عدد الفواتير', r.invoices)}${r.cancelled ? row('فواتير ملغاة', r.cancelled) : ''}
+    ${row('المبيعات قبل الخصم', fmtNum(r.gross))}${row('الخصم', fmtNum(r.discount))}${row('الضريبة', fmtNum(r.tax))}
+    ${row('<b>صافي المبيعات</b>', `<b>${fmtNum(r.total)}</b>`)}
+    ${(r.methods || []).map(m => row(`&nbsp;&nbsp;• ${esc(m.method)} (${m.count})`, fmtNum(m.total))).join('')}
+    ${r.returns ? row(`مرتجعات (${r.returns})`, fmtNum(r.returns_total), 'bad') : ''}
+    ${row('<b>النقد المتوقع بالدرج</b>', `<b>${fmtNum(r.expected_cash)}</b>`)}
+    ${r.first_at ? row('أول / آخر فاتورة', `<span dir="ltr">${hmA(r.first_at)} — ${hmA(r.last_at)}</span>`) : ''}</table>`;
+}
+async function closeDayDialog(ctx, cartN) {
+  const day = localDate();
+  const { data, error } = await sb.rpc('pos_day_summary', { p_company: S.company.id, p_day: day, p_user: S.session?.user?.id || null });
+  if (error) return toast(arError(error), 'err');
+  const r = (data || []).find(x => x.user_id === S.session?.user?.id) || { invoices: 0, gross: 0, discount: 0, tax: 0, total: 0, expected_cash: 0, methods: [] };
+  const c = r.closing;
+  const m = modal({ title: `🧾 ملخص اليوم ${day} — ${S.profile?.full_name || S.profile?.username || ''}`, body: `${daySummaryHTML(r)}
+    ${c ? `<div class="notice info" style="margin-top:10px">الصندوق مسكّر: المعدود <b>${fmtNum(c.counted_cash)}</b>، الفرق <b style="color:${num(c.difference) ? 'var(--bad)' : 'var(--ok)'}">${fmtNum(c.difference)}</b></div>`
+        : `<div class="grid cols-2" style="margin-top:12px"><div class="field"><label>النقد المعدود بالدرج *</label><input id="cc" inputmode="decimal" dir="ltr" style="font-size:20px"></div>
+           <div class="field"><label>ملاحظات</label><input id="cn"></div></div><div id="cd" style="font-weight:700"></div>
+           ${cartN ? '<div class="notice" style="margin-top:8px">في سلة مش مكمّلة. كمّلها أو فضّيها قبل الإغلاق.</div>' : ''}`}`,
+    foot: `${!c ? `<button class="btn primary" data-ok ${cartN ? 'disabled' : ''}>🔒 إغلاق الصندوق</button>` : ''}<button class="btn" data-print>🖨️ طباعة</button><button class="btn" data-close>إغلاق</button>` });
+  const cc = m.el.querySelector('#cc');
+  if (cc) cc.oninput = () => { const d = Math.round((num(cc.value) - num(r.expected_cash)) * 1000) / 1000;
+    m.el.querySelector('#cd').innerHTML = cc.value === '' ? '' : d === 0 ? '<span style="color:var(--ok)">✓ مطابق</span>' : `<span style="color:var(--bad)">${d > 0 ? 'زيادة' : 'نقص'} ${fmtNum(Math.abs(d))}</span>`; };
+  m.el.querySelector('[data-ok]')?.addEventListener('click', async () => {
+    if (cc.value === '') return toast('اكتب النقد المعدود', 'err');
+    const { error: e2 } = await sb.rpc('pos_close_day', { p_company: S.company.id, p_day: day, p_counted: num(cc.value), p_notes: m.el.querySelector('#cn').value });
+    if (e2) return toast(arError(e2), 'err');
+    toast('انسكّر الصندوق', 'ok'); m.close(); closeDayDialog(ctx, 0);
+  });
+  m.el.querySelector('[data-print]').onclick = () => printReceiptHTML(`<h3 style="text-align:center;margin:0">ملخص اليوم ${day}</h3><p style="text-align:center;margin:2px 0">${esc(S.profile?.full_name || '')}</p>${daySummaryHTML(r)}
+    ${c ? `<p>المعدود: ${fmtNum(c.counted_cash)} — الفرق: ${fmtNum(c.difference)}</p>` : ''}`);
+}
+function printReceiptHTML(html) {
+  const w = window.open('', '_blank', 'width=420,height=640'); if (!w) return toast('المتصفح منع النافذة', 'err');
+  w.document.write(`<!doctype html><html dir="rtl"><head><meta charset="utf-8"><style>body{font-family:Tahoma,Arial;width:72mm;margin:0 auto;font-size:12px}table{width:100%;border-collapse:collapse}th{text-align:right;font-weight:normal}td{text-align:left}tr{border-bottom:1px dashed #999}</style></head><body>${html}<script>onload=()=>{print()}<\/script></body></html>`);
+  w.document.close();
+}
+
+// شاشة المشرف: كل الكاشيرية بيوم
+async function viewPosDay(v, ctx) {
+  if (!S.company) return void (v.innerHTML = '<div class="notice info">اختار شركة من فوق أول.</div>');
+  if (!(can('pos', 'edit') || can('sales_invoices', 'view') || can('pos', 'add'))) return void (v.innerHTML = '<div class="notice">ما عندك صلاحية</div>');
+  const day = new URLSearchParams(location.hash.split('?')[1] || '').get('d') || localDate();
+  const { data, error } = await sb.rpc('pos_day_summary', { p_company: S.company.id, p_day: day, p_user: null });
+  if (error) return void (v.innerHTML = `<div class="notice">${esc(arError(error))}</div>`);
+  const rows = data || [], sup = can('pos', 'edit');
+  const T = (k) => rows.reduce((s, r) => s + num(r[k]), 0);
+  v.innerHTML = `<div class="page-head"><h2>🧾 ملخص الكاشير اليومي</h2></div>
+    <div class="card" style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px">
+      <div class="field"><label>اليوم</label><input type="date" id="d" value="${day}" max="${localDate()}"></div><div class="spacer"></div>
+      <button class="btn" id="pr">🖨️ طباعة</button></div>
+    <div class="card table-wrap"><table class="t rep" id="pd"><thead><tr><th>الكاشير</th><th>الفواتير</th><th>المبيعات</th><th>الخصم</th><th>الضريبة</th><th>الصافي</th><th>حسب الوسيلة</th><th>آجل</th><th>مرتجعات</th><th>النقد المتوقع</th><th>المعدود</th><th>الفرق</th><th>الصندوق</th></tr></thead><tbody>
+    ${rows.map(r => { const c = r.closing; return `<tr><td>${esc(r.name || '')}</td><td class="n">${r.invoices}${r.cancelled ? ` <span class="muted">(+${r.cancelled} ملغى)</span>` : ''}</td><td class="n">${fmtNum(r.gross)}</td><td class="n">${fmtNum(r.discount)}</td><td class="n">${fmtNum(r.tax)}</td><td class="n"><b>${fmtNum(r.total)}</b></td>
+      <td style="font-size:12px">${(r.methods || []).map(m => `${esc(m.method)}: ${fmtNum(m.total)}`).join('<br>')}</td><td class="n">${fmtNum(r.credit)}</td><td class="n">${r.returns ? fmtNum(r.returns_total) : ''}</td>
+      <td class="n">${fmtNum(r.expected_cash)}</td><td class="n">${c ? fmtNum(c.counted_cash) : ''}</td><td class="n" style="color:${c && num(c.difference) ? 'var(--bad)' : 'inherit'}">${c ? fmtNum(c.difference) : ''}</td>
+      <td>${c ? `<span class="badge ok">مسكّر</span>${sup ? ` <button class="btn sm" data-reopen="${c.id}">فتح</button>` : ''}` : `<span class="badge warn">مفتوح</span>${sup ? ` <button class="btn sm" data-close-u="${r.user_id}">إغلاق</button>` : ''}`}</td></tr>`; }).join('')
+      || '<tr><td colspan="13" class="empty">ما في مبيعات نقطة بيع بهاليوم</td></tr>'}</tbody>
+    ${rows.length ? `<tfoot><tr><td>المجموع</td><td class="n">${T('invoices')}</td><td class="n">${fmtNum(T('gross'))}</td><td class="n">${fmtNum(T('discount'))}</td><td class="n">${fmtNum(T('tax'))}</td><td class="n">${fmtNum(T('total'))}</td><td></td><td class="n">${fmtNum(T('credit'))}</td><td class="n">${fmtNum(T('returns_total'))}</td><td class="n">${fmtNum(T('expected_cash'))}</td>
+      <td class="n">${fmtNum(rows.reduce((s, r) => s + num(r.closing?.counted_cash), 0))}</td><td class="n">${fmtNum(rows.reduce((s, r) => s + num(r.closing?.difference), 0))}</td><td></td></tr></tfoot>` : ''}</table></div>`;
+  v.querySelector('#d').onchange = (e) => { location.hash = `#/pos-day?d=${e.target.value}`; };
+  v.querySelector('#pr').onclick = () => import('./print.js').then(({ printDoc }) => printDoc(`ملخص الكاشير ليوم ${day}`, v.querySelector('#pd').outerHTML.replace('class="t rep"', 'class="pt"')));
+  v.querySelector('#pd').onclick = async (e) => {
+    const ro = e.target.closest('[data-reopen]'), cl = e.target.closest('[data-close-u]');
+    if (ro) { const { error: e2 } = await sb.rpc('pos_reopen_day', { p_id: ro.dataset.reopen }); if (e2) return toast(arError(e2), 'err'); toast('انفتح الصندوق', 'ok'); return ctx.rerender(); }
+    if (cl) {
+      const r = rows.find(x => x.user_id === cl.dataset.closeU);
+      const m = modal({ title: `إغلاق صندوق ${r.name || ''}`, body: `<p>النقد المتوقع: <b>${fmtNum(r.expected_cash)}</b></p><div class="grid cols-2"><div class="field"><label>المعدود *</label><input id="cc" inputmode="decimal" dir="ltr"></div><div class="field"><label>ملاحظات</label><input id="cn"></div></div>`,
+        foot: '<button class="btn primary" data-ok>🔒 إغلاق</button><button class="btn" data-close>إلغاء</button>' });
+      m.el.querySelector('[data-ok]').onclick = async () => {
+        const val = m.el.querySelector('#cc').value; if (val === '') return toast('اكتب المعدود', 'err');
+        const { error: e2 } = await sb.rpc('pos_close_day', { p_company: S.company.id, p_day: day, p_counted: num(val), p_notes: m.el.querySelector('#cn').value, p_user: r.user_id });
+        if (e2) return toast(arError(e2), 'err'); toast('انسكّر', 'ok'); m.close(); ctx.rerender();
+      };
+    }
+  };
+}
+
+export const POS_ROUTES = { pos: viewPos, 'pos-day': viewPosDay };

@@ -291,6 +291,7 @@ const NAV = () => [
     { r: 'party-center?type=customer', i: '📒', l: 'أستاذ مساعد العملاء', show: () => S.company && can('reports', 'view') },
     { r: 'orders?t=sales_order', i: '📝', l: 'طلبات المبيعات / عروض الأسعار', show: () => S.company && can('sales_orders', 'view') },
     { r: 'pos', i: '🛒', l: 'نقطة البيع (الكاشير)', show: () => S.company && can('pos', 'view') },
+    { r: 'pos-day', i: '🧾', l: 'ملخص الكاشير اليومي', show: () => S.company && (can('pos', 'edit') || can('sales_invoices', 'view')) },
     { r: 'sales?t=sale', i: '🧾', l: 'فواتير المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'sales?t=sale_return', i: '↩️', l: 'مردودات المبيعات', show: () => S.company && can('sales_invoices', 'view') },
     { r: 'contracts', i: '🔁', l: 'العقود والرسوم المتكررة', show: () => S.company && can('contracts', 'view') },
