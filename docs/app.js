@@ -160,6 +160,52 @@ function renderNewPassword() {
   };
 }
 
+// تغيير كلمة السر (المستخدم لحاله) — change_my_password بيفحص القديمة والسياسة
+const policyHint = (pol) => !pol ? '' : [`${pol.min_len || 4} أحرف على الأقل`, pol.require_digit && 'فيها رقم', pol.require_letter && 'فيها حرف إنجليزي',
+  pol.require_mixed && 'حرف كبير وصغير', pol.require_symbol && 'فيها رمز'].filter(Boolean).join('، ');
+function pwFormHTML(pol) {
+  return `<div class="field"><label>كلمة السر الحالية</label><input name="old" type="password" dir="ltr" required autocomplete="current-password"></div>
+    <div class="field"><label>كلمة السر الجديدة</label><input name="new1" type="password" dir="ltr" required autocomplete="new-password"><span class="hint">${esc(policyHint(pol))}</span></div>
+    <div class="field"><label>أعد كتابتها</label><input name="new2" type="password" dir="ltr" required autocomplete="new-password"></div>`;
+}
+async function submitPw(f) {
+  if (f.new1.value !== f.new2.value) { toast('كلمتين السر الجديدات مش متطابقات', 'err'); return false; }
+  const { error } = await sb.rpc('change_my_password', { p_old: f.old.value, p_new: f.new1.value });
+  if (error) { toast(arError(error), 'err'); return false; }
+  toast('تغيّرت كلمة السر', 'ok'); return true;
+}
+function renderForcedPassword(st) {
+  $app.innerHTML = `
+    <div class="auth-wrap"><div class="auth-card">
+      <div class="auth-logo"><img src="icons/icon.svg" alt=""><h1>${APP_NAME}</h1></div>
+      <p class="auth-sub">${st.expired ? 'انتهت صلاحية كلمة السر. اختار كلمة سر جديدة.' : 'لازم تغيّر كلمة السر قبل ما تكمّل.'}</p>
+      <form id="pw-form">${pwFormHTML(st.policy)}<button class="btn primary block">حفظ</button></form>
+      <div class="auth-links"><a onclick="window.__logout()">تسجيل خروج</a></div></div></div>`;
+  document.getElementById('pw-form').onsubmit = async (e) => { e.preventDefault(); if (await submitPw(e.target)) boot(); };
+}
+export async function changePasswordDialog() {
+  const { data } = await sb.rpc('my_password_status');
+  const m = modal({ title: '🔑 تغيير كلمة السر', body: `<form id="cpf">${pwFormHTML(data?.policy)}</form>`, foot: '<button class="btn primary" data-ok>حفظ</button><button class="btn" data-close>إلغاء</button>' });
+  m.el.querySelector('[data-ok]').onclick = async () => { if (await submitPw(m.el.querySelector('#cpf'))) m.close(); };
+}
+async function passwordPolicyDialog() {
+  const { data: pol = {} } = await sb.rpc('password_policy');
+  const m = modal({ title: '🔐 سياسة كلمات السر', body: `<form id="ppf" class="grid cols-2">
+    <div class="field"><label>أقل عدد أحرف</label><input type="number" name="min_len" min="4" max="32" value="${pol.min_len || 4}"></div>
+    <div class="field"><label>تنتهي كل (يوم)</label><input type="number" name="expiry_days" min="0" max="730" value="${pol.expiry_days || 0}"><span class="hint">0 = ما بتنتهي</span></div>
+    ${[['require_digit', 'لازم فيها رقم'], ['require_letter', 'لازم فيها حرف إنجليزي'], ['require_mixed', 'لازم حرف كبير وحرف صغير'], ['require_symbol', 'لازم فيها رمز (@ # ! …)'],
+       ['force_change', 'المستخدم بيغيّر كلمة السر اللي بيحطها المدير أول ما يدخل']].map(([k, l]) => `<label class="check" style="grid-column:span 2"><input type="checkbox" name="${k}" ${pol[k] ? 'checked' : ''}> ${l}</label>`).join('')}</form>
+    <p class="muted" style="font-size:12px">السياسة بتنطبق على كلمات السر الجديدة (إضافة مستخدم، تعديل كلمة سره، وتغيير المستخدم لكلمة سره). الانتهاء بيطلب من المستخدم يغيّرها بالدخول.</p>`,
+    foot: '<button class="btn primary" data-ok>💾 حفظ</button><button class="btn" data-close>إلغاء</button>' });
+  m.el.querySelector('[data-ok]').onclick = async () => {
+    const f = m.el.querySelector('#ppf'), d = formData(f);
+    const p = { min_len: +d.min_len || 4, expiry_days: +d.expiry_days || 0 };
+    ['require_digit', 'require_letter', 'require_mixed', 'require_symbol', 'force_change'].forEach(k => p[k] = f[k].checked);
+    const { error } = await sb.rpc('set_password_policy', { p }); if (error) return toast(arError(error), 'err');
+    toast('انحفظت السياسة', 'ok'); m.close();
+  };
+}
+
 function renderSuspended() {
   $app.innerHTML = `
     <div class="auth-wrap"><div class="auth-card">
@@ -726,6 +772,7 @@ async function viewHome(v) {
       S.profile.theme = b.dataset.th; toast('تغيّر اللون', 'ok');
     };
   }
+  { const pb = document.createElement('div'); pb.style.marginTop = '10px'; pb.innerHTML = '<button class="btn" id="my-pw">🔑 تغيير كلمة السر</button>'; v.appendChild(pb); pb.querySelector('#my-pw').onclick = () => changePasswordDialog(); }
   dashboardPanel(v.querySelector('#dash')).catch(() => {});
   if (S.companies.some(c => can('obligations', 'view', c.id))) {
     obligationsSummary().then(({ late, soon }) => { const el = v.querySelector('#ob-sum'); if (!el || (!late && !soon)) return;
@@ -1137,7 +1184,7 @@ async function viewUsers(v) {
   v.innerHTML = `
     <div class="page-head"><h2>👥 المستخدمين</h2><span class="badge brand">${users.length}</span>
       ${pending ? `<span class="badge warn">${pending} بانتظار الموافقة</span>` : ''}<div class="spacer"></div>
-      <button class="btn primary" id="u-add">➕ مستخدم جديد</button></div>
+      <button class="btn" id="u-pol">🔐 سياسة كلمات السر</button><button class="btn primary" id="u-add">➕ مستخدم جديد</button></div>
     <div class="card table-wrap"><table class="t">
       <thead><tr><th>الاسم</th><th>اسم الدخول</th><th>النوع</th><th>الشاشات</th><th>الشركات</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${users.map(u => {
@@ -1151,6 +1198,7 @@ async function viewUsers(v) {
           <td class="actions"><button class="btn sm" data-edit="${u.id}" title="تعديل">✏️ تعديل</button></td></tr>`;
       }).join('')}</tbody></table></div>`;
   v.querySelector('#u-add').onclick = () => userEditor(null, links, comps, depts);
+  v.querySelector('#u-pol').onclick = () => passwordPolicyDialog();
   v.querySelector('tbody').onclick = (e) => {
     const b = e.target.closest('[data-edit]'); if (!b) return;
     userEditor(users.find(x => x.id === b.dataset.edit), links, comps, depts);
@@ -1198,7 +1246,7 @@ function userEditor(u, links, comps, depts = []) {
           <label class="check" style="margin:0" title="ما بيشوف ولا بيدخل حركات فروع ثانية، وتقاريره لفرعه بس"><input type="checkbox" data-bo ${l.branch_only ? 'checked' : ''}> 🔒 بيشوف دائرته بس</label></div>` : ''); }).join('') || '<p class="muted" style="padding:10px">ما في شركات</p>'}</div>
     </div>`,
     foot: `<button class="btn primary" data-save>💾 حفظ</button><button class="btn" data-close>إلغاء</button>
-      ${!isNew && !self ? `<button class="btn danger" data-del style="margin-inline-start:auto">حذف المستخدم</button>` : ''}` });
+      ${!isNew && !self ? `<button class="btn" data-force>🔑 ${u.must_change_password ? 'إلغاء إجبار تغيير كلمة السر' : 'إجبار تغيير كلمة السر بالدخول الجاي'}</button><button class="btn danger" data-del style="margin-inline-start:auto">حذف المستخدم</button>` : ''}` });
   m.el.querySelector('.modal').style.maxWidth = '920px';
   const pe = permEditor(m.el.querySelector('#u-perms'), perms);
   const f = m.el.querySelector('#u-form');
@@ -1211,7 +1259,7 @@ function userEditor(u, links, comps, depts = []) {
     const username = (d.username || '').trim().toLowerCase();
     if (isNew && !username) return toast('اكتب اسم المستخدم', 'err');
     if (username && !/^[a-z0-9._-]{2,30}$/.test(username)) return toast('اسم المستخدم لازم يكون أحرف إنجليزي أو أرقام بدون فراغات', 'err');
-    if (isNew && (d.password || '').length < 4) return toast('كلمة السر لازم تكون 4 أحرف على الأقل', 'err');
+    if (isNew && (d.password || '').length < 4) return toast('كلمة السر لازم تكون 4 أحرف على الأقل', 'err');   // السياسة الكاملة بتتفحص بقاعدة البيانات
     const permissions = pe.user();
     const companies = [...m.el.querySelectorAll('[data-c]')].filter(x => x.checked).map(x => x.dataset.c);
     e.target.disabled = true;
@@ -1236,6 +1284,10 @@ function userEditor(u, links, comps, depts = []) {
     if (self) await loadProfile();
     m.close(); route_();
   };
+  m.el.querySelector('[data-force]')?.addEventListener('click', async () => {
+    const { error } = await sb.rpc('admin_force_password_change', { p_user: u.id, p_on: !u.must_change_password });
+    if (error) return toast(arError(error), 'err'); toast('تم', 'ok'); m.close(); route_();
+  });
   m.el.querySelector('[data-del]')?.addEventListener('click', async () => {
     if (!(await confirmBox(`حذف المستخدم «${u.username || u.email}» نهائياً؟ (الأفضل توقف الحساب بدل الحذف)`))) return;
     const { error } = await sb.rpc('admin_delete_user', { p_id: u.id });
@@ -1415,6 +1467,9 @@ async function boot() {
       const r = await sb.rpc('trial_setup');
       if (r.error) toast(arError(r.error), 'err'); else S.trial.has_company = true;
     }
+    const ps = await sb.rpc('my_password_status');   // سياسة كلمات السر (المرحلة 84)
+    if (!ps.error && ps.data && (ps.data.must_change || ps.data.expired)) return renderForcedPassword(ps.data);
+    if (!ps.error && ps.data?.days_left != null && ps.data.days_left <= 7) setTimeout(() => toast(`كلمة السر بتنتهي بعد ${Math.max(ps.data.days_left, 0)} يوم — غيّرها من لوحة التحكم`, 'err'), 2500);
     await loadContext();
     applyTheme(canTheme() ? (S.profile?.theme || 'purple') : 'purple');
     renderShell(); route_();
