@@ -234,4 +234,135 @@ async function viewChequesDash(v, ctx) {
   draw();
 }
 
-export const CHEQUE_ROUTES = { 'cheques': viewCheques, 'cheques-dash': viewChequesDash };
+// ===== شيكات الضمان (أمانات بدون قيد) =====
+const GST = { held: ['محفوظ', 'warn'], returned: ['انرجع', 'ok'], converted: ['تسيّل', 'info'], cancelled: ['ملغى', 'bad'] };
+async function viewGuarantees(v, ctx) {
+  if (!S.company) return void (v.innerHTML = `<div class="notice info">اختار شركة من فوق أول.</div>`);
+  const q = new URLSearchParams(location.hash.split('?')[1] || ''), dir = q.get('dir') === 'out' ? 'out' : 'in', st = q.get('st') ?? 'held';
+  const [{ data, error }, parties, emps, accs] = await Promise.all([
+    sb.from('guarantee_cheques').select('*').eq('company_id', S.company.id).eq('direction', dir).order('doc_no', { ascending: false }).limit(5000),
+    loadParties(), sb.from('employees').select('id,code,name').eq('company_id', S.company.id).order('code').then(r => r.data || []), loadAccounts(), loadLookups()]);
+  if (error) throw error;
+  const pBy = Object.fromEntries(parties.map(p => [p.id, p])), eBy = Object.fromEntries(emps.map(e => [e.id, e]));
+  const who = (g) => g.party_id ? pBy[g.party_id]?.name : g.employee_id ? '👷 ' + (eBy[g.employee_id]?.name || '') : g.drawer_name || '';
+  const held = data.filter(g => g.status === 'held'), sumHeld = held.reduce((s, g) => s + num(g.amount), 0);
+  const soon = held.filter(g => g.expiry_date && daysTo(g.expiry_date) <= 30);
+  const rows = data.filter(g => !st || g.status === st);
+  v.innerHTML = `<div class="page-head"><h2>🛡️ شيكات الضمان</h2><div class="spacer"></div>
+      ${can('cheques', 'add') ? `<button class="btn primary" id="add">➕ ${dir === 'in' ? 'شيك ضمان مستلم' : 'شيك ضمان معطى'}</button>` : ''}</div>
+    <div class="tabs"><a class="tab ${dir === 'in' ? 'active' : ''}" href="#/guarantees?dir=in" style="text-decoration:none">📥 مستلمة منّا (من عملاء، موظفين…)</a>
+      <a class="tab ${dir === 'out' ? 'active' : ''}" href="#/guarantees?dir=out" style="text-decoration:none">📤 معطاة منّا (لموردين، عطاءات…)</a></div>
+    <p class="muted" style="font-size:12px;margin:0 0 10px">شيك الضمان ما إله قيد بالحسابات. إذا بدك تستعمله (تسييل)، بيتحوّل لشيك عادي بمحفظة الشيكات بقيده.</p>
+    <div class="grid cols-3" style="margin-bottom:14px">
+      <div class="card stat"><span class="k">${dir === 'in' ? 'محفوظة عندنا' : 'عند الغير'}</span><span class="v" dir="ltr">${fmtNum(sumHeld)}</span><span class="muted">${held.length} شيك</span></div>
+      <div class="card stat"><span class="k">موعد إرجاعها خلال 30 يوم (أو فات)</span><span class="v" dir="ltr" style="color:var(--warn)">${fmtNum(soon.reduce((s, g) => s + num(g.amount), 0))}</span><span class="muted">${soon.length} شيك</span></div>
+      <div class="card stat"><span class="k">تسيّلت</span><span class="v" dir="ltr">${fmtNum(data.filter(g => g.status === 'converted').reduce((s, g) => s + num(g.amount), 0))}</span></div></div>
+    <div class="card no-print filters">
+      <div class="field"><label>الحالة</label><select id="f-s"><option value="">الكل</option>${Object.entries(GST).map(([k, [l]]) => `<option value="${k}" ${st === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <div class="field"><label>بحث</label><input id="f-q" placeholder="رقم الشيك، الاسم، الغرض…"></div>
+      <div class="field" style="justify-content:flex-end;flex-direction:row;gap:6px"><button class="btn" id="prn">🖨️ طباعة</button></div></div>
+    <div class="card table-wrap"><table class="t rep" id="gt"><thead><tr><th>#</th><th>رقم الشيك</th><th>البنك</th><th>${dir === 'in' ? 'من' : 'لـ'}</th><th>الغرض</th><th>المرجع</th><th>الاستلام</th><th>الاستحقاق</th><th>موعد الإرجاع</th><th>المبلغ</th><th>الحالة</th></tr></thead><tbody>
+    ${rows.map(g => { const d = g.expiry_date && g.status === 'held' ? daysTo(g.expiry_date) : null; return `<tr data-g="${g.id}" style="cursor:pointer" data-s="${esc([g.cheque_no, who(g), g.purpose, g.reference, g.bank_name].join(' '))}">
+      <td>${g.doc_no}</td><td dir="ltr" style="text-align:right">${esc(g.cheque_no)}</td><td>${esc(g.bank_name || '')}</td><td>${esc(who(g) || '')}</td><td>${esc(g.purpose || '')}</td><td>${esc(g.reference || '')}</td>
+      <td>${fmtDate(g.receive_date)}</td><td>${g.due_date ? fmtDate(g.due_date) : '<span class="muted">بدون</span>'}</td>
+      <td>${g.expiry_date ? fmtDate(g.expiry_date) : ''}${d != null && d <= 30 ? ` <span class="badge ${d < 0 ? 'bad' : 'warn'}">${d < 0 ? 'فات ' + (-d) + ' يوم' : 'باقي ' + d}</span>` : ''}</td>
+      <td class="n">${fmtNum(g.amount)}</td><td><span class="badge ${GST[g.status][1]}">${GST[g.status][0]}</span>${g.status_date ? ` <span class="muted" style="font-size:11px">${fmtDate(g.status_date)}</span>` : ''}</td></tr>`; }).join('') || '<tr><td colspan="11" class="empty">ما في شيكات ضمان</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="9">المجموع</td><td class="n">${fmtNum(rows.reduce((s, g) => s + num(g.amount), 0))}</td><td></td></tr></tfoot></table></div>`;
+  v.querySelector('#f-s').onchange = (e) => { location.hash = `#/guarantees?dir=${dir}&st=${e.target.value}`; };
+  v.querySelector('#f-q').oninput = (e) => { const t = e.target.value.trim(); v.querySelectorAll('#gt tbody tr[data-g]').forEach(tr => { tr.style.display = !t || tr.dataset.s.includes(t) ? '' : 'none'; }); };
+  v.querySelector('#prn').onclick = () => printDoc(`شيكات الضمان ${dir === 'in' ? 'المستلمة' : 'المعطاة'}`, v.querySelector('#gt').outerHTML.replace('class="t rep"', 'class="pt"'));
+  v.querySelector('#add')?.addEventListener('click', () => form(null));
+  v.querySelector('#gt tbody').onclick = (e) => { const tr = e.target.closest('[data-g]'); if (tr) form(data.find(g => g.id === tr.dataset.g)); };
+  const myParties = parties.filter(p => p.party_type !== 'expense');
+  function form(g) {
+    const isNew = !g; g = g || { direction: dir, receive_date: today(), status: 'held' };
+    const held = g.status === 'held', ro = !held || !can('cheques', isNew ? 'add' : 'edit') ? 'disabled' : '';
+    const m = modal({ title: isNew ? (dir === 'in' ? 'شيك ضمان مستلم' : 'شيك ضمان معطى') : `شيك ضمان رقم ${g.doc_no}`, body: `
+      ${!isNew ? `<div class="notice ${held ? 'info' : ''}" style="margin-bottom:10px">الحالة: <b>${GST[g.status][0]}</b>${g.status_date ? ' بتاريخ ' + fmtDate(g.status_date) : ''}${g.status_note ? ' — ' + esc(g.status_note) : ''}${g.cheque_id ? ' · <a href="#/cheques?dir=' + g.direction + '">بمحفظة الشيكات</a>' : ''}</div>` : ''}
+      <form id="gf"><div class="grid cols-3">
+        <div class="field"><label>رقم الشيك *</label><input name="cheque_no" value="${esc(g.cheque_no || '')}" dir="ltr" ${ro}></div>
+        <div class="field"><label>البنك</label><input name="bank_name" list="bank-list" value="${esc(g.bank_name || '')}" ${ro}>${lookupDatalistSync('bank', 'bank-list')}</div>
+        <div class="field"><label>المبلغ *</label><input name="amount" value="${g.amount ?? ''}" inputmode="decimal" dir="ltr" ${ro}></div>
+        <div class="field" style="grid-column:span 2"><label>${dir === 'in' ? 'العميل / المورد' : 'المورد / العميل'} (اختياري)</label><input list="party-list" id="g-party" value="${g.party_id && pBy[g.party_id] ? esc(partyLabel(pBy[g.party_id])) : ''}" ${ro}>${partyDatalist(myParties)}</div>
+        <div class="field"><label>أو موظف</label><select name="employee_id" ${ro}><option value="">—</option>${emps.map(e => `<option value="${e.id}" ${e.id === g.employee_id ? 'selected' : ''}>${esc(e.code)} — ${esc(e.name)}</option>`).join('')}</select></div>
+        <div class="field" style="grid-column:span 3"><label>اسم ${dir === 'in' ? 'الساحب' : 'المستفيد'}</label><input name="drawer_name" value="${esc(g.drawer_name || '')}" placeholder="إذا مش عميل أو موظف" ${ro}></div>
+        <div class="field" style="grid-column:span 2"><label>الغرض</label><input name="purpose" list="g-purposes" value="${esc(g.purpose || '')}" ${ro}>
+          <datalist id="g-purposes">${['ضمان عقد', 'ضمان مندوب مبيعات', 'ضمان موظف', 'كفالة دخول عطاء', 'كفالة حسن تنفيذ', 'ضمان دفعة مقدمة', 'ضمان إيجار'].map(x => `<option value="${x}">`).join('')}</datalist></div>
+        <div class="field"><label>المرجع (رقم العقد/العطاء)</label><input name="reference" value="${esc(g.reference || '')}" ${ro}></div>
+        <div class="field"><label>تاريخ ${dir === 'in' ? 'الاستلام' : 'التسليم'}</label><input type="date" name="receive_date" value="${g.receive_date || ''}" ${ro}></div>
+        <div class="field"><label>تاريخ الاستحقاق</label><input type="date" name="due_date" value="${g.due_date || ''}" ${ro}><span class="hint">فاضي = بدون تاريخ</span></div>
+        <div class="field"><label>موعد إرجاع الضمان</label><input type="date" name="expiry_date" value="${g.expiry_date || ''}" ${ro}></div>
+        <div class="field" style="grid-column:span 3"><label>ملاحظات</label><input name="notes" value="${esc(g.notes || '')}"></div></div></form>`,
+      foot: `${held && can('cheques', isNew ? 'add' : 'edit') || (!isNew && can('cheques', 'edit')) ? '<button class="btn primary" data-save>💾 حفظ</button>' : ''}
+        ${!isNew && held && can('cheques', 'edit') ? `<button class="btn" data-ret>↩️ ${dir === 'in' ? 'إرجاع لصاحبه' : 'استرجعناه'}</button><button class="btn" data-conv>💰 تسييل (شيك عادي)</button><button class="btn" data-cancel>✖ إلغاء</button>` : ''}
+        ${!isNew && (g.status === 'returned' || g.status === 'cancelled') && can('cheques', 'edit') ? '<button class="btn" data-undo>⟲ رجّعه محفوظ</button>' : ''}
+        ${!isNew ? '<button class="btn" data-att>📎 مرفقات</button><button class="btn" data-print>🖨️ إيصال</button>' : ''}
+        ${!isNew && held && can('cheques', 'delete') ? '<button class="btn danger" data-del>🗑️ حذف</button>' : ''}<button class="btn" data-close>إغلاق</button>` });
+    m.el.querySelector('.modal').style.maxWidth = '760px';
+    const q$ = (s) => m.el.querySelector(s);
+    q$('[data-save]')?.addEventListener('click', async () => {
+      const d = formData(q$('#gf'));
+      let row;
+      if (held) {
+        const pt = q$('#g-party').value.trim(), p = pt ? resolveParty(myParties, pt) : null;
+        if (pt && !p) return toast('اختار الطرف من القائمة', 'err');
+        if (!d.cheque_no || !(num(d.amount) > 0)) return toast('رقم الشيك والمبلغ مطلوبين', 'err');
+        row = { cheque_no: d.cheque_no, bank_name: d.bank_name || null, amount: num(d.amount), party_id: p?.id || null, employee_id: d.employee_id || null,
+          drawer_name: d.drawer_name || null, purpose: d.purpose || null, reference: d.reference || null, receive_date: d.receive_date || today(),
+          due_date: d.due_date || null, expiry_date: d.expiry_date || null, notes: d.notes || null };
+      } else row = { notes: d.notes || null };
+      const r = isNew ? await sb.from('guarantee_cheques').insert({ ...row, company_id: S.company.id, direction: dir }) : await sb.from('guarantee_cheques').update(row).eq('id', g.id);
+      if (r.error) return toast(arError(r.error), 'err');
+      toast('انحفظ', 'ok'); m.close(); ctx.rerender();
+    });
+    const setSt = (status, title) => {
+      const s2 = modal({ stack: true, title, body: `<div class="grid cols-2"><div class="field"><label>التاريخ</label><input type="date" id="sd" value="${today()}"></div>
+        <div class="field"><label>ملاحظة</label><input id="sn" placeholder="${status === 'returned' ? 'انتهى العقد، سلّمناه لـ…' : ''}"></div></div>`,
+        foot: '<button class="btn primary" data-ok>تأكيد</button><button class="btn" data-close>إلغاء</button>' });
+      s2.el.querySelector('[data-ok]').onclick = async () => {
+        const { error } = await sb.rpc('guarantee_set_status', { p_id: g.id, p_status: status, p_date: s2.el.querySelector('#sd').value || null, p_note: s2.el.querySelector('#sn').value });
+        if (error) return toast(arError(error), 'err');
+        toast('تم', 'ok'); s2.close(); m.close(); ctx.rerender();
+      };
+    };
+    q$('[data-ret]')?.addEventListener('click', () => setSt('returned', dir === 'in' ? 'إرجاع الشيك لصاحبه' : 'استرجاع الشيك'));
+    q$('[data-cancel]')?.addEventListener('click', () => setSt('cancelled', 'إلغاء شيك الضمان'));
+    q$('[data-undo]')?.addEventListener('click', async () => {
+      const { error } = await sb.rpc('guarantee_set_status', { p_id: g.id, p_status: 'held' });
+      if (error) return toast(arError(error), 'err'); toast('رجع محفوظ', 'ok'); m.close(); ctx.rerender();
+    });
+    q$('[data-conv]')?.addEventListener('click', () => {
+      const leaves = leafAccounts(accs);
+      const s2 = modal({ stack: true, title: '💰 تسييل شيك الضمان', body: `<p class="muted" style="margin-top:0">الشيك بيتسجّل ${dir === 'in' ? 'شيك وارد بمحفظة الشيكات (مدين صندوق الشيكات، دائن الطرف)' : 'شيك صادر (مدين الطرف، دائن شيكات صادرة)'} بقيد مرحّل، وبعدها بتكمّل عليه عادي (إيداع، تحصيل…).</p>
+        <div class="grid cols-2"><div class="field"><label>تاريخ التسييل</label><input type="date" id="cd" value="${today()}"></div>
+        <div class="field"><label>تاريخ الاستحقاق</label><input type="date" id="cdd" value="${g.due_date || today()}"></div>
+        ${g.party_id ? '' : `<div class="field" style="grid-column:span 2"><label>الحساب المقابل * (الشيك مش على عميل/مورد)</label><select id="ca"><option value="">—</option>${leaves.map(a => `<option value="${a.id}">${esc(accLabel(a))}</option>`).join('')}</select></div>`}
+        <div class="field" style="grid-column:span 2"><label>ملاحظة</label><input id="cn" placeholder="سبب التسييل"></div></div>`,
+        foot: '<button class="btn primary" data-ok>💰 تسييل</button><button class="btn" data-close>إلغاء</button>' });
+      s2.el.querySelector('[data-ok]').onclick = async () => {
+        const p = { date: s2.el.querySelector('#cd').value, due_date: s2.el.querySelector('#cdd').value, notes: s2.el.querySelector('#cn').value, account_id: s2.el.querySelector('#ca')?.value || null };
+        if (!g.party_id && !p.account_id) return toast('اختار الحساب المقابل', 'err');
+        const { error } = await sb.rpc('guarantee_convert', { p_id: g.id, p });
+        if (error) return toast(arError(error), 'err');
+        toast('تسيّل وصار بمحفظة الشيكات', 'ok'); s2.close(); m.close(); ctx.rerender();
+      };
+    });
+    q$('[data-del]')?.addEventListener('click', async () => {
+      if (!await confirmBox('حذف شيك الضمان؟')) return;
+      const { error } = await sb.from('guarantee_cheques').delete().eq('id', g.id);
+      if (error) return toast(arError(error), 'err'); toast('انحذف', 'ok'); m.close(); ctx.rerender();
+    });
+    q$('[data-att]')?.addEventListener('click', () => openAttachments('guarantee_cheque', g.id, `شيك ضمان ${g.cheque_no}`));
+    q$('[data-print]')?.addEventListener('click', () => printDoc(dir === 'in' ? 'إيصال استلام شيك ضمان' : 'إيصال تسليم شيك ضمان', `
+      <p>${dir === 'in' ? 'استلمنا من' : 'سلّمنا إلى'} السيد/السادة: <b>${esc(who(g) || '')}</b></p>
+      <table class="pt"><tr><th>رقم الإيصال</th><td>${g.doc_no}</td><th>التاريخ</th><td>${fmtDate(g.receive_date)}</td></tr>
+        <tr><th>رقم الشيك</th><td dir="ltr">${esc(g.cheque_no)}</td><th>البنك</th><td>${esc(g.bank_name || '')}</td></tr>
+        <tr><th>المبلغ</th><td>${fmtNum(g.amount)}</td><th>الاستحقاق</th><td>${g.due_date ? fmtDate(g.due_date) : 'بدون تاريخ'}</td></tr>
+        <tr><th>المبلغ كتابة</th><td colspan="3">${amountToWords(g.amount)}</td></tr>
+        <tr><th>الغرض</th><td colspan="3">${esc(g.purpose || '')}${g.reference ? ' — مرجع ' + esc(g.reference) : ''}</td></tr></table>
+      <p>شيك ضمان (أمانة)، ${dir === 'in' ? 'وبيرجع لصاحبه' : 'وبيرجعلنا'} عند انتهاء الغرض${g.expiry_date ? ' بتاريخ ' + fmtDate(g.expiry_date) : ''}.</p>
+      <div style="display:flex;justify-content:space-between;margin-top:50px"><span>توقيع المستلم: ____________</span><span>توقيع المسلّم: ____________</span></div>`));
+  }
+}
+
+export const CHEQUE_ROUTES = { 'cheques': viewCheques, 'cheques-dash': viewChequesDash, 'guarantees': viewGuarantees };

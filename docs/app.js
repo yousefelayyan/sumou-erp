@@ -241,6 +241,7 @@ const NAV = () => [
     { r: 'payments', i: '📤', l: 'سندات الصرف', show: () => S.company && can('payment_vouchers', 'view') },
     { r: 'cheques', i: '💳', l: 'محفظة الشيكات', show: () => S.company && can('cheques', 'view') },
     { r: 'cheques-dash', i: '📈', l: 'لوحة الشيكات', show: () => S.company && can('cheques', 'view') },
+    { r: 'guarantees', i: '🛡️', l: 'شيكات الضمان', show: () => S.company && can('cheques', 'view') },
     { r: 'pending', i: '⏳', l: 'بانتظار الترحيل', show: () => S.company },
     { r: 'recurring', i: '🔁', l: 'القيود المتكررة', show: () => S.company && can('journal_entries', 'view') },
     { r: 'budgets', i: '📐', l: 'الموازنات التقديرية', show: () => S.company && can('budgets', 'view') },
