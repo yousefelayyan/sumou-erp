@@ -44,7 +44,8 @@ function wirePeriod(box, onGo) {
 function statementHTML(open, rows, from, to) {
   let b = open, td = 0, tc = 0;
   const body = rows.map(m => { b += num(m.debit) - num(m.credit); td += num(m.debit); tc += num(m.credit);
-    return `<tr><td>${fmtDate(m.entry_date)}</td><td>${esc((ENTRY_TYPES[m.entry_type]?.label || '') + ' ' + docNo(m))}</td>
+    const dn = esc((ENTRY_TYPES[m.entry_type]?.label || '') + ' ' + docNo(m));
+    return `<tr><td>${fmtDate(m.entry_date)}</td><td>${m.entry_id ? `<a class="doc-link" href="#/doc?e=${m.entry_id}&co=${S.company.id}" target="_blank" rel="noopener" title="فتح المستند بصفحة جديدة">${dn} ↗</a>` : dn}</td>
       <td>${esc(m.line_description || m.description || '')}${m.draft ? ' <span class="badge warn">غير مرحّل</span>' : ''}</td><td>${esc(m.reference || '')}</td>
       <td class="n">${amt(num(m.debit))}</td><td class="n">${amt(num(m.credit))}</td><td class="n">${bal(b)}</td></tr>`; }).join('');
   return `<table class="t rep stmt"><thead><tr><th>التاريخ</th><th>السند</th><th>البيان</th><th>المرجع</th><th>مدين</th><th>دائن</th><th>الرصيد</th></tr></thead>
@@ -68,10 +69,10 @@ function summaryHTML(open, rows) {
 const STMT = new WeakMap();
 // السندات غير المرحّلة لحساب أو طرف (للخيار «غير مرحّل / الجميع»)
 async function draftRows(col, id, to) {
-  const { data, error } = await sb.from('journal_lines').select('debit,credit,description,journal_entries!inner(company_id,fiscal_year_id,status,entry_date,entry_type,entry_no,doc_code,description,reference)')
+  const { data, error } = await sb.from('journal_lines').select('debit,credit,description,journal_entries!inner(id,company_id,fiscal_year_id,status,entry_date,entry_type,entry_no,doc_code,description,reference)')
     .eq(col, id).eq('journal_entries.company_id', S.company.id).eq('journal_entries.fiscal_year_id', S.fy.id).eq('journal_entries.status', 'draft').lte('journal_entries.entry_date', to).limit(5000);
   if (error) throw error;
-  return (data || []).map(l => ({ ...l.journal_entries, line_description: l.description, debit: l.debit, credit: l.credit, draft: true })).sort((a, b) => a.entry_date.localeCompare(b.entry_date));
+  return (data || []).map(l => ({ ...l.journal_entries, entry_id: l.journal_entries.id, line_description: l.description, debit: l.debit, credit: l.credit, draft: true })).sort((a, b) => a.entry_date.localeCompare(b.entry_date));
 }
 function tabbed(open, rows, from, to, drafts = null) {
   const kinds = [...new Set(rows.map(m => m.entry_type || 'journal'))];

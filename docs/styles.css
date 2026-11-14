@@ -152,6 +152,7 @@ table.t{width:100%;border-collapse:collapse}
   .watermark{position:fixed;inset:0;right:0;top:0}
   .wm-inner{opacity:.08}
   .layout{display:block}.content{padding:0}.card{box-shadow:none}
+  .page-head{justify-content:center;text-align:center}.page-head h2{margin-inline:auto}
 }
 
 /* ---------- المرحلة 2 و3: شجرة الحسابات والسندات والتقارير ---------- */
@@ -169,7 +170,7 @@ table.t{width:100%;border-collapse:collapse}
 .filters{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;padding:14px 16px}
 .filters .field{margin:0}
 .t.rep th{text-align:center}
-.t.rep td.n{white-space:nowrap}
+.t.rep td.n{white-space:nowrap;text-align:center}
 .t.rep tr.grp td{font-weight:700;background:var(--tint-2)}
 .t.rep tr.tot td,.t.rep tfoot td{font-weight:800;background:#f1e9f8}
 .t.statement tr.sec td{font-weight:800;color:var(--brand);font-size:16px;background:#fff;padding-top:16px;border-bottom:2px solid var(--brand-soft)}
@@ -416,3 +417,7 @@ html[data-theme="slate"]{--brand:#334155;--brand-2:#64748b;--brand-soft:#e9edf2;
 .upd-bar{position:fixed;bottom:16px;inset-inline-start:50%;transform:translateX(50%);z-index:9999;background:var(--brand);color:#fff;padding:10px 16px;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.25);display:flex;gap:10px;align-items:center;font-size:15px}
 html[dir=ltr] .upd-bar{transform:translateX(-50%)}
 .ot-part.on{outline:2px solid var(--brand);background:var(--tint)}
+
+/* رابط رقم المستند بالأستاذ العام/المساعد */
+a.doc-link{color:var(--brand);text-decoration:none;font-weight:700}a.doc-link:hover{text-decoration:underline}
+@media print{a.doc-link{color:inherit}}

@@ -8,7 +8,7 @@ import { attachDocNav, setNavList } from './docnav.js';
 import { deptField, deptValue } from './departments.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, fmtQty, fmtPrice, qm } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, fmtQty, fmtPrice, qm , takeOpenParam } from './core.js';
 import { downloadCSV, loadAccounts, leafAccounts, accLabel } from './finance.js';
 import { loadItems, serialCellHTML, serialPicker, parseSerials } from './invoices.js';
 import { printDoc } from './print.js';
@@ -128,6 +128,7 @@ async function viewStockDocs(v, ctx) {
         ${type === 'transfer' ? `<td>${esc(wn[d.to_warehouse_id] || '')}</td>` : ''}<td>${esc(d.notes || '')}</td>
         <td>${d.status === 'posted' ? '<span class="badge ok">مرحّل</span>' : '<span class="badge warn">مسودة</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">ما في سندات</td></tr>'}</tbody></table></div>`;
   v.querySelector('#add')?.addEventListener('click', () => docEditor(type, null, whs, ctx));
+  { const oid = takeOpenParam(); if (oid) { const row = data.find(x => x.id === oid); if (row) docEditor(type, row, whs, ctx); } }
   v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { setNavList('sd:' + type, [...v.querySelectorAll('#rows [data-open]')].map(tr => data.find(x => x.id === tr.dataset.open)).filter(Boolean)); docEditor(type, data.find(x => x.id === r.dataset.open), whs, ctx); } };
 }
 

@@ -11,7 +11,7 @@ import { loadCustomFields, cfFieldsHTML, cfValues } from './orders.js';
 import { loadFieldLayout, applyLayout, checkRequired } from './mfg.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode, ruleSync } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin, fmtPrice, fmtQty, DEC, qm } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, isAdmin, fmtPrice, fmtQty, DEC, qm , takeOpenParam } from './core.js';
 import { loadAccounts, leafAccounts, accLabel, downloadCSV } from './finance.js';
 import { loadParties, partyDatalist, resolveParty, partyLabel } from './parties.js';
 import { printDoc, amountToWords, loadPrintSettings } from './print.js';
@@ -420,6 +420,7 @@ function invoiceList(group) {
     };
     draw(); ['#q', '#ft', '#fs', '#ff'].forEach(s => v.querySelector(s)?.addEventListener('input', draw));
     v.querySelectorAll('[data-new]').forEach(b => b.onclick = () => invoiceEditor(b.dataset.new, null, ctx));
+    { const oid = takeOpenParam(); if (oid) { let row = data.find(x => x.id === oid); if (!row) row = (await sb.from('invoices').select('*').eq('id', oid).maybeSingle()).data; if (row && types.includes(row.inv_type)) invoiceEditor(row.inv_type, row, ctx); } }
     v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { setNavList('inv', [...v.querySelectorAll('#rows [data-open]')].map(tr => data.find(x => x.id === tr.dataset.open)).filter(Boolean)); const i = data.find(x => x.id === r.dataset.open); invoiceEditor(i.inv_type, i, ctx); } };
   };
 }

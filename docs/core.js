@@ -333,3 +333,13 @@ if (typeof document !== 'undefined' && !window.__calcWired) {
     el.value = String(r); el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true }));
   }, true);
 }
+
+// «?open=<id>» بالرابط (من الأستاذ العام): بيرجّع المعرّف وبيشيله من الرابط عشان ما ينفتح المستند مرة ثانية بعد الحفظ
+export function takeOpenParam() {
+  const [path, q = ''] = location.hash.split('?');
+  const p = new URLSearchParams(q); const id = p.get('open');
+  if (!id) return null;
+  p.delete('open'); const rest = p.toString();
+  try { history.replaceState(null, '', location.pathname + location.search + path + (rest ? '?' + rest : '')); } catch {}
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+}

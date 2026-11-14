@@ -53,12 +53,16 @@ function css(cfg, { landscape, thermal, paper }) {
     body { font-family: 'Tajawal', sans-serif; color: #111; font-size: ${fs}px; margin: 0; ${thermal ? 'width: 72mm;' : ''} }
     .head { display: flex; align-items: center; gap: 14px; padding-bottom: 10px; margin-bottom: 12px; }
     .head img { max-height: ${thermal ? 46 : 64}px; max-width: 130px; object-fit: contain }
-    .head .co { flex: 1 } .head .co h1 { margin: 0; font-size: ${thermal ? 15 : 19}px } .head .co div { font-size: ${thermal ? 10 : 12}px }
+    .head .co { flex: 1; text-align: center } .head .co h1 { margin: 0; font-size: ${thermal ? 15 : 19}px } .head .co div { font-size: ${thermal ? 10 : 12}px }
     .head .meta2 { text-align: left; font-size: 11px }
+    /* الترويسة بالنص: الشعار والسنة بنفس العرض على الجنبين */
+    .head .lg, .head .meta2 { flex: 0 0 ${thermal ? 'auto' : '130px'} } .head .lg:empty { min-height: 1px }
     h2.title { text-align: center; margin: 6px 0 2px; font-size: ${thermal ? 14 : 18}px } .sub { text-align: center; color: #555; margin-bottom: 12px }
     table { width: 100%; border-collapse: collapse }
     table.pt th, table.pt td { padding: ${thermal ? '3px 2px' : '5px 7px'}; text-align: right }
     .n { text-align: left !important; direction: ltr; white-space: nowrap; font-variant-numeric: tabular-nums }
+    /* التقارير: العناوين والأرقام بالنص */
+    table.pt th { text-align: center } table.pt td.n, table.pt th.n { text-align: center !important }
     table.meta td { padding: 4px; border-bottom: 1px dashed #ccc }
     .amount-box { border-radius: 8px; padding: 10px 14px; margin: 12px 0; font-size: ${thermal ? 12 : 15}px }
     .amount-box span { font-size: 13px; color: #333 }
@@ -150,7 +154,7 @@ export function printDoc(title, html, { subtitle = '', landscape = false, kind =
   ${preview ? '' : printBarHTML(kind)}
   ${Array.from({ length: Math.min(Math.max(+copies || 1, 1), 5) }, (_, ci, arr) => `${ci ? '<div style="page-break-before:always"></div>' : ''}${(+copies || 1) > 1 ? `<div style="text-align:left;font-size:11px;color:#666">نسخة ${ci + 1} من ${Math.min(+copies, 5)}</div>` : ''}
   ${cfg.watermark && !thermal ? `<div class="wm"><div>${esc(c.name || '')}<br>${esc(fy)}</div></div>` : ''}
-  <div class="head">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}
+  <div class="head"><div class="lg">${c.logo_url ? `<img src="${esc(c.logo_url)}">` : ''}</div>
     <div class="co"><h1>${esc(c.name || '')}</h1>${c.branchName ? `<div style="font-weight:700">${esc(c.branchName)}</div>` : ''}<div>${esc([c.address, c.city].filter(Boolean).join(' - '))}${c.phone ? ' | هاتف: ' + esc(c.phone) : ''}</div>
       ${cfg.show_tax_numbers && (c.income_tax_no || c.sales_tax_no) ? `<div>${c.income_tax_no ? 'الرقم الضريبي: ' + esc(c.income_tax_no) : ''}${c.income_tax_no && c.sales_tax_no ? ' | ' : ''}${c.sales_tax_no ? 'رقم ضريبة المبيعات: ' + esc(c.sales_tax_no) : ''}</div>` : ''}</div>
     <div class="meta2">${esc(fy)}</div></div>

@@ -7,7 +7,7 @@ import { docTypeField, docTypeValue, docCopies, docTypeName, loadDocTypes, docCo
 import { attachDocNav, setNavList } from './docnav.js';
 import { docNo, loadNumbering, isManual, manualField, readManual, masterCode } from './numbering.js';
 import { loadPosting, postFlag, postBarHTML, wirePostBar } from './posting.js';
-import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, qm } from './core.js';
+import { S, sb, esc, fmtDate, fmtNum, num, today, toast, arError, modal, confirmBox, formData, can, log, qm , takeOpenParam } from './core.js';
 import { printDoc, amountToWords } from './print.js';
 import { openAttachments } from './attach.js';
 import { recurringDialog } from './extras.js';
@@ -284,6 +284,7 @@ function voucherList(type) {
     draw();
     v.querySelector('#q').oninput = draw; v.querySelector('#st').onchange = draw;
     v.querySelector('#add')?.addEventListener('click', () => voucherEditor(type, null, ctx));
+    { const oid = takeOpenParam(); if (oid) { let row = data.find(x => x.id === oid); if (!row) row = (await sb.from('journal_entries').select('*').eq('id', oid).maybeSingle()).data; if (row && row.entry_type === type) voucherEditor(type, row, ctx); } }
     v.querySelector('#rows').onclick = (e) => { const r = e.target.closest('[data-open]'); if (r) { setNavList('je:' + type, [...v.querySelectorAll('#rows [data-open]')].map(tr => data.find(x => x.id === tr.dataset.open)).filter(Boolean)); voucherEditor(type, data.find(x => x.id === r.dataset.open), ctx); } };
   };
 }

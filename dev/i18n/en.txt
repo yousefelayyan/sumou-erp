@@ -4607,3 +4607,14 @@ Warning limit must be less than the suspension limit (1 to 1000
 This log entry is written by the system only
 🌐 From the browser
 Counted toward warning and suspension
+Invalid document link
+Opening the document
+You don't have access to this document's company
+The document doesn't exist or you don't have permission to view it
+📄 Entry
+Open the document in a new page
+
+
+
+
+

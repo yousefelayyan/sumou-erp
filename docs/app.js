@@ -683,7 +683,7 @@ function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[
 const ROUTES = {
   ...FINANCE_ROUTES, ...REPORT_ROUTES, ...PARTY_ROUTES, ...INVOICE_ROUTES, ...OBLIGATION_ROUTES, ...CHEQUE_ROUTES, ...INVENTORY_ROUTES, ...PRINTSET_ROUTES, ...NUMBERING_ROUTES, ...POSTING_ROUTES, ...CENTER_ROUTES, ...DEPARTMENT_ROUTES, ...LOOKUP_ROUTES, ...DAYBOOK_ROUTES, ...ORDER_ROUTES, ...MFG_ROUTES, ...EXTRA_ROUTES, ...PAYROLL_ROUTES, ...ASSET_ROUTES, ...SUPPLY_ROUTES, ...ASK_ROUTES, ...REP_ROUTES, ...LOAN_ROUTES, ...ATTENDANCE_ROUTES, ...DOCTYPE_ROUTES, ...PRICE_ROUTES, ...DISCOUNT_ROUTES, ...MESSAGE_ROUTES, ...LANDED_ROUTES, ...LEAVE_ROUTES, ...PROFILE_ROUTES, ...BATCH_ROUTES, ...BUDGET_ROUTES, ...NOTE_ROUTES, ...CONTRACT_ROUTES, ...COLLECTION_ROUTES, ...COMMISSION_ROUTES, ...FOLLOW_ROUTES, ...PARTYDOC_ROUTES, ...COMPARE_ROUTES, ...TOOLS_ROUTES, ...TENANT_ROUTES, ...POS_ROUTES,
   'home': viewHome, 'company': viewCompany, 'companies': viewCompanies,
-  'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog,
+  'fiscal-years': viewFiscalYears, 'users': viewUsers, 'groups': viewGroups, 'log': viewLog, 'doc': viewDocJump,
 };
 
 async function route_() {
@@ -787,6 +787,44 @@ function wireLauncher(v) {
   v.querySelectorAll('.launch-tile[data-act]').forEach(a => a.onclick = (e) => { e.preventDefault(); if (a.dataset.act === 'year') switchYearDialog(); });
 }
 
+// فتح مصدر أي قيد (من رقم المستند بالأستاذ العام/المساعد): #/doc?e=<قيد>&co=<شركة> — بيفتح المستند نفسه بشاشته
+async function viewDocJump(v) {
+  const p = new URLSearchParams(location.hash.split('?')[1] || '');
+  const eid = p.get('e'), co = p.get('co');
+  const fail = (msg) => { v.innerHTML = `<div class="notice">${esc(msg)}</div>`; };
+  if (!/^[0-9a-f-]{36}$/i.test(eid || '')) return fail('رابط المستند مش صحيح');
+  v.innerHTML = '<div class="muted" style="padding:20px">جاري فتح المستند…</div>';
+  if (co && co !== S.company?.id) {
+    const c = S.companies.find(x => x.id === co); if (!c) return fail('ما عندك صلاحية على شركة هالمستند');
+    S.company = c; await loadFiscalYears(); renderShell();
+  }
+  const { data: e, error } = await sb.from('journal_entries').select('*').eq('id', eid).maybeSingle();
+  if (error) throw error;
+  if (!e) return fail('المستند مش موجود أو ما عندك صلاحية تشوفه');
+  if (e.fiscal_year_id !== S.fy?.id) { const y = (S.fiscalYearsAll || []).find(x => x.id === e.fiscal_year_id); if (y) { S.fy = y; renderShell(); } }
+  const go = (h) => location.replace(h);
+  const one = async (tbl, cols, f) => { const q = sb.from(tbl).select(cols).eq('company_id', e.company_id).or(f).limit(1); const { data } = await q; return data?.[0] || null; };
+  const VOUCH = { journal: 'journal', receipt: 'receipts', payment: 'payments' };
+  if (VOUCH[e.entry_type]) return go(`#/${VOUCH[e.entry_type]}?open=${e.id}`);
+  if (e.entry_type === 'opening') return go('#/opening');
+  const inv = await one('invoices', 'id,inv_type', `entry_id.eq.${eid},cogs_entry_id.eq.${eid},cancel_entry_id.eq.${eid}`);
+  if (inv) return go(`#/${inv.inv_type.startsWith('sale') ? 'sales' : 'purchases'}?t=${inv.inv_type}&open=${inv.id}`);
+  const sd = await one('stock_docs', 'id,doc_type', `entry_id.eq.${eid}`);
+  if (sd) return go(`#/stock-docs?type=${sd.doc_type}&open=${sd.id}`);
+  if (await one('payroll_runs', 'id', `entry_id.eq.${eid},cancel_entry_id.eq.${eid}`)) return go('#/payroll');
+  if (await one('landed_costs', 'id', `entry_id.eq.${eid},cancel_entry_id.eq.${eid}`)) return go('#/landed-costs');
+  const nt = await one('party_notes', 'id,party_type', `entry_id.eq.${eid},cancel_entry_id.eq.${eid}`);
+  if (nt) return go(`#/notes?type=${nt.party_type}`);
+  if (await one('asset_movements', 'id', `entry_id.eq.${eid},cancel_entry_id.eq.${eid}`)) return go('#/asset-moves');
+  if (e.entry_type === 'depreciation') return go('#/assets');
+  if (e.entry_type === 'cheque') return go('#/cheques');
+  // غير هيك: عرض القيد نفسه
+  const { data: L } = await sb.from('journal_lines').select('line_no,debit,credit,description,accounts(code,name),parties(name)').eq('entry_id', eid).order('line_no');
+  v.innerHTML = `<div class="page-head"><h2>📄 قيد ${esc(e.doc_code || String(e.entry_no || ''))}</h2><span class="muted">${fmtDate(e.entry_date)} — ${esc(e.description || '')}</span></div>
+    <div class="card table-wrap"><table class="t rep"><thead><tr><th>#</th><th>الحساب</th><th>الطرف</th><th>البيان</th><th>مدين</th><th>دائن</th></tr></thead>
+    <tbody>${(L || []).map(l => `<tr><td>${l.line_no}</td><td>${esc((l.accounts?.code || '') + ' — ' + (l.accounts?.name || ''))}</td><td>${esc(l.parties?.name || '')}</td>
+      <td>${esc(l.description || '')}</td><td class="n">${num(l.debit) ? fmtNum(l.debit) : ''}</td><td class="n">${num(l.credit) ? fmtNum(l.credit) : ''}</td></tr>`).join('')}</tbody></table></div>`;
+}
 async function viewHome(v) {
   if (!S.company) {
     v.innerHTML = `<div class="page-head"><h2>أهلاً ${esc(S.profile.full_name || '')} 👋</h2></div>
