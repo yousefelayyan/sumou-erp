@@ -3,7 +3,7 @@
 import asyncio, subprocess, time, sys, shutil, os, re, json
 HERE=os.path.dirname(os.path.abspath(__file__)); src=os.path.join(os.path.dirname(HERE),'docs'); dst='/tmp/ui_i18n'
 shutil.rmtree(dst,ignore_errors=True); shutil.copytree(src,dst); shutil.copy(os.path.join(HERE,'mock.js'),dst)
-c=open(dst+'/core.js',encoding='utf-8').read().replace('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm','./mock.js'); open(dst+'/core.js','w',encoding='utf-8').write(c)
+c=open(dst+'/core.js',encoding='utf-8').read().replace('./lib/supabase.min.js','./mock.js'); open(dst+'/core.js','w',encoding='utf-8').write(c)
 h=re.sub(r'<link href="https://fonts.googleapis.com[^>]*>','',open(dst+'/index.html',encoding='utf-8').read()); open(dst+'/index.html','w',encoding='utf-8').write(h)
 from playwright.async_api import async_playwright
 srv=subprocess.Popen(['python3','-m','http.server','8767','-d',dst],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); time.sleep(1)

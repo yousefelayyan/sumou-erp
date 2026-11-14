@@ -317,8 +317,8 @@ let leafletP = null;
 function loadLeaflet() {
   if (window.L) return Promise.resolve(window.L);
   return leafletP ||= new Promise((res, rej) => {
-    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
-    const js = document.createElement('script'); js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; js.onload = () => res(window.L); js.onerror = () => { leafletP = null; rej(new Error('map')); }; document.head.appendChild(js);
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = './lib/leaflet/leaflet.css'; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = './lib/leaflet/leaflet.js'; js.onload = () => res(window.L); js.onerror = () => { leafletP = null; rej(new Error('map')); }; document.head.appendChild(js);
   });
 }
 async function drawMap(v, cust) {

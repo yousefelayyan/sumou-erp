@@ -267,7 +267,7 @@ async function viewPartyLedger(v) {
       + (recent ? `\n\nآخر الحركات:\n${recent}` : '') + `\n\nللاستفسار يرجى التواصل معنا. شكراً لكم.`;
     let ph = String(p.mobile || p.phone || '').replace(/\D/g, '');
     if (ph.startsWith('00')) ph = ph.slice(2); else if (ph.startsWith('0')) ph = '962' + ph.slice(1); else if (ph.length === 9 && ph.startsWith('7')) ph = '962' + ph;
-    window.open(`https://wa.me/${ph}?text=${encodeURIComponent(txt)}`, '_blank');
+    window.open(`https://wa.me/${ph}?text=${encodeURIComponent(txt)}`, '_blank', 'noopener');
     if (!ph) toast('ما في رقم موبايل للطرف — اختار الرقم من الواتساب', '');
   };
   v.querySelector('#f-mail').onclick = () => {

@@ -4571,3 +4571,39 @@ The voucher is posted and its type requires an attachment; the last attachment c
 Payment method is not from this company or not enabled for this type
 The discount wasn't fully spread over the lines; reduce the discount
 In a serial count each item goes on one line (put all its serials on the same line
+📸 Screenshot protection
+Screen capture
+📸 Screen capture
+PrintScreen key
+Snipping tool
+Large text copy
+Screen recording
+Developer tools
+Other
+Count today
+file type not allowed (images, PDF, Word, Excel, PowerPoint, text, zip
+⛔ Your account has been suspended
+Repeated screen-capture attempts today
+times), so your account was suspended automatically
+Contact the system administrator to reactivate it
+Warning: screen capture
+A screen-capture attempt was recorded under your name
+times today
+After
+attempts per day the account is suspended automatically. Attempts are reported to the admin and recorded in the audit log
+Got it
+
+📸 Screen-capture monitoring
+Enable monitoring
+Warn the user after (times per day
+Suspend the account after (times per day
+7 days
+Last screen
+No attempts in the last 7 days
+📸 Screen-capture attempts today
+Details & settings
+Tenant admin only
+Warning limit must be less than the suspension limit (1 to 1000
+This log entry is written by the system only
+🌐 From the browser
+Counted toward warning and suspension

@@ -1,7 +1,7 @@
 // =====================================================================
 //  السمو ERP — الأساسيات المشتركة (الاتصال، الحالة، الأدوات، الصلاحيات)
 // =====================================================================
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import { createClient } from './lib/supabase.min.js';
 import { SUPABASE_URL, SUPABASE_KEY, APP_NAME, APP_VERSION } from './config.js';
 
 // «مثيل جديد»: نافذة لحالها بتسجيل دخول لحاله (الجلسة بتنحفظ بالنافذة بس، مش مشتركة مع باقي النوافذ)

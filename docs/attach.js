@@ -4,12 +4,18 @@
 import { S, sb, esc, fmtDateTime, toast, arError, modal, confirmBox } from './core.js';
 
 const MAX = 10 * 1024 * 1024;   // 10 ميغا للملف
+// الأنواع المسموحة بس (صور، PDF، أوفيس، نص) — ممنوع HTML وSVG وغيرها
+const TYPES = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', heic: 'image/heic', heif: 'image/heif',
+  pdf: 'application/pdf', doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  txt: 'text/plain', csv: 'text/csv', zip: 'application/zip' };
 const size = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' ميغا' : Math.max(1, Math.round(n / 1024)) + ' كيلو';
 
 export async function openAttachments(entity, entityId, title = '') {
   if (!S.company) return;
   const m = modal({ title: '📎 المرفقات' + (title ? ': ' + title : ''), body: `<div id="att-list" class="muted">جاري التحميل…</div>
-    <label class="btn primary" style="margin-top:12px;display:inline-flex">➕ إرفاق ملف أو صورة<input type="file" id="att-file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx" hidden></label>
+    <label class="btn primary" style="margin-top:12px;display:inline-flex">➕ إرفاق ملف أو صورة<input type="file" id="att-file" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip" hidden></label>
     <p class="muted" style="font-size:12px;margin:8px 0 0">من الجوال بتقدر تصوّر الفاتورة أو الشيك مباشرة. الحد الأقصى 10 ميغا للملف.</p>`,
     foot: '<button class="btn" data-close>إغلاق</button>' });
   const list = m.el.querySelector('#att-list');
@@ -24,10 +30,12 @@ export async function openAttachments(entity, entityId, title = '') {
       const o = e.target.closest('[data-open]'), r = e.target.closest('[data-rm]');
       const a = data.find(x => x.id === (o || r)?.dataset.open || x.id === (o || r)?.dataset.rm); if (!a) return;
       if (o) {
-        const w = window.open('', '_blank');
-        const { data: u, error: er } = await sb.storage.from('attachments').createSignedUrl(a.path, 600);
+        // الصور وPDF بتنفتح بتبويب منفصل (بدون رابط رجوع للبرنامج)، والباقي بينزل
+        const view = /^image\/(png|jpeg|webp|gif)$/.test(a.mime || '') || a.mime === 'application/pdf';
+        const w = view ? window.open('', '_blank') : null; if (w) w.opener = null;
+        const { data: u, error: er } = await sb.storage.from('attachments').createSignedUrl(a.path, 600, view ? undefined : { download: a.file_name });
         if (er) { w?.close(); return toast(arError(er), 'err'); }
-        if (w) w.location = u.signedUrl; else location.href = u.signedUrl;
+        if (w) w.location = u.signedUrl; else { const l = document.createElement('a'); l.href = u.signedUrl; l.rel = 'noopener'; l.download = a.file_name; document.body.appendChild(l); l.click(); l.remove(); }
       } else {
         if (!(await confirmBox(`حذف المرفق «${a.file_name}»؟`))) return;
         // السجل أول (بيرفض إذا مش إلك)، وبعدين الملف
@@ -44,11 +52,13 @@ export async function openAttachments(entity, entityId, title = '') {
     for (const f of files) {
       if (f.size > MAX) { toast(`«${f.name}» أكبر من 10 ميغا`, 'err'); continue; }
       const ext = (f.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 6) || 'bin';
+      const type = TYPES[ext];
+      if (!type) { toast(`«${f.name}»: نوع الملف مش مسموح (صور، PDF، وورد، إكسل، باوربوينت، نص، zip)`, 'err'); continue; }
       const path = `${S.company.id}/${entity}/${entityId}/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
       toast(`جاري رفع «${f.name}»…`, '');
-      const up = await sb.storage.from('attachments').upload(path, f, { contentType: f.type || undefined, upsert: false });
+      const up = await sb.storage.from('attachments').upload(path, f, { contentType: type, upsert: false });
       if (up.error) { toast(arError(up.error), 'err'); continue; }
-      const ins = await sb.from('attachments').insert({ company_id: S.company.id, entity, entity_id: entityId, path, file_name: f.name, mime: f.type, size: f.size });
+      const ins = await sb.from('attachments').insert({ company_id: S.company.id, entity, entity_id: entityId, path, file_name: f.name, mime: type, size: f.size });
       if (ins.error) { await sb.storage.from('attachments').remove([path]); toast(arError(ins.error), 'err'); continue; }
     }
     toast('تم الإرفاق', 'ok'); load();

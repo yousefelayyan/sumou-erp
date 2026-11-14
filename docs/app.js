@@ -19,6 +19,7 @@ import { POSTING_ROUTES } from './posting.js';
 import { CENTER_ROUTES } from './centers.js';
 import { DEPARTMENT_ROUTES } from './departments.js';
 import { permEditor } from './perms.js';
+import { initScreenGuard, screenGuardDialog, screenAlertsBanner } from './screenguard.js';
 import { LOOKUP_ROUTES } from './lookups.js';
 import { DAYBOOK_ROUTES, DAYBOOKS } from './daybook.js';
 import { ORDER_ROUTES } from './orders.js';
@@ -674,7 +675,7 @@ function updateWatermark() {
   if (!S.company) { wm.innerHTML = ''; return; }
   const year = S.fy ? (S.fy.name || S.fy.code) : '';
   const who = S.profile?.full_name || S.profile?.username || (S.profile?.email || '').split('@')[0];
-  wm.innerHTML = `<div class="wm-inner"><div class="wm-name">${esc(S.company.name)}</div>${year ? `<div class="wm-year">${esc(year)}</div>` : ''}${who ? `<div class="wm-user">${esc(who)}</div>` : ''}</div>`;
+  wm.innerHTML = `<div class="wm-inner"><div class="wm-name">${esc(S.company.name)}</div>${year ? `<div class="wm-year">${esc(year)}</div>` : ''}${who ? `<div class="wm-user">${esc(who)} · ${esc(fmtDate(today()))}</div>` : ''}</div>`;
 }
 
 function currentRoute() { return (location.hash.replace(/^#\/?/, '').split('?')[0]) || 'home'; }
@@ -811,6 +812,7 @@ async function viewHome(v) {
   if (new URLSearchParams(location.hash.split('?')[1] || '').get('g')) { v.innerHTML = launcherHTML(); wireLauncher(v); return; }
   v.innerHTML = `
     <div class="page-head"><h2>${esc(c.name)}</h2><span class="badge brand">${esc(c.code)}</span></div>
+    <div id="sg-banner"></div>
     ${screenSearchHTML('home')}
     ${launcherHTML()}
     <div class="grid cols-4" style="margin-top:16px">
@@ -835,7 +837,7 @@ async function viewHome(v) {
         ${can('reports', 'view') ? '<a class="btn" href="#/rep-trial">⚖️ ميزان المراجعة</a>' : ''}
       </div>
     </div>`;
-  v.querySelector('#home-fy')?.addEventListener('click', switchYearDialog); wireLauncher(v);
+  v.querySelector('#home-fy')?.addEventListener('click', switchYearDialog); wireLauncher(v); screenAlertsBanner(v.querySelector('#sg-banner')).catch(() => {});
   // لون الواجهة: كل مستخدم بيختار لونه (إذا المدير سامحله من الصلاحيات)
   if (canTheme()) {
     const cur = S.profile?.theme || 'purple';
@@ -1262,7 +1264,7 @@ async function viewUsers(v) {
   v.innerHTML = `
     <div class="page-head"><h2>👥 المستخدمين</h2><span class="badge brand">${users.length}</span>
       ${pending ? `<span class="badge warn">${pending} بانتظار الموافقة</span>` : ''}<div class="spacer"></div>
-      <button class="btn" id="u-pol">🔐 سياسة كلمات السر</button><button class="btn primary" id="u-add">➕ مستخدم جديد</button></div>
+      <button class="btn" id="u-sg">📸 حماية تصوير الشاشة</button><button class="btn" id="u-pol">🔐 سياسة كلمات السر</button><button class="btn primary" id="u-add">➕ مستخدم جديد</button></div>
     <div class="card table-wrap"><table class="t">
       <thead><tr><th>الاسم</th><th>اسم الدخول</th><th>النوع</th><th>الشاشات</th><th>الشركات</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${users.map(u => {
@@ -1277,6 +1279,7 @@ async function viewUsers(v) {
       }).join('')}</tbody></table></div>`;
   v.querySelector('#u-add').onclick = () => userEditor(null, links, comps, depts);
   v.querySelector('#u-pol').onclick = () => passwordPolicyDialog();
+  v.querySelector('#u-sg').onclick = () => screenGuardDialog();
   v.querySelector('tbody').onclick = (e) => {
     const b = e.target.closest('[data-edit]'); if (!b) return;
     userEditor(users.find(x => x.id === b.dataset.edit), links, comps, depts);
@@ -1438,10 +1441,10 @@ async function viewLog(v) {
   const [p, c] = await Promise.all([sb.from('profiles').select('id,full_name,username,email').order('full_name'), sb.from('companies').select('id,code,name').order('code')]);
   const uName = Object.fromEntries((p.data || []).map(x => [x.id, x.full_name || x.username || x.email]));
   const cName = Object.fromEntries((c.data || []).map(x => [x.id, x.name]));
-  const ent = { companies: 'الشركات', fiscal_years: 'السنوات المالية', users: 'المستخدمين', groups: 'المجموعات', auth: 'الدخول والخروج', ...AUDIT_ENTITIES };
+  const ent = { companies: 'الشركات', fiscal_years: 'السنوات المالية', users: 'المستخدمين', groups: 'المجموعات', auth: 'الدخول والخروج', screen: 'تصوير الشاشة', ...AUDIT_ENTITIES };
   const today = new Date().toISOString().slice(0, 10), d7 = new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
   const TABS = [['all', '📋 كل الحركات'], ['auth', '🔑 الدخول والخروج'], ['sessions', '⏱️ جلسات المستخدمين'], ['users', '👥 ملخص المستخدمين'],
-    ['add', '➕ الإضافة'], ['edit', '✏️ التعديل'], ['post', '📮 الترحيل وإلغاؤه'], ['del', '🗑️ الحذف']];
+    ['add', '➕ الإضافة'], ['edit', '✏️ التعديل'], ['post', '📮 الترحيل وإلغاؤه'], ['del', '🗑️ الحذف'], ['screen', '📸 تصوير الشاشة']];
   v.innerHTML = `
     <div class="page-head"><h2>📜 سجل النشاط والتتبع</h2><span class="muted" id="upd"></span><div class="spacer"></div>
       <label class="check" style="margin:0"><input type="checkbox" id="auto"> تحديث تلقائي كل دقيقة</label>
@@ -1460,7 +1463,9 @@ async function viewLog(v) {
   const $ = (q) => v.querySelector(q);
   let kind = 'all', data = [], out = { head: [], rows: [] }, timer = null;
   const det = (r) => { const d = r.details || {}; const ch = (d.changes || []).map(x => AUDIT_COLS[x]).filter(Boolean).filter((x, i, a) => a.indexOf(x) === i);
-    return [d.no ? `رقم/رمز: ${d.no}` : '', d.name || d.code || d.email || d.doc || '', ch.length ? `تغيّر: ${ch.join('، ')}` : ''].filter(Boolean).join(' — '); };
+    const sk = { printscreen: 'زر برنت سكرين', snip: 'أداة القص', print: 'طباعة', copy: 'نسخ نص كبير', record: 'تسجيل شاشة', devtools: 'أدوات المطوّر', other: 'غير ذلك' }[d.kind];
+    return [d.no ? `رقم/رمز: ${d.no}` : '', d.name || d.code || d.email || d.doc || '', ch.length ? `تغيّر: ${ch.join('، ')}` : '',
+      r.entity === 'screen' && sk ? `${sk}${d.screen ? ' — شاشة: ' + d.screen : ''}` : '', r.entity === 'screen' && d.count ? `عدد اليوم: ${d.count}` : '', d.client && r.entity !== 'auth' ? '🌐 من المتصفح' : ''].filter(Boolean).join(' — '); };
   const isPost = (a) => /ترحيل|^إلغاء$|قيد عكسي/.test(a || '');
   const dur = (ms) => { const m = Math.round(ms / 60000); return m < 60 ? `${m} دقيقة` : `${Math.floor(m / 60)} ساعة و${m % 60} دقيقة`; };
   $('#fp').onchange = () => { const x = $('#fp').value; if (x !== 'custom') { $('#ft').value = today; $('#ff').value = x === 'today' ? today : new Date(Date.now() - (+x) * 864e5).toISOString().slice(0, 10); load(); } };
@@ -1503,7 +1508,7 @@ async function viewLog(v) {
       rows = ses.map(s => [uName[s.u] || '—', s.in ? fmtDateTime(s.in) : '—', s.out ? fmtDateTime(s.out) : (s.now ? 'لسا داخل / ما كبس خروج' : '—'), s.in && s.out ? dur(new Date(s.out) - new Date(s.in)) : '']);
       html = rows.map(x => `<tr><td><b>${esc(x[0])}</b></td><td dir="ltr" style="text-align:right">${esc(x[1])}</td><td ${x[2].includes(':') ? 'dir="ltr" style="text-align:right"' : 'class="muted"'}>${esc(x[2])}</td><td>${esc(x[3])}</td></tr>`).join('');
     } else {
-      const f = { all: () => true, auth: r => r.entity === 'auth', add: r => r.action === 'إضافة', edit: r => r.entity !== 'auth' && r.action === 'تعديل', post: r => isPost(r.action), del: r => r.action === 'حذف' }[kind];
+      const f = { all: () => true, auth: r => r.entity === 'auth', add: r => r.action === 'إضافة', edit: r => r.entity !== 'auth' && r.action === 'تعديل', post: r => isPost(r.action), del: r => r.action === 'حذف', screen: r => r.entity === 'screen' }[kind];
       const list = base.filter(f);
       head = ['الوقت', 'المستخدم', 'العملية', 'الشاشة', 'الشركة', 'التفاصيل'];
       rows = list.map(r => [fmtDateTime(r.created_at), uName[r.user_id] || '', r.action, ent[r.entity] || r.entity || '', cName[r.company_id] || '', det(r)]);
@@ -1560,7 +1565,7 @@ async function boot() {
     if (!ps.error && ps.data?.days_left != null && ps.data.days_left <= 7) setTimeout(() => toast(`كلمة السر بتنتهي بعد ${Math.max(ps.data.days_left, 0)} يوم — غيّرها من لوحة التحكم`, 'err'), 2500);
     await loadContext();
     applyTheme(canTheme() ? (S.profile?.theme || 'purple') : 'purple');
-    renderShell(); route_();
+    renderShell(); route_(); initScreenGuard();
     setTimeout(() => autoBackup().catch(() => {}), 4000);
     setTimeout(() => autoLocalBackup().catch(() => {}), 7000);
   } catch (err) {
